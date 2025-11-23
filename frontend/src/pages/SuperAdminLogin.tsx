@@ -75,7 +75,7 @@ export default function SuperAdminLogin() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent transition-all"
-                placeholder="susan@pikesquare.co"
+                placeholder="Enter your email address"
               />
             </div>
 
@@ -109,7 +109,7 @@ export default function SuperAdminLogin() {
               href="/"
               className="text-sm text-purple-600 hover:text-purple-800 font-medium"
             >
-              ê Back to Salesforce Login
+              ÔøΩ Back to Salesforce Login
             </a>
           </div>
         </div>
