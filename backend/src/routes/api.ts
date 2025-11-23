@@ -813,13 +813,15 @@ router.patch('/sobjects/:objectType/:id', isAuthenticated, async (req: Request, 
     }
 
     // Perform the update
-    const result = await connection.sobject(objectType).update(validUpdates);
+    const result: any = await connection.sobject(objectType).update(validUpdates);
 
-    if (!result.success) {
+    // Check if update was successful
+    const updateResult = Array.isArray(result) ? result[0] : result;
+    if (!updateResult.success) {
       return res.status(400).json({
         success: false,
         error: 'Update failed',
-        message: result.errors?.join(', ') || 'Unknown error',
+        message: updateResult.errors?.map((e: any) => e.message).join(', ') || 'Unknown error',
       });
     }
 
