@@ -12,10 +12,13 @@ function isSuperAdmin(req: Request, res: Response, next: Function) {
 
   console.log('Super admin middleware - Session check:', {
     hasSession: !!session,
+    sessionData: session,
     isSuperAdmin: session?.isSuperAdmin,
     userId: session?.userId,
     sessionId: req.sessionID,
     cookies: req.headers.cookie,
+    origin: req.headers.origin,
+    referer: req.headers.referer,
   });
 
   if (!session?.isSuperAdmin) {
