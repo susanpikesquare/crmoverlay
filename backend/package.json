@@ -8,8 +8,10 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit",
-    "db:init": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts",
-    "db:init:force": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts --force",
+    "db:init": "node dist/scripts/initDatabase.js",
+    "db:init:force": "node dist/scripts/initDatabase.js --force",
+    "db:init:dev": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts",
+    "db:init:dev:force": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts --force",
     "inspect-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-account-fields.ts",
     "inspect-all-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-all-fields.ts"
   },
