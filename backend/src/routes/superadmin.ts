@@ -10,7 +10,16 @@ const router = Router();
 function isSuperAdmin(req: Request, res: Response, next: Function) {
   const session = req.session as any;
 
+  console.log('Super admin middleware - Session check:', {
+    hasSession: !!session,
+    isSuperAdmin: session?.isSuperAdmin,
+    userId: session?.userId,
+    sessionId: req.sessionID,
+    cookies: req.headers.cookie,
+  });
+
   if (!session?.isSuperAdmin) {
+    console.log('Super admin access denied - not authenticated');
     return res.status(403).json({
       success: false,
       error: 'Super admin access required',
