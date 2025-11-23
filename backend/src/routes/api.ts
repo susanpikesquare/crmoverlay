@@ -431,6 +431,7 @@ router.get('/dashboard/stats', isAuthenticated, async (req: Request, res: Respon
  * GET /api/dashboard/sales-leader
  * Returns sales leader dashboard data with team metrics
  * Only accessible by users with manager/admin profiles
+ * Supports filters: dateRange, reps, minDealSize, includeAll
  */
 router.get('/dashboard/sales-leader', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -445,7 +446,26 @@ router.get('/dashboard/sales-leader', isAuthenticated, async (req: Request, res:
       });
     }
 
-    const data = await HubData.getSalesLeaderDashboard(connection, userId);
+    // Parse query parameters
+    const filters: any = {};
+
+    if (req.query.dateRange) {
+      filters.dateRange = req.query.dateRange as string;
+    }
+
+    if (req.query.reps) {
+      filters.reps = (req.query.reps as string).split(',');
+    }
+
+    if (req.query.minDealSize) {
+      filters.minDealSize = parseInt(req.query.minDealSize as string, 10);
+    }
+
+    if (req.query.includeAll === 'true') {
+      filters.includeAll = true;
+    }
+
+    const data = await HubData.getSalesLeaderDashboard(connection, userId, filters);
 
     res.json({
       success: true,

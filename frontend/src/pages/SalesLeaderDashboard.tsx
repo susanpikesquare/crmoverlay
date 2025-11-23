@@ -72,14 +72,32 @@ export default function SalesLeaderDashboard() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showAllReps, setShowAllReps] = useState(false);
 
+  // Filter states
+  const [dateRange, setDateRange] = useState('thisYear'); // thisQuarter, lastQuarter, thisYear, custom
+  const [selectedReps, setSelectedReps] = useState<string[]>([]);
+  const [minDealSize, setMinDealSize] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
+
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [dateRange, selectedReps, minDealSize]);
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/dashboard/sales-leader');
+
+      // Build query params
+      const params = new URLSearchParams();
+      params.append('dateRange', dateRange);
+      if (selectedReps.length > 0) {
+        params.append('reps', selectedReps.join(','));
+      }
+      if (minDealSize > 0) {
+        params.append('minDealSize', minDealSize.toString());
+      }
+      params.append('includeAll', 'true'); // Fallback to show all if no team members found
+
+      const response = await api.get(`/api/dashboard/sales-leader?${params.toString()}`);
       setData(response.data.data);
       setError(null);
     } catch (err: any) {
@@ -173,10 +191,117 @@ export default function SalesLeaderDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Sales Leadership Command Center</h1>
-        <p className="text-gray-600">Team performance and risk overview</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Sales Leadership Command Center</h1>
+          <p className="text-gray-600">Team performance and risk overview</p>
+        </div>
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          Filters
+        </button>
       </div>
+
+      {/* Filters Panel */}
+      {showFilters && (
+        <div className="mb-6 bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Date Range Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
+              <select
+                value={dateRange}
+                onChange={(e) => setDateRange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              >
+                <option value="thisQuarter">This Quarter</option>
+                <option value="lastQuarter">Last Quarter</option>
+                <option value="thisYear">This Year (Default)</option>
+                <option value="lastYear">Last Year</option>
+                <option value="all">All Time</option>
+              </select>
+            </div>
+
+            {/* Team Member Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
+              <select
+                multiple
+                value={selectedReps}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions, option => option.value);
+                  setSelectedReps(selected);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              >
+                <option value="">All Team Members</option>
+                {repPerformance.map(rep => (
+                  <option key={rep.repId} value={rep.repId}>{rep.repName}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+            </div>
+
+            {/* Min Deal Size Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Min Deal Size: {formatCurrency(minDealSize)}
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="500000"
+                step="10000"
+                value={minDealSize}
+                onChange={(e) => setMinDealSize(Number(e.target.value))}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>$0</span>
+                <span>$500K+</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Filters & Reset */}
+          <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="flex flex-wrap gap-2">
+              {dateRange !== 'thisYear' && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
+                  {dateRange === 'thisQuarter' ? 'This Quarter' :
+                   dateRange === 'lastQuarter' ? 'Last Quarter' :
+                   dateRange === 'lastYear' ? 'Last Year' : 'All Time'}
+                </span>
+              )}
+              {selectedReps.length > 0 && (
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                  {selectedReps.length} rep{selectedReps.length > 1 ? 's' : ''} selected
+                </span>
+              )}
+              {minDealSize > 0 && (
+                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+                  Min: {formatCurrency(minDealSize)}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setDateRange('thisYear');
+                setSelectedReps([]);
+                setMinDealSize(0);
+              }}
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Reset Filters
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Top Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

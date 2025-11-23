@@ -838,12 +838,20 @@ export interface SalesLeaderDashboard {
   }>;
 }
 
+interface DashboardFilters {
+  dateRange?: string;
+  reps?: string[];
+  minDealSize?: number;
+  includeAll?: boolean;
+}
+
 /**
  * Get Sales Leader Dashboard data with team metrics and coaching opportunities
  */
 export async function getSalesLeaderDashboard(
   connection: Connection,
-  managerId: string
+  managerId: string,
+  filters: DashboardFilters = {}
 ): Promise<SalesLeaderDashboard> {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
@@ -860,26 +868,63 @@ export async function getSalesLeaderDashboard(
     `;
     const teamMembersResult = await connection.query(teamMembersQuery);
     const teamMembers = teamMembersResult.records as any[];
-    const teamMemberIds = teamMembers.map(u => u.Id);
+    let teamMemberIds = teamMembers.map(u => u.Id);
 
-    if (teamMemberIds.length === 0) {
-      // No direct reports - return empty dashboard
+    // FALLBACK: If no direct reports found and includeAll is true, get ALL active users
+    if (teamMemberIds.length === 0 && filters.includeAll) {
+      console.log('No direct reports found - falling back to all active users');
+      const allUsersQuery = `
+        SELECT Id, Name
+        FROM User
+        WHERE IsActive = true
+        LIMIT 100
+      `;
+      const allUsersResult = await connection.query(allUsersQuery);
+      const allUsers = allUsersResult.records as any[];
+      teamMemberIds = allUsers.map(u => u.Id);
+
+      if (teamMemberIds.length === 0) {
+        return getEmptySalesLeaderDashboard();
+      }
+    } else if (teamMemberIds.length === 0) {
+      // No direct reports and not fallback mode - return empty
       return getEmptySalesLeaderDashboard();
+    }
+
+    // Apply rep filter if specified
+    if (filters.reps && filters.reps.length > 0) {
+      teamMemberIds = teamMemberIds.filter(id => filters.reps!.includes(id));
     }
 
     const teamMemberIdsStr = teamMemberIds.map(id => `'${id}'`).join(',');
 
-    // Get team quota attainment (closed won this year)
+    // Calculate date filter based on dateRange
+    let dateFilter = `CALENDAR_YEAR(CloseDate) = ${currentYear}`;
+    if (filters.dateRange === 'thisQuarter') {
+      const quarter = Math.floor(currentMonth / 3) + 1;
+      dateFilter = `CALENDAR_YEAR(CloseDate) = ${currentYear} AND CALENDAR_QUARTER(CloseDate) = ${quarter}`;
+    } else if (filters.dateRange === 'lastQuarter') {
+      const lastQuarter = currentMonth < 3 ? 4 : Math.floor(currentMonth / 3);
+      const lastQuarterYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+      dateFilter = `CALENDAR_YEAR(CloseDate) = ${lastQuarterYear} AND CALENDAR_QUARTER(CloseDate) = ${lastQuarter}`;
+    } else if (filters.dateRange === 'lastYear') {
+      dateFilter = `CALENDAR_YEAR(CloseDate) = ${currentYear - 1}`;
+    } else if (filters.dateRange === 'all') {
+      dateFilter = '1=1'; // No date filter
+    }
+
+    // Get team quota attainment (closed won with date filter)
     const closedWonQuery = `
       SELECT SUM(Amount) total, OwnerId, Owner.Name
       FROM Opportunity
       WHERE OwnerId IN (${teamMemberIdsStr})
         AND IsWon = true
-        AND CALENDAR_YEAR(CloseDate) = ${currentYear}
+        AND ${dateFilter}
+        ${filters.minDealSize ? `AND Amount >= ${filters.minDealSize}` : ''}
       GROUP BY OwnerId, Owner.Name
     `;
 
-    // Get team pipeline (open opps)
+    // Get team pipeline (open opps with filters)
     const pipelineQuery = `
       SELECT Id, Name, Amount, StageName, OwnerId, Owner.Name, AccountId, Account.Name,
              CloseDate, CreatedDate, LastModifiedDate,
@@ -890,6 +935,7 @@ export async function getSalesLeaderDashboard(
       FROM Opportunity
       WHERE OwnerId IN (${teamMemberIdsStr})
         AND IsClosed = false
+        ${filters.minDealSize ? `AND Amount >= ${filters.minDealSize}` : ''}
     `;
 
     // Get recent wins (last 30 days)
