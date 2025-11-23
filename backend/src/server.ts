@@ -30,12 +30,13 @@ app.use(express.urlencoded({ extended: true }));
 // Session configuration with PostgreSQL store
 const PgSession = connectPgSimple(session);
 
+// Parse DATABASE_URL for session store (handle Heroku's postgres:// protocol)
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/formation_dev';
+const sessionConnectionString = DATABASE_URL.replace(/^postgres:\/\//, 'postgresql://');
+
 app.use(session({
   store: new PgSession({
-    conObject: {
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    },
+    conString: sessionConnectionString,
     tableName: 'session',
     createTableIfMissing: true,
   }),
