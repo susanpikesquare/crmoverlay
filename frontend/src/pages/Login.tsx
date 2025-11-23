@@ -11,7 +11,7 @@ export default function Login() {
       <div className="max-w-md w-full">
         {/* Logo/Branding */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Formation</h1>
+          <h1 className="text-5xl font-bold text-white mb-2">FormationIQ</h1>
           <p className="text-blue-100 text-lg">by PikeSquare</p>
         </div>
 
@@ -39,11 +39,6 @@ export default function Login() {
               <span className="font-medium">Secure Login:</span> You'll be redirected to Salesforce to authenticate
             </p>
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-blue-100 text-sm">
-          <p>Powered by Clay & 6sense Intelligence</p>
         </div>
       </div>
     </div>

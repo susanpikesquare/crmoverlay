@@ -102,7 +102,7 @@ export default function Navigation() {
           {/* Logo */}
           <Link to="/dashboard" className="flex items-center">
             <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-              Formation
+              FormationIQ
             </span>
           </Link>
 
