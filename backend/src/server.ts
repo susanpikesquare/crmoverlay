@@ -1,6 +1,7 @@
 import express, { Express } from 'express';
 import cors from 'cors';
 import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
 import dotenv from 'dotenv';
 import path from 'path';
 import routes from './routes';
@@ -9,6 +10,7 @@ import apiRoutes from './routes/api';
 import adminRoutes from './routes/admin';
 import superadminRoutes from './routes/superadmin';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { sequelize } from './config/database';
 
 // Load environment variables
 dotenv.config();
@@ -26,8 +28,18 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session configuration
+// Session configuration with PostgreSQL store
+const PgSession = connectPgSimple(session);
+
 app.use(session({
+  store: new PgSession({
+    conObject: {
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    },
+    tableName: 'session',
+    createTableIfMissing: true,
+  }),
   secret: process.env.SESSION_SECRET || 'revenue-intelligence-secret-key',
   resave: false,
   saveUninitialized: false,
