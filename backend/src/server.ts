@@ -4,6 +4,7 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import dotenv from 'dotenv';
 import path from 'path';
+import { Pool } from 'pg';
 import routes from './routes';
 import authRoutes from './routes/auth';
 import apiRoutes from './routes/api';
@@ -34,22 +35,20 @@ const PgSession = connectPgSimple(session);
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/formation_dev';
 const sessionConnectionString = DATABASE_URL.replace(/^postgres:\/\//, 'postgresql://');
 
-// Add SSL for production (Heroku requires it)
-const sessionStoreConfig: any = {
-  conString: sessionConnectionString,
-  tableName: 'session',
-  createTableIfMissing: true,
-};
-
-// Add SSL configuration for production
-if (process.env.NODE_ENV === 'production') {
-  sessionStoreConfig.ssl = {
+// Create PostgreSQL pool with SSL configuration for production
+const sessionPool = new Pool({
+  connectionString: sessionConnectionString,
+  ssl: process.env.NODE_ENV === 'production' ? {
     rejectUnauthorized: false,
-  };
-}
+  } : false,
+});
 
 app.use(session({
-  store: new PgSession(sessionStoreConfig),
+  store: new PgSession({
+    pool: sessionPool,
+    tableName: 'session',
+    createTableIfMissing: true,
+  }),
   secret: process.env.SESSION_SECRET || 'revenue-intelligence-secret-key',
   resave: false,
   saveUninitialized: false,
