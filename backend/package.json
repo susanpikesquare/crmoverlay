@@ -8,6 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit",
+    "db:init": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts",
+    "db:init:force": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts --force",
     "inspect-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-account-fields.ts",
     "inspect-all-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-all-fields.ts"
   },
@@ -19,19 +21,26 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "jsforce": "^2.0.0-beta.29",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.17.10",
+    "@types/node": "^20.10.5",
+    "axios": "^1.6.2",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "express-session": "^1.17.3",
-    "axios": "^1.6.2",
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.10.5",
-    "@types/cors": "^2.8.17",
-    "@types/express-session": "^1.17.10",
+    "jsforce": "^2.0.0-beta.29",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "sequelize": "^6.37.7",
     "typescript": "^5.3.3"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/pg": "^8.15.6",
     "nodemon": "^3.0.2",
     "ts-node": "^10.9.2"
   }
