@@ -64,14 +64,17 @@ const Landing = () => {
     {
       title: 'Dashboard Overview',
       description: 'Your revenue intelligence hub with key metrics and recent activity',
+      image: '/screenshots/dashboard.png',
     },
     {
       title: 'Account 360° View',
       description: 'Complete account details with opportunities and custom data',
+      image: '/screenshots/account360.png',
     },
     {
       title: 'Opportunities List',
       description: 'Track and manage opportunities across all stages',
+      image: '/screenshots/opportunities.png',
     },
   ];
 
@@ -89,7 +92,7 @@ const Landing = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                  Formation
+                  FormationIQ
                 </h1>
                 <p className="text-xs text-gray-500">by PikeSquare</p>
               </div>
@@ -114,7 +117,7 @@ const Landing = () => {
             </span>
           </h2>
           <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
-            Formation is a multi-tenant SaaS platform that delivers powerful revenue intelligence
+            FormationIQ is a multi-tenant SaaS platform that delivers powerful revenue intelligence
             by seamlessly integrating with your Salesforce org. Get 360° views of accounts,
             track opportunities, and drive growth with real-time insights.
           </p>
@@ -165,13 +168,29 @@ const Landing = () => {
                 <h4 className="text-2xl font-bold text-gray-900 mb-2">{screenshot.title}</h4>
                 <p className="text-gray-600">{screenshot.description}</p>
               </div>
-              <div className="bg-gray-100 p-8 min-h-[400px] flex items-center justify-center">
-                <div className="text-center">
-                  <svg className="w-24 h-24 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <p className="text-gray-400 font-medium">Screenshot: {screenshot.title}</p>
-                </div>
+              <div className="bg-gray-100 p-4">
+                <img
+                  src={screenshot.image}
+                  alt={screenshot.title}
+                  className="w-full h-auto rounded-lg shadow-lg"
+                  onError={(e) => {
+                    // Fallback to placeholder if image fails to load
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent) {
+                      parent.className = 'bg-gray-100 p-8 min-h-[400px] flex items-center justify-center';
+                      parent.innerHTML = `
+                        <div class="text-center">
+                          <svg class="w-24 h-24 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <p class="text-gray-400 font-medium">Screenshot: ${screenshot.title}</p>
+                        </div>
+                      `;
+                    }
+                  }}
+                />
               </div>
             </div>
           ))}
@@ -197,7 +216,7 @@ const Landing = () => {
               <span className="text-3xl font-bold">2</span>
             </div>
             <h4 className="text-xl font-bold mb-2">Sync Your Data</h4>
-            <p className="text-purple-100">Formation automatically syncs accounts, opportunities, and custom fields</p>
+            <p className="text-purple-100">FormationIQ automatically syncs accounts, opportunities, and custom fields</p>
           </div>
           <div className="text-center">
             <div className="bg-white/20 backdrop-blur-lg rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
@@ -214,7 +233,7 @@ const Landing = () => {
         <div className="bg-white rounded-3xl shadow-2xl p-12 text-center">
           <h3 className="text-4xl font-bold text-gray-900 mb-4">Ready to Transform Your Revenue Intelligence?</h3>
           <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Join leading teams using Formation to drive revenue growth with powerful Salesforce insights
+            Join leading teams using FormationIQ to drive revenue growth with powerful Salesforce insights
           </p>
           <button
             onClick={() => navigate('/login')}
@@ -237,7 +256,7 @@ const Landing = () => {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold">Formation</h3>
+                  <h3 className="text-xl font-bold">FormationIQ</h3>
                   <p className="text-sm text-gray-400">by PikeSquare</p>
                 </div>
               </div>
@@ -259,7 +278,7 @@ const Landing = () => {
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; {new Date().getFullYear()} Formation by PikeSquare. All rights reserved.</p>
+            <p>&copy; {new Date().getFullYear()} FormationIQ by PikeSquare. All rights reserved.</p>
           </div>
         </div>
       </footer>
