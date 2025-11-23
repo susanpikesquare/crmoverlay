@@ -20,8 +20,8 @@ export interface CustomerAttributes {
   companyName: string;
   subdomain: string;
   salesforceInstanceUrl: string;
-  salesforceClientId: string;
-  salesforceClientSecret: string;
+  salesforceClientId: string | null;
+  salesforceClientSecret: string | null;
   subscriptionTier: SubscriptionTier;
   subscriptionStatus: SubscriptionStatus;
   isSuspended: boolean;
@@ -33,15 +33,15 @@ export interface CustomerAttributes {
   updatedAt?: Date;
 }
 
-export interface CustomerCreationAttributes extends Optional<CustomerAttributes, 'id' | 'createdAt' | 'updatedAt' | 'trialEndsAt' | 'isSuspended' | 'suspendedReason' | 'suspendedAt' | 'suspendedByUserId'> {}
+export interface CustomerCreationAttributes extends Optional<CustomerAttributes, 'id' | 'createdAt' | 'updatedAt' | 'trialEndsAt' | 'isSuspended' | 'suspendedReason' | 'suspendedAt' | 'suspendedByUserId' | 'salesforceClientId' | 'salesforceClientSecret'> {}
 
 class Customer extends Model<CustomerAttributes, CustomerCreationAttributes> implements CustomerAttributes {
   public id!: string;
   public companyName!: string;
   public subdomain!: string;
   public salesforceInstanceUrl!: string;
-  public salesforceClientId!: string;
-  public salesforceClientSecret!: string;
+  public salesforceClientId!: string | null;
+  public salesforceClientSecret!: string | null;
   public subscriptionTier!: SubscriptionTier;
   public subscriptionStatus!: SubscriptionStatus;
   public isSuspended!: boolean;
@@ -53,12 +53,12 @@ class Customer extends Model<CustomerAttributes, CustomerCreationAttributes> imp
   public readonly updatedAt!: Date;
 
   // Helper methods to get decrypted values
-  public getDecryptedClientId(): string {
-    return decrypt(this.salesforceClientId);
+  public getDecryptedClientId(): string | null {
+    return this.salesforceClientId ? decrypt(this.salesforceClientId) : null;
   }
 
-  public getDecryptedClientSecret(): string {
-    return decrypt(this.salesforceClientSecret);
+  public getDecryptedClientSecret(): string | null {
+    return this.salesforceClientSecret ? decrypt(this.salesforceClientSecret) : null;
   }
 
   // Helper method to check if trial is expired
@@ -101,7 +101,7 @@ Customer.init(
     },
     salesforceClientId: {
       type: DataTypes.TEXT,
-      allowNull: false,
+      allowNull: true,
       field: 'salesforce_client_id',
       set(value: string) {
         // Encrypt before storing
@@ -110,7 +110,7 @@ Customer.init(
     },
     salesforceClientSecret: {
       type: DataTypes.TEXT,
-      allowNull: false,
+      allowNull: true,
       field: 'salesforce_client_secret',
       set(value: string) {
         // Encrypt before storing

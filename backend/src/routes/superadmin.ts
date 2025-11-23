@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { Customer, User, AuditLog } from '../models';
+import { SubscriptionStatus } from '../models/Customer';
 import { Op } from 'sequelize';
 
 const router = Router();
@@ -66,7 +67,7 @@ router.post('/customers', isSuperAdmin, async (req: Request, res: Response) => {
       subdomain: subdomain.toLowerCase(),
       salesforceInstanceUrl: salesforceInstanceUrl || null,
       subscriptionTier,
-      subscriptionStatus: 'trial',
+      subscriptionStatus: SubscriptionStatus.TRIAL,
       trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days trial
       isSuspended: false,
     });
