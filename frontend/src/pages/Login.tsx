@@ -11,8 +11,8 @@ export default function Login() {
       <div className="max-w-md w-full">
         {/* Logo/Branding */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">CRM Overlay</h1>
-          <p className="text-blue-100 text-lg">Revenue Intelligence Platform</p>
+          <h1 className="text-4xl font-bold text-white mb-2">Formation</h1>
+          <p className="text-blue-100 text-lg">by PikeSquare</p>
         </div>
 
         {/* Login Card */}

@@ -1,7 +1,7 @@
 {
-  "name": "revenue-intelligence-backend",
+  "name": "formation-backend",
   "version": "1.0.0",
-  "description": "Backend API for Revenue Intelligence CRM Overlay",
+  "description": "Formation by PikeSquare - Revenue intelligence platform backend API",
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node --project tsconfig.nodemon.json src/server.ts",

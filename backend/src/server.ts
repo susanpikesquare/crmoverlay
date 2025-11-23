@@ -75,7 +75,7 @@ app.use(errorHandler);
 // Start server
 app.listen(PORT, () => {
   console.log('=================================');
-  console.log('Revenue Intelligence Backend API');
+  console.log('Formation by PikeSquare');
   console.log('=================================');
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);

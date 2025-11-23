@@ -1,7 +1,7 @@
 {
-  "name": "revenue-intelligence-frontend",
+  "name": "formation-frontend",
   "version": "1.0.0",
-  "description": "Frontend for Revenue Intelligence CRM Overlay",
+  "description": "Formation by PikeSquare - Revenue intelligence platform frontend",
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",
