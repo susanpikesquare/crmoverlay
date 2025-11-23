@@ -739,4 +739,164 @@ router.get('/hub/csm/metrics', isAuthenticated, async (req: Request, res: Respon
   }
 });
 
+/**
+ * PATCH /api/sobjects/:objectType/:id
+ * Updates a Salesforce record with field-level security checks
+ * Respects user's Salesforce permissions - only allows updates to fields the user can edit
+ */
+router.patch('/sobjects/:objectType/:id', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const { objectType, id } = req.params;
+    const updates = req.body;
+
+    if (!connection) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    // Validate object type
+    const allowedObjects = ['Account', 'Opportunity', 'Contact', 'Lead', 'Case'];
+    if (!allowedObjects.includes(objectType)) {
+      return res.status(400).json({
+        success: false,
+        error: `Object type ${objectType} is not allowed for updates`,
+      });
+    }
+
+    // Get field metadata to check permissions
+    const describe = await connection.sobject(objectType).describe();
+    const fieldMap = new Map(describe.fields.map(f => [f.name, f]));
+
+    // Check each field for updateable permission
+    const notUpdateableFields: string[] = [];
+    const validUpdates: any = { Id: id };
+
+    for (const [fieldName, value] of Object.entries(updates)) {
+      if (fieldName === 'Id') continue; // Skip Id field
+
+      const fieldMeta = fieldMap.get(fieldName);
+
+      if (!fieldMeta) {
+        return res.status(400).json({
+          success: false,
+          error: `Field ${fieldName} does not exist on ${objectType}`,
+        });
+      }
+
+      // Check if user has permission to update this field
+      if (!fieldMeta.updateable) {
+        notUpdateableFields.push(fieldName);
+      } else {
+        validUpdates[fieldName] = value;
+      }
+    }
+
+    // If any fields are not updateable, return error
+    if (notUpdateableFields.length > 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'Permission denied',
+        message: `You do not have permission to update the following fields: ${notUpdateableFields.join(', ')}`,
+        notUpdateableFields,
+      });
+    }
+
+    // If no valid updates after removing Id, return error
+    if (Object.keys(validUpdates).length === 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid fields to update',
+      });
+    }
+
+    // Perform the update
+    const result = await connection.sobject(objectType).update(validUpdates);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Update failed',
+        message: result.errors?.join(', ') || 'Unknown error',
+      });
+    }
+
+    // Fetch and return the updated record
+    let updatedRecord;
+    if (objectType === 'Account') {
+      updatedRecord = await SFData.getAccountById(connection, id);
+    } else if (objectType === 'Opportunity') {
+      updatedRecord = await SFData.getOpportunityById(connection, id);
+    } else {
+      // For other object types, do a basic query
+      const query = `SELECT Id, Name FROM ${objectType} WHERE Id = '${id}'`;
+      const queryResult = await connection.query(query);
+      updatedRecord = queryResult.records[0];
+    }
+
+    res.json({
+      success: true,
+      data: updatedRecord,
+      updated: Object.keys(validUpdates).filter(k => k !== 'Id'),
+    });
+  } catch (error: any) {
+    console.error('Error updating record:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update record',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/sobjects/:objectType/:id/permissions
+ * Returns field-level permissions for a specific record
+ * Used by frontend to determine which fields can be edited
+ */
+router.get('/sobjects/:objectType/:id/permissions', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const { objectType } = req.params;
+
+    if (!connection) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    // Get field metadata
+    const describe = await connection.sobject(objectType).describe();
+
+    // Build permissions map
+    const permissions: Record<string, { updateable: boolean; type: string; label: string }> = {};
+
+    for (const field of describe.fields) {
+      permissions[field.name] = {
+        updateable: field.updateable,
+        type: field.type,
+        label: field.label,
+      };
+    }
+
+    res.json({
+      success: true,
+      data: {
+        objectUpdateable: describe.updateable,
+        fields: permissions,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching permissions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch permissions',
+      message: error.message,
+    });
+  }
+});
+
 export default router;

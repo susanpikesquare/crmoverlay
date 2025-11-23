@@ -1,6 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
+import { useState } from 'react';
 import apiClient from '../services/api';
+import api from '../services/api';
+import EditableField from '../components/EditableField';
 
 interface Account {
   Id: string;
@@ -39,8 +42,21 @@ interface Opportunity {
   IsAtRisk__c: boolean;
 }
 
+interface FieldPermissions {
+  updateable: boolean;
+  type: string;
+  label: string;
+}
+
+interface Permissions {
+  objectUpdateable: boolean;
+  fields: Record<string, FieldPermissions>;
+}
+
 export default function Account360() {
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const { data: account, isLoading } = useQuery({
     queryKey: ['account', id],
@@ -50,6 +66,40 @@ export default function Account360() {
     },
     enabled: !!id,
   });
+
+  // Fetch field permissions
+  const { data: permissions } = useQuery({
+    queryKey: ['accountPermissions', id],
+    queryFn: async () => {
+      const response = await api.get(`/api/sobjects/Account/${id}/permissions`);
+      return response.data.data as Permissions;
+    },
+    enabled: !!id,
+  });
+
+  // Mutation for updating account fields
+  const updateAccountMutation = useMutation({
+    mutationFn: async ({ fieldName, value }: { fieldName: string; value: any }) => {
+      const response = await api.patch(`/api/sobjects/Account/${id}`, {
+        [fieldName]: value,
+      });
+      return response.data.data;
+    },
+    onSuccess: (updatedAccount, variables) => {
+      // Update cache with new data
+      queryClient.setQueryData(['account', id], updatedAccount);
+      // Show success message
+      setSuccessMessage(`Successfully updated ${variables.fieldName}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    },
+    onError: (error: any) => {
+      console.error('Failed to update account:', error);
+    },
+  });
+
+  const handleFieldSave = async (fieldName: string, value: any) => {
+    await updateAccountMutation.mutateAsync({ fieldName, value });
+  };
 
   const { data: opportunities } = useQuery({
     queryKey: ['accountOpportunities', id],
@@ -150,6 +200,26 @@ export default function Account360() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-8">
+        {/* Success Message */}
+        {successMessage && (
+          <div className="mb-6 bg-green-50 border border-green-200 text-green-800 px-6 py-4 rounded-xl shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span className="font-medium">{successMessage}</span>
+            </div>
+            <button
+              onClick={() => setSuccessMessage(null)}
+              className="text-green-600 hover:text-green-800"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* Back Button */}
         <Link
           to="/dashboard"
@@ -221,6 +291,14 @@ export default function Account360() {
             </div>
 
             <div className="space-y-4">
+              <EditableField
+                value={account.Industry}
+                fieldName="Industry"
+                label="Industry"
+                canEdit={permissions?.fields.Industry?.updateable || false}
+                onSave={handleFieldSave}
+              />
+
               <div>
                 <label className="text-sm font-medium text-gray-600">Headquarters</label>
                 <p className="text-gray-900 mt-1">
@@ -228,34 +306,47 @@ export default function Account360() {
                 </p>
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-gray-600">Website</label>
-                <a
-                  href={account.Website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-700 mt-1 block"
-                >
-                  {account.Website}
-                </a>
-              </div>
+              <EditableField
+                value={account.Website}
+                fieldName="Website"
+                fieldType="url"
+                label="Website"
+                canEdit={permissions?.fields.Website?.updateable || false}
+                onSave={handleFieldSave}
+              />
+
+              <EditableField
+                value={account.AnnualRevenue}
+                fieldName="AnnualRevenue"
+                fieldType="currency"
+                label="Annual Revenue"
+                canEdit={permissions?.fields.AnnualRevenue?.updateable || false}
+                onSave={handleFieldSave}
+                formatter={formatCurrency}
+                className="font-semibold"
+              />
+
+              <EditableField
+                value={account.NumberOfEmployees}
+                fieldName="NumberOfEmployees"
+                fieldType="int"
+                label="Employee Count (Salesforce)"
+                canEdit={permissions?.fields.NumberOfEmployees?.updateable || false}
+                onSave={handleFieldSave}
+                formatter={(val) => val?.toLocaleString()}
+              />
 
               <div>
-                <label className="text-sm font-medium text-gray-600">Annual Revenue</label>
-                <p className="text-gray-900 mt-1 text-lg font-semibold">
-                  {formatCurrency(account.AnnualRevenue)}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-600">Employee Count</label>
+                <label className="text-sm font-medium text-gray-600">Employee Count (Clay)</label>
                 <div className="flex items-center gap-3 mt-1">
                   <p className="text-gray-900 text-lg font-semibold">
-                    {account.Clay_Employee_Count__c.toLocaleString()}
+                    {account.Clay_Employee_Count__c?.toLocaleString() || '—'}
                   </p>
-                  <span className="px-2 py-1 bg-green-100 text-green-800 text-sm font-semibold rounded">
-                    +{account.Clay_Employee_Growth_Pct__c}% growth
-                  </span>
+                  {account.Clay_Employee_Growth_Pct__c && (
+                    <span className="px-2 py-1 bg-green-100 text-green-800 text-sm font-semibold rounded">
+                      +{account.Clay_Employee_Growth_Pct__c}% growth
+                    </span>
+                  )}
                 </div>
               </div>
 
