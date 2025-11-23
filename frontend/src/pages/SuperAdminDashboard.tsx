@@ -393,6 +393,8 @@ function CreateCustomerModal({ onClose, onCreate }: { onClose: () => void; onCre
     companyName: '',
     subdomain: '',
     salesforceInstanceUrl: '',
+    salesforceClientId: '',
+    salesforceClientSecret: '',
     subscriptionTier: 'starter',
   });
 
@@ -440,16 +442,64 @@ function CreateCustomerModal({ onClose, onCreate }: { onClose: () => void; onCre
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Salesforce Instance URL
+              Salesforce Instance URL *
             </label>
             <input
               type="url"
+              required
               value={formData.salesforceInstanceUrl}
               onChange={(e) => setFormData({ ...formData, salesforceInstanceUrl: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
               placeholder="https://yourorg.my.salesforce.com"
             />
-            <p className="mt-1 text-sm text-gray-500">Customer can connect this later via OAuth</p>
+            <p className="mt-1 text-sm text-gray-500">The customer's Salesforce org URL</p>
+          </div>
+
+          <div className="border-t border-gray-200 pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Salesforce Connected App Credentials</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              The customer must create a Connected App in their Salesforce org and provide these credentials.
+              <a
+                href="https://help.salesforce.com/s/articleView?id=sf.connected_app_create.htm"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-purple-600 hover:text-purple-700 ml-1"
+              >
+                Learn how →
+              </a>
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Consumer Key (Client ID) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.salesforceClientId}
+                  onChange={(e) => setFormData({ ...formData, salesforceClientId: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent font-mono text-sm"
+                  placeholder="3MVG9..."
+                />
+                <p className="mt-1 text-sm text-gray-500">From the Connected App in Salesforce</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Consumer Secret (Client Secret) *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={formData.salesforceClientSecret}
+                  onChange={(e) => setFormData({ ...formData, salesforceClientSecret: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent font-mono text-sm"
+                  placeholder="Enter consumer secret"
+                />
+                <p className="mt-1 text-sm text-gray-500">Will be encrypted and stored securely</p>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -550,43 +600,35 @@ function CustomerDetailModal({ customer, onClose, onRefresh }: { customer: Custo
           {/* Salesforce Connection */}
           <div className="border-t border-gray-200 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Salesforce Integration</h3>
-            {customer.salesforceInstanceUrl ? (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Instance URL</label>
+                <p className="text-sm font-mono text-gray-900">{customer.salesforceInstanceUrl || 'Not configured'}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Connected App Status</label>
+                <div className="flex items-center gap-2">
                   <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  <span className="font-semibold text-green-800">Connected</span>
+                  <span className="text-sm font-semibold text-green-800">Credentials Configured</span>
                 </div>
-                <p className="text-sm text-green-700">
-                  Instance: <span className="font-mono">{customer.salesforceInstanceUrl}</span>
+                <p className="text-xs text-gray-600 mt-1">
+                  Consumer Key and Secret are securely stored and encrypted
                 </p>
-                <button
-                  onClick={handleConnectSalesforce}
-                  className="mt-3 text-sm text-green-700 hover:text-green-900 font-medium"
-                >
-                  Reconnect Salesforce
-                </button>
               </div>
-            ) : (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <span className="font-semibold text-yellow-800">Not Connected</span>
-                </div>
-                <p className="text-sm text-yellow-700 mb-3">
-                  This customer needs to connect their Salesforce environment
+              <div className="pt-2">
+                <p className="text-sm text-gray-600 mb-2">
+                  Users from this customer can now authenticate with their Salesforce org using OAuth.
                 </p>
                 <button
                   onClick={handleConnectSalesforce}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                 >
-                  Connect Salesforce
+                  Test OAuth Connection
                 </button>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Suspension Info */}

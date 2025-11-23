@@ -41,14 +41,21 @@ function isSuperAdmin(req: Request, res: Response, next: Function) {
  */
 router.post('/customers', isSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { companyName, subdomain, salesforceInstanceUrl, subscriptionTier } = req.body;
+    const {
+      companyName,
+      subdomain,
+      salesforceInstanceUrl,
+      salesforceClientId,
+      salesforceClientSecret,
+      subscriptionTier
+    } = req.body;
     const session = req.session as any;
 
     // Validate required fields
-    if (!companyName || !subdomain || !subscriptionTier) {
+    if (!companyName || !subdomain || !subscriptionTier || !salesforceInstanceUrl || !salesforceClientId || !salesforceClientSecret) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: companyName, subdomain, subscriptionTier',
+        error: 'Missing required fields: companyName, subdomain, salesforceInstanceUrl, salesforceClientId, salesforceClientSecret, subscriptionTier',
       });
     }
 
@@ -61,11 +68,13 @@ router.post('/customers', isSuperAdmin, async (req: Request, res: Response) => {
       });
     }
 
-    // Create customer
+    // Create customer (credentials will be automatically encrypted by the model)
     const customer = await Customer.create({
       companyName,
       subdomain: subdomain.toLowerCase(),
-      salesforceInstanceUrl: salesforceInstanceUrl || null,
+      salesforceInstanceUrl,
+      salesforceClientId,      // Will be encrypted by the model's setter
+      salesforceClientSecret,  // Will be encrypted by the model's setter
       subscriptionTier,
       subscriptionStatus: SubscriptionStatus.TRIAL,
       trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days trial

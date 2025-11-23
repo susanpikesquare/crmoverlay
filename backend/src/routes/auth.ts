@@ -1,19 +1,57 @@
 import { Router, Request, Response } from 'express';
 import { createOAuth2Instance, createConnection } from '../config/salesforce';
 import { isAuthenticated } from '../middleware/auth';
-import { User, AuditLog } from '../models';
+import { User, AuditLog, Customer } from '../models';
 
 const router = Router();
 
 /**
  * GET /auth/salesforce
  *
- * Initiates the Salesforce OAuth 2.0 authentication flow.
+ * Initiates the Salesforce OAuth 2.0 authentication flow using customer-specific credentials.
  * Redirects the user to Salesforce login page.
+ *
+ * Query Parameters:
+ * - customerId: The customer ID to use their Salesforce Connected App credentials
  */
-router.get('/salesforce', (_req: Request, res: Response) => {
+router.get('/salesforce', async (req: Request, res: Response) => {
   try {
-    const oauth2 = createOAuth2Instance();
+    const { customerId } = req.query;
+
+    let oauth2;
+
+    if (customerId) {
+      // Use customer-specific OAuth credentials
+      console.log('Using customer-specific OAuth credentials for customer:', customerId);
+
+      const customer = await Customer.findByPk(customerId as string);
+
+      if (!customer) {
+        return res.status(404).json({
+          success: false,
+          error: 'Customer not found',
+        });
+      }
+
+      // Get decrypted credentials
+      const clientId = customer.getDecryptedClientId();
+      const clientSecret = customer.getDecryptedClientSecret();
+
+      if (!clientId || !clientSecret) {
+        return res.status(400).json({
+          success: false,
+          error: 'Customer Salesforce credentials not configured',
+        });
+      }
+
+      oauth2 = createOAuth2Instance(clientId, clientSecret, customer.salesforceInstanceUrl);
+
+      // Store customer ID in session for callback
+      (req.session as any).oauthCustomerId = customerId;
+    } else {
+      // Fall back to global OAuth credentials (for backwards compatibility)
+      oauth2 = createOAuth2Instance();
+    }
 
     // Generate the authorization URL
     const authUrl = oauth2.getAuthorizationUrl({
@@ -168,7 +206,43 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     console.log('Received OAuth callback with code');
 
-    const oauth2 = createOAuth2Instance();
+    // Check if this is a customer-specific OAuth flow
+    const session = req.session as any;
+    const customerId = session?.oauthCustomerId;
+
+    let oauth2;
+
+    if (customerId) {
+      console.log('Using customer-specific OAuth credentials for callback, customer:', customerId);
+
+      const customer = await Customer.findByPk(customerId);
+
+      if (!customer) {
+        return res.status(404).json({
+          success: false,
+          error: 'Customer not found',
+        });
+      }
+
+      // Get decrypted credentials
+      const clientId = customer.getDecryptedClientId();
+      const clientSecret = customer.getDecryptedClientSecret();
+
+      if (!clientId || !clientSecret) {
+        return res.status(400).json({
+          success: false,
+          error: 'Customer Salesforce credentials not configured',
+        });
+      }
+
+      oauth2 = createOAuth2Instance(clientId, clientSecret, customer.salesforceInstanceUrl);
+
+      // Clean up the session variable
+      delete session.oauthCustomerId;
+    } else {
+      // Fall back to global OAuth credentials
+      oauth2 = createOAuth2Instance();
+    }
 
     // Exchange authorization code for access token
     const tokenResponse = await oauth2.requestToken(code);
@@ -235,8 +309,7 @@ router.get('/callback', async (req: Request, res: Response) => {
       // Continue with login even if profile query fails
     }
 
-    // Store tokens and user info in session
-    const session = req.session as any;
+    // Store tokens and user info in session (reuse session variable from earlier)
     session.accessToken = tokenResponse.access_token;
     session.refreshToken = tokenResponse.refresh_token;
     session.instanceUrl = tokenResponse.instance_url;

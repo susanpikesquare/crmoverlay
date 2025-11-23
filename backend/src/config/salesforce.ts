@@ -42,16 +42,23 @@ export const getSalesforceConfig = (): SalesforceOAuthConfig => {
 
 /**
  * Create a new jsforce OAuth2 instance
+ * @param customClientId - Optional customer-specific client ID
+ * @param customClientSecret - Optional customer-specific client secret
+ * @param customLoginUrl - Optional customer-specific login URL
  * @returns {OAuth2} Configured OAuth2 instance
  */
-export const createOAuth2Instance = (): OAuth2 => {
+export const createOAuth2Instance = (
+  customClientId?: string,
+  customClientSecret?: string,
+  customLoginUrl?: string
+): OAuth2 => {
   const config = getSalesforceConfig();
 
   return new jsforce.OAuth2({
-    clientId: config.clientId,
-    clientSecret: config.clientSecret,
+    clientId: customClientId || config.clientId,
+    clientSecret: customClientSecret || config.clientSecret,
     redirectUri: config.redirectUri,
-    loginUrl: config.loginUrl,
+    loginUrl: customLoginUrl || config.loginUrl,
   });
 };
 
