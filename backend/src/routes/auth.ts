@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { createOAuth2Instance, createConnection } from '../config/salesforce';
 import { isAuthenticated } from '../middleware/auth';
+import { User, AuditLog } from '../models';
 
 const router = Router();
 
@@ -28,6 +29,119 @@ router.get('/salesforce', (_req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'OAuth initialization failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /auth/superadmin/login
+ *
+ * Super admin login with email and password (NOT Salesforce OAuth).
+ * Requires email and password in request body.
+ */
+router.post('/superadmin/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and password are required',
+      });
+    }
+
+    console.log('Super admin login attempt:', email);
+
+    // Find user by email
+    const user = await User.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      console.log('User not found:', email);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password',
+      });
+    }
+
+    // Verify this is a super admin
+    if (!user.isSuperAdminUser()) {
+      console.log('User is not a super admin:', email);
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await user.verifyPassword(password);
+    if (!isValidPassword) {
+      console.log('Invalid password for:', email);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password',
+      });
+    }
+
+    console.log('Super admin authenticated:', email);
+
+    // Store user info in session
+    const session = req.session as any;
+    session.userId = user.id;
+    session.userInfo = {
+      id: user.id,
+      email: user.email,
+      name: user.getFullName(),
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      isSuperAdmin: true,
+    };
+    session.isSuperAdmin = true;
+
+    // Update last login
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    // Log the super admin login
+    await AuditLog.log({
+      userId: user.id,
+      customerId: null,
+      action: 'superadmin_login',
+      resourceType: 'user',
+      resourceId: user.id,
+      details: {
+        email: user.email,
+        loginMethod: 'email_password',
+      },
+      ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
+    });
+
+    // Save session before responding
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).json({
+          success: false,
+          error: 'Session creation failed',
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          user: session.userInfo,
+        },
+      });
+    });
+  } catch (error: any) {
+    console.error('Super admin login error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Login failed',
       message: error.message,
     });
   }

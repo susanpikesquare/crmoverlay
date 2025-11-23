@@ -1,6 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Login from './pages/Login';
+import SuperAdminLogin from './pages/SuperAdminLogin';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import Dashboard from './pages/Dashboard';
 import AEHub from './pages/AEHub';
 import AMHub from './pages/AMHub';
@@ -27,7 +29,10 @@ const queryClient = new QueryClient({
 // Layout wrapper to conditionally show navigation
 function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const showNav = location.pathname !== '/';
+  // Don't show nav on login pages or super admin pages
+  const showNav =
+    location.pathname !== '/' &&
+    !location.pathname.startsWith('/superadmin');
 
   return (
     <>
@@ -49,6 +54,8 @@ function App() {
         <Layout>
           <Routes>
             <Route path="/" element={<Login />} />
+            <Route path="/superadmin/login" element={<SuperAdminLogin />} />
+            <Route path="/superadmin/dashboard" element={<SuperAdminDashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/dashboard/ae" element={<AEHub />} />
             <Route path="/dashboard/am" element={<AMHub />} />

@@ -7,6 +7,7 @@ import routes from './routes';
 import authRoutes from './routes/auth';
 import apiRoutes from './routes/api';
 import adminRoutes from './routes/admin';
+import superadminRoutes from './routes/superadmin';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 // Load environment variables
@@ -45,6 +46,7 @@ app.use((req, _res, next) => {
 
 // API Routes
 app.use('/auth', authRoutes);
+app.use('/api/superadmin', superadminRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', apiRoutes);
 app.use('/', routes);
