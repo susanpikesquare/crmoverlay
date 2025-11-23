@@ -1,168 +1,266 @@
-import { useState, useEffect } from 'react';
-import { apiClient } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 
 const Landing = () => {
-  const [healthStatus, setHealthStatus] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    checkHealth();
-  }, []);
+  const features = [
+    {
+      title: 'Account 360° View',
+      description: 'Get a complete view of your accounts with comprehensive data from Salesforce, including account details, opportunities, and custom fields.',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      ),
+    },
+    {
+      title: 'Opportunity Intelligence',
+      description: 'Track opportunities across all stages with detailed insights, real-time updates, and comprehensive opportunity management.',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    },
+    {
+      title: 'Salesforce Integration',
+      description: 'Seamlessly integrate with your Salesforce org using OAuth 2.0 authentication for secure, real-time data access.',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      ),
+    },
+    {
+      title: 'Multi-Tenant Architecture',
+      description: 'Built for scale with secure multi-tenant architecture, allowing multiple organizations to use the platform with complete data isolation.',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+      ),
+    },
+    {
+      title: 'Dashboard Analytics',
+      description: 'Powerful dashboard with key metrics, recent activities, and actionable insights to drive your revenue intelligence.',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    },
+    {
+      title: 'Role-Based Access',
+      description: 'Granular access control with role-based permissions for Account Executives, Account Managers, CSMs, and Admins.',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      ),
+    },
+  ];
 
-  const checkHealth = async () => {
-    try {
-      setLoading(true);
-      const response = await apiClient.healthCheck();
-      setHealthStatus(response.data);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to connect to backend');
-      console.error('Health check failed:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const screenshots = [
+    {
+      title: 'Dashboard Overview',
+      description: 'Your revenue intelligence hub with key metrics and recent activity',
+    },
+    {
+      title: 'Account 360° View',
+      description: 'Complete account details with opportunities and custom data',
+    },
+    {
+      title: 'Opportunities List',
+      description: 'Track and manage opportunities across all stages',
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+      <header className="bg-white shadow-sm sticky top-0 z-50">
+        <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">RI</span>
-              </div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent">
-                CRM Overlay
-              </h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Revenue Intelligence</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-16">
-        <div className="text-center mb-16">
-          <h2 className="text-5xl font-bold text-gray-900 mb-6">
-            Revenue Intelligence Platform
-          </h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            AI-powered insights for AE, AM, and CSM cockpits. Connect to Salesforce,
-            Clay, and 6sense for comprehensive account intelligence and competitive tracking.
-          </p>
-        </div>
-
-        {/* Status Cards */}
-        <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-16">
-          {/* Backend Status Card */}
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Backend Status</h3>
-            {loading ? (
-              <div className="flex items-center space-x-3">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-600"></div>
-                <span className="text-gray-600">Checking connection...</span>
-              </div>
-            ) : error ? (
-              <div className="flex items-center space-x-3 text-danger-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-lg">
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                <span>{error}</span>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center space-x-3 text-success-600">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="font-medium">Connected</span>
-                </div>
-                {healthStatus && (
-                  <div className="mt-4 text-sm text-gray-600 space-y-1">
-                    <p>Status: <span className="font-medium text-gray-900">{healthStatus.status}</span></p>
-                    <p>Uptime: <span className="font-medium text-gray-900">{Math.floor(healthStatus.uptime)}s</span></p>
-                  </div>
-                )}
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                  Formation
+                </h1>
+                <p className="text-xs text-gray-500">by PikeSquare</p>
               </div>
-            )}
+            </div>
             <button
-              onClick={checkHealth}
-              className="btn btn-secondary mt-4 w-full"
-              disabled={loading}
+              onClick={() => navigate('/login')}
+              className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg"
             >
-              {loading ? 'Checking...' : 'Refresh Status'}
+              Customer Login
             </button>
           </div>
+        </nav>
+      </header>
 
-          {/* Features Card */}
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Features</h3>
-            <ul className="space-y-3">
-              <li className="flex items-start space-x-3">
-                <svg className="w-5 h-5 text-primary-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-gray-700">Salesforce API Integration</span>
-              </li>
-              <li className="flex items-start space-x-3">
-                <svg className="w-5 h-5 text-primary-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-gray-700">AI-Powered Recommendations</span>
-              </li>
-              <li className="flex items-start space-x-3">
-                <svg className="w-5 h-5 text-primary-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-gray-700">Account Intelligence</span>
-              </li>
-              <li className="flex items-start space-x-3">
-                <svg className="w-5 h-5 text-primary-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-gray-700">Competitive Tracking</span>
-              </li>
-            </ul>
+      {/* Hero Section */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="text-center">
+          <h2 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
+            Revenue Intelligence
+            <span className="block mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+              Powered by Salesforce
+            </span>
+          </h2>
+          <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
+            Formation is a multi-tenant SaaS platform that delivers powerful revenue intelligence
+            by seamlessly integrating with your Salesforce org. Get 360° views of accounts,
+            track opportunities, and drive growth with real-time insights.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={() => navigate('/login')}
+              className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl"
+            >
+              Get Started
+            </button>
+            <a
+              href="#features"
+              className="px-8 py-4 bg-white text-purple-600 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-lg border-2 border-purple-600"
+            >
+              Learn More
+            </a>
           </div>
         </div>
+      </section>
 
-        {/* Quick Start Section */}
-        <div className="card max-w-4xl mx-auto">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Start</h3>
-          <div className="space-y-4 text-gray-700">
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center text-sm font-semibold">
-                1
-              </div>
-              <p>Configure your Salesforce credentials in the <code className="px-2 py-1 bg-gray-100 rounded text-sm">.env</code> file</p>
+      {/* Features Grid */}
+      <section id="features" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 bg-white rounded-3xl shadow-xl my-12">
+        <div className="text-center mb-16">
+          <h3 className="text-4xl font-bold text-gray-900 mb-4">Powerful Features</h3>
+          <p className="text-xl text-gray-600">Everything you need for revenue intelligence</p>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {features.map((feature, index) => (
+            <div key={index} className="p-6 rounded-xl border border-gray-200 hover:border-purple-300 hover:shadow-lg transition-all duration-200">
+              <div className="text-purple-600 mb-4">{feature.icon}</div>
+              <h4 className="text-xl font-bold text-gray-900 mb-2">{feature.title}</h4>
+              <p className="text-gray-600">{feature.description}</p>
             </div>
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center text-sm font-semibold">
-                2
+          ))}
+        </div>
+      </section>
+
+      {/* Screenshots Section */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="text-center mb-16">
+          <h3 className="text-4xl font-bold text-gray-900 mb-4">See It In Action</h3>
+          <p className="text-xl text-gray-600">Explore the platform's intuitive interface</p>
+        </div>
+        <div className="space-y-12">
+          {screenshots.map((screenshot, index) => (
+            <div key={index} className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <div className="p-8 bg-gradient-to-r from-purple-50 to-indigo-50">
+                <h4 className="text-2xl font-bold text-gray-900 mb-2">{screenshot.title}</h4>
+                <p className="text-gray-600">{screenshot.description}</p>
               </div>
-              <p>Connect to Clay and 6sense for enhanced account intelligence</p>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center text-sm font-semibold">
-                3
+              <div className="bg-gray-100 p-8 min-h-[400px] flex items-center justify-center">
+                <div className="text-center">
+                  <svg className="w-24 h-24 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-400 font-medium">Screenshot: {screenshot.title}</p>
+                </div>
               </div>
-              <p>Start exploring your personalized cockpit dashboard</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-3xl shadow-2xl my-12 text-white">
+        <div className="text-center mb-16">
+          <h3 className="text-4xl font-bold mb-4">How It Works</h3>
+          <p className="text-xl text-purple-100">Get started in minutes</p>
+        </div>
+        <div className="grid md:grid-cols-3 gap-8">
+          <div className="text-center">
+            <div className="bg-white/20 backdrop-blur-lg rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl font-bold">1</span>
+            </div>
+            <h4 className="text-xl font-bold mb-2">Connect Salesforce</h4>
+            <p className="text-purple-100">Securely authenticate with your Salesforce org using OAuth 2.0</p>
+          </div>
+          <div className="text-center">
+            <div className="bg-white/20 backdrop-blur-lg rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl font-bold">2</span>
+            </div>
+            <h4 className="text-xl font-bold mb-2">Sync Your Data</h4>
+            <p className="text-purple-100">Formation automatically syncs accounts, opportunities, and custom fields</p>
+          </div>
+          <div className="text-center">
+            <div className="bg-white/20 backdrop-blur-lg rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl font-bold">3</span>
+            </div>
+            <h4 className="text-xl font-bold mb-2">Drive Revenue</h4>
+            <p className="text-purple-100">Get actionable insights and intelligence to accelerate your revenue growth</p>
           </div>
         </div>
-      </main>
+      </section>
+
+      {/* CTA Section */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="bg-white rounded-3xl shadow-2xl p-12 text-center">
+          <h3 className="text-4xl font-bold text-gray-900 mb-4">Ready to Transform Your Revenue Intelligence?</h3>
+          <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+            Join leading teams using Formation to drive revenue growth with powerful Salesforce insights
+          </p>
+          <button
+            onClick={() => navigate('/login')}
+            className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl"
+          >
+            Access Your Account
+          </button>
+        </div>
+      </section>
 
       {/* Footer */}
-      <footer className="border-t border-gray-200 mt-16">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <p className="text-center text-gray-600 text-sm">
-            Revenue Intelligence Platform &copy; {new Date().getFullYear()}
-          </p>
+      <footer className="bg-gray-900 text-white mt-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="grid md:grid-cols-3 gap-8">
+            <div>
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-lg">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">Formation</h3>
+                  <p className="text-sm text-gray-400">by PikeSquare</p>
+                </div>
+              </div>
+              <p className="text-gray-400">Revenue intelligence powered by Salesforce</p>
+            </div>
+            <div>
+              <h4 className="font-bold mb-4">Product</h4>
+              <ul className="space-y-2 text-gray-400">
+                <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
+                <li><button onClick={() => navigate('/login')} className="hover:text-white transition-colors">Login</button></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-bold mb-4">Company</h4>
+              <ul className="space-y-2 text-gray-400">
+                <li>PikeSquare</li>
+                <li>Revenue Intelligence Platform</li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
+            <p>&copy; {new Date().getFullYear()} Formation by PikeSquare. All rights reserved.</p>
+          </div>
         </div>
       </footer>
     </div>
