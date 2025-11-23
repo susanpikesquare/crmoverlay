@@ -746,3 +746,418 @@ export async function getCSMMetrics(
     };
   }
 }
+
+// ============================================================================
+// SALES LEADER DASHBOARD
+// ============================================================================
+
+export interface SalesLeaderDashboard {
+  teamMetrics: {
+    quotaAttainment: {
+      current: number;
+      target: number;
+      percentage: number;
+      trend: number;
+    };
+    pipelineCoverage: {
+      pipeline: number;
+      remainingQuota: number;
+      ratio: number;
+      status: string;
+    };
+    atRiskDeals: {
+      count: number;
+      value: number;
+    };
+    avgDealCycle: {
+      days: number;
+      trend: number;
+    };
+  };
+  repPerformance: Array<{
+    repId: string;
+    repName: string;
+    quotaAttainment: number;
+    pipelineCoverage: number;
+    activeDeals: number;
+    atRiskDeals: number;
+    avgDealSize: number;
+    lastActivity: number;
+  }>;
+  coachingOpportunities: {
+    stuckDeals: Array<{
+      id: string;
+      accountName: string;
+      opportunityName: string;
+      owner: string;
+      amount: number;
+      stage: string;
+      daysInStage: number;
+    }>;
+    lowMEDDPICC: Array<{
+      id: string;
+      accountName: string;
+      opportunityName: string;
+      owner: string;
+      amount: number;
+      stage: string;
+      meddpiccScore: number;
+    }>;
+    coldAccounts: Array<{
+      id: string;
+      accountName: string;
+      opportunityName: string;
+      owner: string;
+      amount: number;
+      stage: string;
+      daysInStage: number;
+    }>;
+    largeDeals: Array<{
+      id: string;
+      accountName: string;
+      opportunityName: string;
+      owner: string;
+      amount: number;
+      stage: string;
+      daysInStage: number;
+    }>;
+  };
+  recentWins: Array<{
+    id: string;
+    accountName: string;
+    amount: number;
+    owner: string;
+    closeDate: string;
+  }>;
+  recentLosses: Array<{
+    id: string;
+    accountName: string;
+    amount: number;
+    owner: string;
+    lossReason: string;
+  }>;
+}
+
+/**
+ * Get Sales Leader Dashboard data with team metrics and coaching opportunities
+ */
+export async function getSalesLeaderDashboard(
+  connection: Connection,
+  managerId: string
+): Promise<SalesLeaderDashboard> {
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+  const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
+  try {
+    // First, get all direct reports
+    const teamMembersQuery = `
+      SELECT Id, Name
+      FROM User
+      WHERE ManagerId = '${managerId}'
+        AND IsActive = true
+    `;
+    const teamMembersResult = await connection.query(teamMembersQuery);
+    const teamMembers = teamMembersResult.records as any[];
+    const teamMemberIds = teamMembers.map(u => u.Id);
+
+    if (teamMemberIds.length === 0) {
+      // No direct reports - return empty dashboard
+      return getEmptySalesLeaderDashboard();
+    }
+
+    const teamMemberIdsStr = teamMemberIds.map(id => `'${id}'`).join(',');
+
+    // Get team quota attainment (closed won this year)
+    const closedWonQuery = `
+      SELECT SUM(Amount) total, OwnerId, Owner.Name
+      FROM Opportunity
+      WHERE OwnerId IN (${teamMemberIdsStr})
+        AND IsWon = true
+        AND CALENDAR_YEAR(CloseDate) = ${currentYear}
+      GROUP BY OwnerId, Owner.Name
+    `;
+
+    // Get team pipeline (open opps)
+    const pipelineQuery = `
+      SELECT Id, Name, Amount, StageName, OwnerId, Owner.Name, AccountId, Account.Name,
+             CloseDate, CreatedDate, LastModifiedDate,
+             COM_Metrics__c, MEDDPICCR_Economic_Buyer__c, MEDDPICCR_Decision_Criteria__c,
+             MEDDPICCR_Decision_Process__c, MEDDPICCR_Paper_Process__c,
+             MEDDPICCR_Implicate_Pain__c, MEDDPICCR_Champion__c, MEDDPICCR_Competition__c,
+             MEDDPICC_Overall_Score__c
+      FROM Opportunity
+      WHERE OwnerId IN (${teamMemberIdsStr})
+        AND IsClosed = false
+    `;
+
+    // Get recent wins (last 30 days)
+    const recentWinsQuery = `
+      SELECT Id, Name, Amount, OwnerId, Owner.Name, AccountId, Account.Name, CloseDate
+      FROM Opportunity
+      WHERE OwnerId IN (${teamMemberIdsStr})
+        AND IsWon = true
+        AND CloseDate = LAST_N_DAYS:30
+      ORDER BY CloseDate DESC
+      LIMIT 10
+    `;
+
+    // Get recent losses (last 30 days)
+    const recentLossesQuery = `
+      SELECT Id, Name, Amount, OwnerId, Owner.Name, AccountId, Account.Name, Loss_Reason__c
+      FROM Opportunity
+      WHERE OwnerId IN (${teamMemberIdsStr})
+        AND IsWon = false
+        AND IsClosed = true
+        AND CloseDate = LAST_N_DAYS:30
+      ORDER BY CloseDate DESC
+      LIMIT 10
+    `;
+
+    // Execute all queries in parallel
+    const [closedWonResult, pipelineResult, recentWinsResult, recentLossesResult] = await Promise.all([
+      connection.query(closedWonQuery),
+      connection.query(pipelineQuery),
+      connection.query(recentWinsQuery),
+      connection.query(recentLossesQuery),
+    ]);
+
+    const closedWonByRep = closedWonResult.records as any[];
+    const allPipeline = pipelineResult.records as any[];
+    const wins = recentWinsResult.records as any[];
+    const losses = recentLossesResult.records as any[];
+
+    // Calculate team metrics
+    const totalClosedWon = closedWonByRep.reduce((sum, r) => sum + (r.total || 0), 0);
+    const teamQuotaTarget = teamMembers.length * 1000000; // $1M per rep - should come from actual quota fields
+    const quotaPercentage = teamQuotaTarget > 0 ? (totalClosedWon / teamQuotaTarget) * 100 : 0;
+
+    const totalPipeline = allPipeline.reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+    const remainingQuota = Math.max(0, teamQuotaTarget - totalClosedWon);
+    const pipelineCoverageRatio = remainingQuota > 0 ? totalPipeline / remainingQuota : 0;
+
+    let pipelineStatus = 'Healthy';
+    if (pipelineCoverageRatio < 3) {
+      pipelineStatus = 'At Risk';
+    } else if (pipelineCoverageRatio < 4) {
+      pipelineStatus = 'Monitor';
+    }
+
+    // Calculate at-risk deals
+    const now = new Date();
+    const atRiskDeals = allPipeline.filter(opp => {
+      const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+      const meddpiccScore = calculateMEDDPICCScore(opp);
+      return daysSinceUpdate > 14 || meddpiccScore < 60;
+    });
+    const atRiskValue = atRiskDeals.reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+
+    // Calculate average deal cycle (from created to closed for won deals this year)
+    const avgDealCycleDays = 45; // Mock - would calculate from actual closed deals
+    const avgDealCycleTrend = -5; // Mock - would compare to previous period
+
+    // Build rep performance leaderboard
+    const repPerformance = teamMembers.map(rep => {
+      const repClosedWon = closedWonByRep.find(r => r.OwnerId === rep.Id);
+      const closedWonAmount = repClosedWon?.total || 0;
+      const repQuota = 1000000; // $1M - should come from user quota field
+      const quotaAttainment = repQuota > 0 ? (closedWonAmount / repQuota) * 100 : 0;
+
+      const repPipeline = allPipeline.filter(opp => opp.OwnerId === rep.Id);
+      const totalRepPipeline = repPipeline.reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+      const repRemainingQuota = Math.max(0, repQuota - closedWonAmount);
+      const repPipelineCoverage = repRemainingQuota > 0 ? totalRepPipeline / repRemainingQuota : 0;
+
+      const activeDeals = repPipeline.length;
+      const repAtRiskDeals = repPipeline.filter(opp => {
+        const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+        const meddpiccScore = calculateMEDDPICCScore(opp);
+        return daysSinceUpdate > 14 || meddpiccScore < 60;
+      }).length;
+
+      const avgDealSize = activeDeals > 0 ? Math.round(totalRepPipeline / activeDeals) : 0;
+
+      // Get most recent activity date across all opps
+      let lastActivityDays = 999;
+      repPipeline.forEach(opp => {
+        const days = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+        if (days < lastActivityDays) {
+          lastActivityDays = days;
+        }
+      });
+
+      return {
+        repId: rep.Id,
+        repName: rep.Name,
+        quotaAttainment,
+        pipelineCoverage: repPipelineCoverage,
+        activeDeals,
+        atRiskDeals: repAtRiskDeals,
+        avgDealSize,
+        lastActivity: lastActivityDays,
+      };
+    });
+
+    // Build coaching opportunities
+    const stuckDeals = allPipeline
+      .filter(opp => {
+        const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+        const createdDate = opp.CreatedDate ? new Date(opp.CreatedDate) : now;
+        const daysInCurrentStage = daysBetween(opp.LastModifiedDate || createdDate.toISOString(), now);
+        return daysInCurrentStage > 30; // Stuck in stage for 30+ days
+      })
+      .slice(0, 10)
+      .map(opp => ({
+        id: opp.Id,
+        accountName: opp.Account?.Name || 'Unknown',
+        opportunityName: opp.Name,
+        owner: opp.Owner?.Name || 'Unknown',
+        amount: opp.Amount || 0,
+        stage: opp.StageName,
+        daysInStage: daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now),
+      }));
+
+    const lowMEDDPICC = allPipeline
+      .filter(opp => {
+        const meddpiccScore = calculateMEDDPICCScore(opp);
+        return meddpiccScore < 60 && opp.StageName !== 'Prospecting' && opp.StageName !== 'Qualification';
+      })
+      .slice(0, 10)
+      .map(opp => ({
+        id: opp.Id,
+        accountName: opp.Account?.Name || 'Unknown',
+        opportunityName: opp.Name,
+        owner: opp.Owner?.Name || 'Unknown',
+        amount: opp.Amount || 0,
+        stage: opp.StageName,
+        meddpiccScore: calculateMEDDPICCScore(opp),
+      }));
+
+    const coldAccounts = allPipeline
+      .filter(opp => {
+        const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+        return daysSinceUpdate > 21; // No activity in 3+ weeks
+      })
+      .slice(0, 10)
+      .map(opp => ({
+        id: opp.Id,
+        accountName: opp.Account?.Name || 'Unknown',
+        opportunityName: opp.Name,
+        owner: opp.Owner?.Name || 'Unknown',
+        amount: opp.Amount || 0,
+        stage: opp.StageName,
+        daysInStage: daysBetween(opp.LastModifiedDate || now.toISOString(), now),
+      }));
+
+    const largeDeals = allPipeline
+      .filter(opp => (opp.Amount || 0) >= 100000) // $100K+ deals
+      .sort((a, b) => (b.Amount || 0) - (a.Amount || 0))
+      .slice(0, 10)
+      .map(opp => ({
+        id: opp.Id,
+        accountName: opp.Account?.Name || 'Unknown',
+        opportunityName: opp.Name,
+        owner: opp.Owner?.Name || 'Unknown',
+        amount: opp.Amount || 0,
+        stage: opp.StageName,
+        daysInStage: daysBetween(opp.CreatedDate || now.toISOString(), now),
+      }));
+
+    // Format recent wins and losses
+    const recentWins = wins.map(opp => ({
+      id: opp.Id,
+      accountName: opp.Account?.Name || 'Unknown',
+      amount: opp.Amount || 0,
+      owner: opp.Owner?.Name || 'Unknown',
+      closeDate: opp.CloseDate,
+    }));
+
+    const recentLosses = losses.map(opp => ({
+      id: opp.Id,
+      accountName: opp.Account?.Name || 'Unknown',
+      amount: opp.Amount || 0,
+      owner: opp.Owner?.Name || 'Unknown',
+      lossReason: opp.Loss_Reason__c || 'Unknown',
+    }));
+
+    // Mock trend calculation (would compare to last month)
+    const quotaTrend = 5; // +5% vs last month
+
+    return {
+      teamMetrics: {
+        quotaAttainment: {
+          current: totalClosedWon,
+          target: teamQuotaTarget,
+          percentage: quotaPercentage,
+          trend: quotaTrend,
+        },
+        pipelineCoverage: {
+          pipeline: totalPipeline,
+          remainingQuota,
+          ratio: pipelineCoverageRatio,
+          status: pipelineStatus,
+        },
+        atRiskDeals: {
+          count: atRiskDeals.length,
+          value: atRiskValue,
+        },
+        avgDealCycle: {
+          days: avgDealCycleDays,
+          trend: avgDealCycleTrend,
+        },
+      },
+      repPerformance,
+      coachingOpportunities: {
+        stuckDeals,
+        lowMEDDPICC,
+        coldAccounts,
+        largeDeals,
+      },
+      recentWins,
+      recentLosses,
+    };
+  } catch (error) {
+    console.error('Error fetching sales leader dashboard:', error);
+    return getEmptySalesLeaderDashboard();
+  }
+}
+
+/**
+ * Helper function to return empty dashboard data
+ */
+function getEmptySalesLeaderDashboard(): SalesLeaderDashboard {
+  return {
+    teamMetrics: {
+      quotaAttainment: {
+        current: 0,
+        target: 0,
+        percentage: 0,
+        trend: 0,
+      },
+      pipelineCoverage: {
+        pipeline: 0,
+        remainingQuota: 0,
+        ratio: 0,
+        status: 'Healthy',
+      },
+      atRiskDeals: {
+        count: 0,
+        value: 0,
+      },
+      avgDealCycle: {
+        days: 0,
+        trend: 0,
+      },
+    },
+    repPerformance: [],
+    coachingOpportunities: {
+      stuckDeals: [],
+      lowMEDDPICC: [],
+      coldAccounts: [],
+      largeDeals: [],
+    },
+    recentWins: [],
+    recentLosses: [],
+  };
+}

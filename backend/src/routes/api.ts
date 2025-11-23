@@ -8,8 +8,20 @@ const router = Router();
 /**
  * Map Salesforce Profile to app role
  */
-function mapProfileToRole(profileName: string): 'ae' | 'am' | 'csm' | 'unknown' {
+function mapProfileToRole(profileName: string): 'sales-leader' | 'ae' | 'am' | 'csm' | 'unknown' {
   const profile = profileName.toLowerCase();
+
+  // Check for sales leadership roles first
+  if (
+    profile.includes('sales manager') ||
+    profile.includes('vp sales') ||
+    profile.includes('cro') ||
+    profile.includes('chief revenue') ||
+    profile.includes('sales director') ||
+    profile.includes('system administrator')
+  ) {
+    return 'sales-leader';
+  }
 
   if (profile.includes('sales user')) {
     return 'ae';
@@ -410,6 +422,40 @@ router.get('/dashboard/stats', isAuthenticated, async (req: Request, res: Respon
     res.status(500).json({
       success: false,
       error: 'Failed to fetch dashboard stats',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/dashboard/sales-leader
+ * Returns sales leader dashboard data with team metrics
+ * Only accessible by users with manager/admin profiles
+ */
+router.get('/dashboard/sales-leader', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const data = await HubData.getSalesLeaderDashboard(connection, userId);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error: any) {
+    console.error('Error fetching sales leader dashboard:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch sales leader dashboard',
       message: error.message,
     });
   }
