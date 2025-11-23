@@ -155,7 +155,9 @@ router.get('/callback', async (req: Request, res: Response) => {
       }
 
       // Redirect to appropriate cockpit based on role
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      // In production, backend serves frontend so use relative paths
+      // In development, redirect to frontend dev server
+      const frontendUrl = process.env.NODE_ENV === 'production' ? '' : (process.env.FRONTEND_URL || 'http://localhost:3000');
       let redirectPath = '/dashboard'; // Default fallback
 
       if (userRole === 'ae') {
