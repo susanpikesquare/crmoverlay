@@ -24,12 +24,16 @@ export interface CustomerAttributes {
   salesforceClientSecret: string;
   subscriptionTier: SubscriptionTier;
   subscriptionStatus: SubscriptionStatus;
+  isSuspended: boolean;
+  suspendedReason: string | null;
+  suspendedAt: Date | null;
+  suspendedByUserId: string | null;
   trialEndsAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-export interface CustomerCreationAttributes extends Optional<CustomerAttributes, 'id' | 'createdAt' | 'updatedAt' | 'trialEndsAt'> {}
+export interface CustomerCreationAttributes extends Optional<CustomerAttributes, 'id' | 'createdAt' | 'updatedAt' | 'trialEndsAt' | 'isSuspended' | 'suspendedReason' | 'suspendedAt' | 'suspendedByUserId'> {}
 
 class Customer extends Model<CustomerAttributes, CustomerCreationAttributes> implements CustomerAttributes {
   public id!: string;
@@ -40,6 +44,10 @@ class Customer extends Model<CustomerAttributes, CustomerCreationAttributes> imp
   public salesforceClientSecret!: string;
   public subscriptionTier!: SubscriptionTier;
   public subscriptionStatus!: SubscriptionStatus;
+  public isSuspended!: boolean;
+  public suspendedReason!: string | null;
+  public suspendedAt!: Date | null;
+  public suspendedByUserId!: string | null;
   public trialEndsAt?: Date;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -120,6 +128,31 @@ Customer.init(
       allowNull: false,
       defaultValue: SubscriptionStatus.TRIAL,
       field: 'subscription_status',
+    },
+    isSuspended: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'is_suspended',
+    },
+    suspendedReason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: 'suspended_reason',
+    },
+    suspendedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'suspended_at',
+    },
+    suspendedByUserId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: 'suspended_by_user_id',
+      references: {
+        model: 'users',
+        key: 'id',
+      },
     },
     trialEndsAt: {
       type: DataTypes.DATE,

@@ -1,9 +1,54 @@
 import { Customer, User, CustomerConfig, SubscriptionTier, SubscriptionStatus, UserRole } from '../models';
+import crypto from 'crypto';
+
+// Generate a secure random password
+function generateSecurePassword(length: number = 20): string {
+  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=';
+  let password = '';
+  const randomBytes = crypto.randomBytes(length);
+
+  for (let i = 0; i < length; i++) {
+    password += charset[randomBytes[i] % charset.length];
+  }
+
+  return password;
+}
 
 export async function seedDatabase() {
   console.log('Starting database seeding...');
 
   try {
+    // Check if super admin already exists
+    const existingSuperAdmin = await User.findOne({
+      where: { email: 'susan@pikesquare.co' }
+    });
+
+    let superAdminPassword: string | null = null;
+
+    if (!existingSuperAdmin) {
+      // Create super admin user
+      superAdminPassword = generateSecurePassword(24);
+      const superAdmin = await User.create({
+        customerId: null, // Super admins don't belong to any customer
+        email: 'susan@pikesquare.co',
+        salesforceUserId: null,
+        firstName: 'Susan',
+        lastName: 'Bamberger',
+        role: UserRole.SUPER_ADMIN,
+        salesforceProfile: null,
+        isSuperAdmin: true,
+        superAdminNotes: 'Platform owner and super admin',
+      });
+
+      // Set password
+      await superAdmin.setPassword(superAdminPassword);
+      await superAdmin.save();
+
+      console.log('✓ Created super admin user: Susan Bamberger (susan@pikesquare.co)');
+    } else {
+      console.log('✓ Super admin user already exists, skipping');
+    }
+
     // Check if Axonify customer already exists
     const existingCustomer = await Customer.findOne({
       where: { subdomain: 'axonify' }
@@ -11,6 +56,19 @@ export async function seedDatabase() {
 
     if (existingCustomer) {
       console.log('✓ Axonify customer already exists, skipping seed');
+
+      // Print super admin credentials if just created
+      if (superAdminPassword) {
+        console.log('\n========================================');
+        console.log('SUPER ADMIN CREDENTIALS');
+        console.log('========================================');
+        console.log(`Email: susan@pikesquare.co`);
+        console.log(`Password: ${superAdminPassword}`);
+        console.log('========================================');
+        console.log('⚠️  SAVE THESE CREDENTIALS SECURELY!');
+        console.log('========================================\n');
+      }
+
       return;
     }
 
@@ -83,6 +141,19 @@ export async function seedDatabase() {
     console.log(`  - Customer: ${axonifyCustomer.companyName}`);
     console.log(`  - Subdomain: ${axonifyCustomer.subdomain}`);
     console.log(`  - Admin: ${adminUser.getFullName()}`);
+
+    // Print super admin credentials if just created
+    if (superAdminPassword) {
+      console.log('\n========================================');
+      console.log('SUPER ADMIN CREDENTIALS');
+      console.log('========================================');
+      console.log(`Email: susan@pikesquare.co`);
+      console.log(`Password: ${superAdminPassword}`);
+      console.log('========================================');
+      console.log('⚠️  SAVE THESE CREDENTIALS SECURELY!');
+      console.log('⚠️  Password will not be shown again.');
+      console.log('========================================\n');
+    }
 
   } catch (error) {
     console.error('✗ Error seeding database:', error);

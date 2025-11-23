@@ -7,33 +7,40 @@ export enum UserRole {
   AM = 'am',
   CSM = 'csm',
   ADMIN = 'admin',
+  SUPER_ADMIN = 'super_admin',
 }
 
 export interface UserAttributes {
   id: string;
-  customerId: string;
+  customerId: string | null;
   email: string;
-  salesforceUserId: string;
+  salesforceUserId: string | null;
   firstName: string;
   lastName: string;
   role: UserRole;
-  salesforceProfile: string;
+  salesforceProfile: string | null;
+  isSuperAdmin: boolean;
+  passwordHash: string | null;
+  superAdminNotes: string | null;
   lastLoginAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-export interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'createdAt' | 'updatedAt' | 'lastLoginAt'> {}
+export interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'createdAt' | 'updatedAt' | 'lastLoginAt' | 'customerId' | 'salesforceUserId' | 'salesforceProfile' | 'isSuperAdmin' | 'passwordHash' | 'superAdminNotes'> {}
 
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
   public id!: string;
-  public customerId!: string;
+  public customerId!: string | null;
   public email!: string;
-  public salesforceUserId!: string;
+  public salesforceUserId!: string | null;
   public firstName!: string;
   public lastName!: string;
   public role!: UserRole;
-  public salesforceProfile!: string;
+  public salesforceProfile!: string | null;
+  public isSuperAdmin!: boolean;
+  public passwordHash!: string | null;
+  public superAdminNotes!: string | null;
   public lastLoginAt?: Date;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -51,12 +58,29 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   }
 
   public isAdmin(): boolean {
-    return this.role === UserRole.ADMIN;
+    return this.role === UserRole.ADMIN || this.role === UserRole.SUPER_ADMIN;
+  }
+
+  public isSuperAdminUser(): boolean {
+    return this.isSuperAdmin === true || this.role === UserRole.SUPER_ADMIN;
   }
 
   public async updateLastLogin(): Promise<void> {
     this.lastLoginAt = new Date();
     await this.save();
+  }
+
+  // Verify password for super admin login
+  public async verifyPassword(password: string): Promise<boolean> {
+    if (!this.passwordHash) return false;
+    const bcrypt = await import('bcrypt');
+    return bcrypt.compare(password, this.passwordHash);
+  }
+
+  // Set password for super admin
+  public async setPassword(password: string): Promise<void> {
+    const bcrypt = await import('bcrypt');
+    this.passwordHash = await bcrypt.hash(password, 10);
   }
 }
 
@@ -69,7 +93,7 @@ User.init(
     },
     customerId: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true, // Null for super admins
       field: 'customer_id',
       references: {
         model: 'customers',
@@ -86,7 +110,7 @@ User.init(
     },
     salesforceUserId: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true, // Null for super admins
       field: 'salesforce_user_id',
     },
     firstName: {
@@ -106,8 +130,24 @@ User.init(
     },
     salesforceProfile: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true, // Null for super admins
       field: 'salesforce_profile',
+    },
+    isSuperAdmin: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'is_super_admin',
+    },
+    passwordHash: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: 'password_hash',
+    },
+    superAdminNotes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: 'super_admin_notes',
     },
     lastLoginAt: {
       type: DataTypes.DATE,
