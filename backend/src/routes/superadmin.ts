@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { Customer, User, AuditLog } from '../models';
 import { SubscriptionStatus } from '../models/Customer';
+import { UserRole } from '../models/User';
 import { Op } from 'sequelize';
+import bcrypt from 'bcrypt';
 
 const router = Router();
 
@@ -493,6 +495,106 @@ router.get('/stats', isSuperAdmin, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch statistics',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /superadmin/users
+ *
+ * Create a new super admin user.
+ * Requires super admin authentication.
+ */
+router.post('/users', isSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { email, password, firstName, lastName } = req.body;
+    const session = req.session as any;
+
+    // Validate required fields
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: email, password, firstName, lastName',
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email format',
+      });
+    }
+
+    // Validate password length
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 8 characters',
+      });
+    }
+
+    // Check if email already exists
+    const existingUser = await User.findOne({ where: { email: email.toLowerCase() } });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        error: 'A user with this email already exists',
+      });
+    }
+
+    // Hash the password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Create super admin user (no customerId, isSuperAdmin = true)
+    const user = await User.create({
+      email: email.toLowerCase(),
+      passwordHash: hashedPassword,
+      firstName,
+      lastName,
+      isSuperAdmin: true,
+      role: UserRole.SUPER_ADMIN,
+      // No customerId - super admins are not associated with any customer
+    });
+
+    // Log the action
+    await AuditLog.log({
+      userId: session.userId,
+      customerId: null,
+      action: 'create_super_admin',
+      resourceType: 'user',
+      resourceId: user.id,
+      details: {
+        email: user.email,
+        firstName,
+        lastName,
+        createdBy: session.userInfo.name,
+      },
+      ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          isSuperAdmin: user.isSuperAdmin,
+          createdAt: user.createdAt,
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('Error creating super admin user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create super admin user',
       message: error.message,
     });
   }
