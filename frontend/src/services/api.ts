@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { ApiResponse } from '../types';
+import { config } from '../config';
 
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3001',
+  baseURL: config.apiBaseUrl, // Empty string in production, localhost URL in development
   headers: {
     'Content-Type': 'application/json',
   },

@@ -1,0 +1,292 @@
+import { Router, Request, Response } from 'express';
+import { isAuthenticated } from '../middleware/auth';
+import { isAdmin } from '../middleware/adminAuth';
+import * as configService from '../services/configService';
+import { createConnection } from '../config/salesforce';
+
+const router = Router();
+
+// All admin routes require authentication and admin privileges
+router.use(isAuthenticated);
+router.use(isAdmin);
+
+/**
+ * GET /api/admin/config
+ * Get current application configuration
+ */
+router.get('/config', (_req: Request, res: Response) => {
+  try {
+    const config = configService.getConfig();
+    res.json({
+      success: true,
+      data: config,
+    });
+  } catch (error: any) {
+    console.error('Error fetching config:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch configuration',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/risk-rules
+ * Update risk rules configuration
+ */
+router.put('/config/risk-rules', (req: Request, res: Response) => {
+  try {
+    const { rules } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.updateRiskRules(rules, modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig.riskRules,
+      message: 'Risk rules updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating risk rules:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update risk rules',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/priority-scoring
+ * Update priority scoring configuration
+ */
+router.put('/config/priority-scoring', (req: Request, res: Response) => {
+  try {
+    const { priorityScoring } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.updatePriorityScoring(priorityScoring, modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig.priorityScoring,
+      message: 'Priority scoring updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating priority scoring:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update priority scoring',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/field-mappings
+ * Update field mappings configuration
+ */
+router.put('/config/field-mappings', (req: Request, res: Response) => {
+  try {
+    const { mappings } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.updateFieldMappings(mappings, modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig.fieldMappings,
+      message: 'Field mappings updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating field mappings:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update field mappings',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/role-mappings
+ * Update role mappings configuration
+ */
+router.put('/config/role-mappings', (req: Request, res: Response) => {
+  try {
+    const { mappings } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.updateConfig({ roleMapping: mappings }, modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig.roleMapping,
+      message: 'Role mappings updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating role mappings:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update role mappings',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/display-settings
+ * Update display settings configuration
+ */
+router.put('/config/display-settings', (req: Request, res: Response) => {
+  try {
+    const { displaySettings } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.updateConfig({ displaySettings }, modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig.displaySettings,
+      message: 'Display settings updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating display settings:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update display settings',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/admin/salesforce/fields
+ * Get available Salesforce custom fields for Account and Opportunity
+ */
+router.get('/salesforce/fields', async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const connection = createConnection(
+      session.accessToken,
+      session.instanceUrl,
+      session.refreshToken
+    );
+
+    // Describe Account object
+    const accountDescribe = await connection.sobject('Account').describe();
+    const accountFields = accountDescribe.fields
+      .filter((field: any) => field.custom || ['Name', 'Industry', 'Type'].includes(field.name))
+      .map((field: any) => ({
+        name: field.name,
+        label: field.label,
+        type: field.type,
+        custom: field.custom,
+      }));
+
+    // Describe Opportunity object
+    const opportunityDescribe = await connection.sobject('Opportunity').describe();
+    const opportunityFields = opportunityDescribe.fields
+      .filter((field: any) => field.custom || ['Name', 'StageName', 'Amount', 'CloseDate'].includes(field.name))
+      .map((field: any) => ({
+        name: field.name,
+        label: field.label,
+        type: field.type,
+        custom: field.custom,
+      }));
+
+    res.json({
+      success: true,
+      data: {
+        accountFields,
+        opportunityFields,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching Salesforce fields:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Salesforce fields',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/config/export
+ * Export configuration as JSON
+ */
+router.get('/config/export', (_req: Request, res: Response) => {
+  try {
+    const configJson = configService.exportConfig();
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename=crm-overlay-config.json');
+    res.send(configJson);
+  } catch (error: any) {
+    console.error('Error exporting config:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to export configuration',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/config/import
+ * Import configuration from JSON
+ */
+router.post('/config/import', (req: Request, res: Response) => {
+  try {
+    const { configJson } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.importConfig(configJson, modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig,
+      message: 'Configuration imported successfully',
+    });
+  } catch (error: any) {
+    console.error('Error importing config:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to import configuration',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/config/reset
+ * Reset configuration to defaults
+ */
+router.post('/config/reset', (_req: Request, res: Response) => {
+  try {
+    const config = configService.resetToDefaults();
+
+    res.json({
+      success: true,
+      data: config,
+      message: 'Configuration reset to defaults',
+    });
+  } catch (error: any) {
+    console.error('Error resetting config:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to reset configuration',
+      message: error.message,
+    });
+  }
+});
+
+export default router;

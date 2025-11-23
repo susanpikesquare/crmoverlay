@@ -2,7 +2,11 @@ import express, { Express } from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import dotenv from 'dotenv';
+import path from 'path';
 import routes from './routes';
+import authRoutes from './routes/auth';
+import apiRoutes from './routes/api';
+import adminRoutes from './routes/admin';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 // Load environment variables
@@ -39,10 +43,30 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Routes
+// API Routes
+app.use('/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api', apiRoutes);
 app.use('/', routes);
 
-// 404 handler
+// Serve frontend static files in production
+if (process.env.NODE_ENV === 'production') {
+  const frontendPath = path.join(__dirname, '../../frontend/dist');
+
+  // Serve static files
+  app.use(express.static(frontendPath));
+
+  // All non-API routes serve index.html (for React Router)
+  app.get('*', (req, res) => {
+    // Skip API routes
+    if (req.path.startsWith('/api') || req.path.startsWith('/auth')) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+}
+
+// 404 handler (for non-production or API routes not found)
 app.use(notFoundHandler);
 
 // Error handler (must be last)

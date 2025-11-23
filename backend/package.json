@@ -4,10 +4,12 @@
   "description": "Backend API for Revenue Intelligence CRM Overlay",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "nodemon src/server.ts",
+    "dev": "nodemon --exec ts-node --project tsconfig.nodemon.json src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "inspect-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-account-fields.ts",
+    "inspect-all-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-all-fields.ts"
   },
   "keywords": [
     "salesforce",
