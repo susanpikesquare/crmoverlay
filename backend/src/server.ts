@@ -10,7 +10,6 @@ import apiRoutes from './routes/api';
 import adminRoutes from './routes/admin';
 import superadminRoutes from './routes/superadmin';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-import { sequelize } from './config/database';
 
 // Load environment variables
 dotenv.config();
