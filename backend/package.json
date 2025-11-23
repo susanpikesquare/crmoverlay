@@ -12,6 +12,7 @@
     "db:init:force": "node dist/scripts/initDatabase.js --force",
     "db:init:dev": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts",
     "db:init:dev:force": "ts-node --project tsconfig.nodemon.json src/scripts/initDatabase.ts --force",
+    "db:migrate:customer-fields": "node dist/scripts/migrate-customer-fields.js",
     "inspect-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-account-fields.ts",
     "inspect-all-fields": "ts-node --project tsconfig.nodemon.json src/scripts/inspect-all-fields.ts"
   },
