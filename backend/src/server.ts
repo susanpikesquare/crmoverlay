@@ -34,12 +34,22 @@ const PgSession = connectPgSimple(session);
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/formation_dev';
 const sessionConnectionString = DATABASE_URL.replace(/^postgres:\/\//, 'postgresql://');
 
+// Add SSL for production (Heroku requires it)
+const sessionStoreConfig: any = {
+  conString: sessionConnectionString,
+  tableName: 'session',
+  createTableIfMissing: true,
+};
+
+// Add SSL configuration for production
+if (process.env.NODE_ENV === 'production') {
+  sessionStoreConfig.ssl = {
+    rejectUnauthorized: false,
+  };
+}
+
 app.use(session({
-  store: new PgSession({
-    conString: sessionConnectionString,
-    tableName: 'session',
-    createTableIfMissing: true,
-  }),
+  store: new PgSession(sessionStoreConfig),
   secret: process.env.SESSION_SECRET || 'revenue-intelligence-secret-key',
   resave: false,
   saveUninitialized: false,
