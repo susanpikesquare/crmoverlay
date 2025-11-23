@@ -387,7 +387,7 @@ export default function Account360() {
 
               <div>
                 <label className="text-sm font-medium text-gray-600">HRIS System</label>
-                <p className="text-gray-900 mt-1">{account.Clay_HRIS_System__c}</p>
+                <p className="text-gray-900 mt-1">{account.Clay_HRIS_System__c || '—'}</p>
               </div>
 
               <div>
@@ -420,11 +420,11 @@ export default function Account360() {
                 <label className="text-sm font-medium text-gray-600">Buying Stage</label>
                 <div className="flex items-center gap-3 mt-2">
                   <span className="text-3xl">
-                    {getBuyingStageIcon(account.SixSense_Buying_Stage__c)}
+                    {getBuyingStageIcon(account.SixSense_Buying_Stage__c || '')}
                   </span>
                   <div>
                     <p className="text-gray-900 font-semibold text-lg">
-                      {account.SixSense_Buying_Stage__c}
+                      {account.SixSense_Buying_Stage__c || '—'}
                     </p>
                     <p className="text-sm text-gray-600">Current stage in buyer journey</p>
                   </div>
@@ -470,14 +470,18 @@ export default function Account360() {
               <div>
                 <label className="text-sm font-medium text-gray-600">Engaged Campaigns</label>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {account.SixSense_Engaged_Campaigns__c.split(',').map((campaign, index) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded-full border border-purple-200"
-                    >
-                      {campaign.trim()}
-                    </span>
-                  ))}
+                  {account.SixSense_Engaged_Campaigns__c ? (
+                    account.SixSense_Engaged_Campaigns__c.split(',').map((campaign, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded-full border border-purple-200"
+                      >
+                        {campaign.trim()}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-gray-400 text-sm">No campaigns engaged</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -493,15 +497,21 @@ export default function Account360() {
             </div>
 
             <div className="space-y-3">
-              {account.Clay_Active_Signals__c.split('\n').map((signal, index) => (
-                <div
-                  key={index}
-                  className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100"
-                >
-                  <span className="text-blue-600 mt-0.5">🔔</span>
-                  <p className="text-gray-800 text-sm flex-1">{signal}</p>
+              {account.Clay_Active_Signals__c ? (
+                account.Clay_Active_Signals__c.split('\n').map((signal, index) => (
+                  <div
+                    key={index}
+                    className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100"
+                  >
+                    <span className="text-blue-600 mt-0.5">🔔</span>
+                    <p className="text-gray-800 text-sm flex-1">{signal}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  <p>No active buying signals at this time</p>
                 </div>
-              ))}
+              )}
             </div>
 
             <div className="mt-6 pt-6 border-t border-gray-200">
