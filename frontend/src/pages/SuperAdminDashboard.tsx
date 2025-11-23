@@ -35,6 +35,9 @@ export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -117,6 +120,48 @@ export default function SuperAdminDashboard() {
       }
 
       await fetchData();
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  const handleViewDetails = async (customerId: string) => {
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/superadmin/customers/${customerId}`, {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch customer details');
+      }
+
+      const data = await response.json();
+      setSelectedCustomer(data.data.customer);
+      setShowDetailModal(true);
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  const handleCreateCustomer = async (customerData: any) => {
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/superadmin/customers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(customerData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create customer');
+      }
+
+      setShowCreateModal(false);
+      await fetchData();
+      alert('Customer created successfully!');
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }
@@ -206,13 +251,21 @@ export default function SuperAdminDashboard() {
           <div className="p-6 border-b border-gray-200">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-900">Customers</h2>
-              <input
-                type="text"
-                placeholder="Search customers..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
-              />
+              <div className="flex gap-4">
+                <input
+                  type="text"
+                  placeholder="Search customers..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                />
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                >
+                  Create New Customer
+                </button>
+              </div>
             </div>
           </div>
 
@@ -290,7 +343,10 @@ export default function SuperAdminDashboard() {
                           Suspend
                         </button>
                       )}
-                      <button className="text-indigo-600 hover:text-indigo-900">
+                      <button
+                        onClick={() => handleViewDetails(customer.id)}
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
                         View Details
                       </button>
                     </td>
@@ -305,6 +361,262 @@ export default function SuperAdminDashboard() {
               <p className="text-gray-500">No customers found</p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Create Customer Modal */}
+      {showCreateModal && (
+        <CreateCustomerModal
+          onClose={() => setShowCreateModal(false)}
+          onCreate={handleCreateCustomer}
+        />
+      )}
+
+      {/* Customer Detail Modal */}
+      {showDetailModal && selectedCustomer && (
+        <CustomerDetailModal
+          customer={selectedCustomer}
+          onClose={() => {
+            setShowDetailModal(false);
+            setSelectedCustomer(null);
+          }}
+          onRefresh={fetchData}
+        />
+      )}
+    </div>
+  );
+}
+
+// Create Customer Modal Component
+function CreateCustomerModal({ onClose, onCreate }: { onClose: () => void; onCreate: (data: any) => void }) {
+  const [formData, setFormData] = useState({
+    companyName: '',
+    subdomain: '',
+    salesforceInstanceUrl: '',
+    subscriptionTier: 'starter',
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onCreate(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-2xl font-bold text-gray-900">Create New Customer</h2>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Company Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.companyName}
+              onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              placeholder="Acme Corporation"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Subdomain *
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.subdomain}
+              onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              placeholder="acme"
+            />
+            <p className="mt-1 text-sm text-gray-500">Lowercase letters, numbers, and hyphens only</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Salesforce Instance URL
+            </label>
+            <input
+              type="url"
+              value={formData.salesforceInstanceUrl}
+              onChange={(e) => setFormData({ ...formData, salesforceInstanceUrl: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              placeholder="https://yourorg.my.salesforce.com"
+            />
+            <p className="mt-1 text-sm text-gray-500">Customer can connect this later via OAuth</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Subscription Tier *
+            </label>
+            <select
+              value={formData.subscriptionTier}
+              onChange={(e) => setFormData({ ...formData, subscriptionTier: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+            >
+              <option value="starter">Starter</option>
+              <option value="professional">Professional</option>
+              <option value="enterprise">Enterprise</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-4 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              Create Customer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Customer Detail Modal Component
+function CustomerDetailModal({ customer, onClose, onRefresh }: { customer: Customer; onClose: () => void; onRefresh: () => void }) {
+  const handleConnectSalesforce = () => {
+    // Initiate Salesforce OAuth flow for this customer
+    const authUrl = `${config.apiBaseUrl}/auth/salesforce?customerId=${customer.id}`;
+    window.open(authUrl, '_blank', 'width=800,height=600');
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold text-gray-900">{customer.companyName}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Customer Information */}
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-1">Company Name</label>
+              <p className="text-lg font-semibold text-gray-900">{customer.companyName}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-1">Subdomain</label>
+              <p className="text-lg font-semibold text-gray-900">{customer.subdomain}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-1">Subscription Tier</label>
+              <span className="inline-flex px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800">
+                {customer.subscriptionTier}
+              </span>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-1">Status</label>
+              <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${
+                customer.isSuspended ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+              }`}>
+                {customer.isSuspended ? 'Suspended' : customer.subscriptionStatus}
+              </span>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-1">User Count</label>
+              <p className="text-lg font-semibold text-gray-900">{customer.userCount}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-1">Created</label>
+              <p className="text-lg font-semibold text-gray-900">
+                {new Date(customer.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+          </div>
+
+          {/* Salesforce Connection */}
+          <div className="border-t border-gray-200 pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Salesforce Integration</h3>
+            {customer.salesforceInstanceUrl ? (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="font-semibold text-green-800">Connected</span>
+                </div>
+                <p className="text-sm text-green-700">
+                  Instance: <span className="font-mono">{customer.salesforceInstanceUrl}</span>
+                </p>
+                <button
+                  onClick={handleConnectSalesforce}
+                  className="mt-3 text-sm text-green-700 hover:text-green-900 font-medium"
+                >
+                  Reconnect Salesforce
+                </button>
+              </div>
+            ) : (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span className="font-semibold text-yellow-800">Not Connected</span>
+                </div>
+                <p className="text-sm text-yellow-700 mb-3">
+                  This customer needs to connect their Salesforce environment
+                </p>
+                <button
+                  onClick={handleConnectSalesforce}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                >
+                  Connect Salesforce
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Suspension Info */}
+          {customer.isSuspended && customer.suspendedReason && (
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Suspension Details</h3>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-700">
+                  <span className="font-semibold">Reason:</span> {customer.suspendedReason}
+                </p>
+                {customer.suspendedAt && (
+                  <p className="text-sm text-red-700 mt-1">
+                    <span className="font-semibold">Suspended on:</span>{' '}
+                    {new Date(customer.suspendedAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-gray-200 bg-gray-50">
+          <div className="flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

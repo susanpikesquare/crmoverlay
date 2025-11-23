@@ -33,6 +33,78 @@ function isSuperAdmin(req: Request, res: Response, next: Function) {
 }
 
 /**
+ * POST /superadmin/customers
+ *
+ * Create a new customer.
+ * Requires super admin authentication.
+ */
+router.post('/customers', isSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { companyName, subdomain, salesforceInstanceUrl, subscriptionTier } = req.body;
+    const session = req.session as any;
+
+    // Validate required fields
+    if (!companyName || !subdomain || !subscriptionTier) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: companyName, subdomain, subscriptionTier',
+      });
+    }
+
+    // Check if subdomain already exists
+    const existingCustomer = await Customer.findOne({ where: { subdomain } });
+    if (existingCustomer) {
+      return res.status(400).json({
+        success: false,
+        error: 'Subdomain already exists',
+      });
+    }
+
+    // Create customer
+    const customer = await Customer.create({
+      companyName,
+      subdomain: subdomain.toLowerCase(),
+      salesforceInstanceUrl: salesforceInstanceUrl || null,
+      subscriptionTier,
+      subscriptionStatus: 'trial',
+      trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days trial
+      isSuspended: false,
+    });
+
+    // Log the action
+    await AuditLog.log({
+      userId: session.userId,
+      customerId: customer.id,
+      action: 'create_customer',
+      resourceType: 'customer',
+      resourceId: customer.id,
+      details: {
+        companyName,
+        subdomain,
+        subscriptionTier,
+        createdBy: session.userInfo.name,
+      },
+      ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        customer: customer.toJSON(),
+      },
+    });
+  } catch (error: any) {
+    console.error('Error creating customer:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create customer',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * GET /superadmin/customers
  *
  * Get list of all customers with pagination and search.
