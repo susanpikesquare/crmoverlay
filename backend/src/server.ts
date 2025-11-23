@@ -36,6 +36,7 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/fo
 const sessionConnectionString = DATABASE_URL.replace(/^postgres:\/\//, 'postgresql://');
 
 // Create PostgreSQL pool with SSL configuration for production
+// SSL is required for Heroku PostgreSQL connections
 const sessionPool = new Pool({
   connectionString: sessionConnectionString,
   ssl: process.env.NODE_ENV === 'production' ? {
