@@ -26,6 +26,8 @@ export default function PriorityActionsTable({ accounts }: Props) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'priority' | 'intent' | 'employees' | 'stage'>('priority');
   const [filterTier, setFilterTier] = useState<string>('all');
+  const [showAll, setShowAll] = useState<boolean>(false);
+  const DEFAULT_DISPLAY_COUNT = 10;
 
   // Filter accounts
   const filteredAccounts = accounts.filter(account => {
@@ -47,6 +49,10 @@ export default function PriorityActionsTable({ accounts }: Props) {
         return b.intentScore - a.intentScore;
     }
   });
+
+  // Limit displayed accounts unless showing all
+  const displayedAccounts = showAll ? sortedAccounts : sortedAccounts.slice(0, DEFAULT_DISPLAY_COUNT);
+  const hasMore = sortedAccounts.length > DEFAULT_DISPLAY_COUNT;
 
   const getPriorityIcon = (tier: string) => {
     if (tier.includes('🔥')) return { icon: '🔥', color: 'text-red-600', bg: 'bg-red-50' };
@@ -156,7 +162,7 @@ export default function PriorityActionsTable({ accounts }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {sortedAccounts.map((account) => {
+              {displayedAccounts.map((account) => {
                 const priority = getPriorityIcon(account.priorityTier);
                 const isExpanded = expandedRow === account.Id;
 
@@ -287,12 +293,38 @@ export default function PriorityActionsTable({ accounts }: Props) {
           </table>
         </div>
 
-        {sortedAccounts.length === 0 && (
+        {displayedAccounts.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             No accounts found matching your filters
           </div>
         )}
       </div>
+
+      {/* Show More/Less Button */}
+      {hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="px-6 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors"
+          >
+            {showAll ? (
+              <>
+                Show Less ↑
+                <span className="ml-2 text-gray-500">
+                  (Showing all {sortedAccounts.length})
+                </span>
+              </>
+            ) : (
+              <>
+                Show More ↓
+                <span className="ml-2 text-gray-500">
+                  ({sortedAccounts.length - DEFAULT_DISPLAY_COUNT} more)
+                </span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
