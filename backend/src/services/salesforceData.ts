@@ -14,6 +14,12 @@ export interface Account {
   Industry?: string;
   OwnerId?: string;
 
+  // Standard Salesforce Account fields
+  NumberOfEmployees?: number;
+  AnnualRevenue?: number;
+  Rating?: string;
+  Type?: string;
+
   // 6sense fields (actual API names from Salesforce)
   accountBuyingStage6sense__c?: string;
   accountIntentScore6sense__c?: number;
@@ -86,6 +92,7 @@ export interface Opportunity {
   Account?: {
     Name: string;
     Id?: string;
+    Type?: string;
   };
   Amount?: number;
   StageName?: string;
@@ -98,8 +105,12 @@ export interface Opportunity {
   };
   CreatedDate?: string;
   LastModifiedDate?: string;
+
+  // Standard Opportunity fields
+  Type?: string;
   NextStep?: string;
   Description?: string;
+  LeadSource?: string;
 
   // MEDDPICC Fields (actual field names from Salesforce)
   COM_Metrics__c?: string;
