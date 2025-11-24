@@ -448,20 +448,24 @@ export async function getPriorityAccounts(
   connection: Connection,
   userId: string
 ): Promise<PriorityAccount[]> {
-  // Query accounts with priority signals - owned by user OR recently active
-  // Focus on accounts that indicate buying intent (Hot/Warm rating, large company, etc.)
+  // Query accounts that have opportunities owned by the AE
+  // This approach works because AEs typically own opportunities, not accounts
+  // Show accounts with priority signals: Hot/Warm rating, large size, high revenue, or recent activity
   const query = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
            Type, Rating, AnnualRevenue,
-           CreatedDate, LastModifiedDate
+           CreatedDate, LastModifiedDate,
+           (SELECT Id FROM Opportunities WHERE OwnerId = '${userId}' AND IsClosed = false LIMIT 1)
     FROM Account
-    WHERE OwnerId = '${userId}'
-      AND (
-        Rating IN ('Hot', 'Warm')
-        OR NumberOfEmployees > 500
-        OR AnnualRevenue > 1000000
-        OR LastModifiedDate = LAST_N_DAYS:60
-      )
+    WHERE Id IN (
+      SELECT AccountId FROM Opportunity WHERE OwnerId = '${userId}' AND IsClosed = false
+    )
+    AND (
+      Rating IN ('Hot', 'Warm')
+      OR NumberOfEmployees > 500
+      OR AnnualRevenue > 1000000
+      OR LastModifiedDate = LAST_N_DAYS:90
+    )
     ORDER BY Rating DESC, LastModifiedDate DESC
     LIMIT 20
   `;
