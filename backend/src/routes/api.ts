@@ -538,6 +538,73 @@ router.get('/dashboard/sales-leader', isAuthenticated, async (req: Request, res:
 });
 
 /**
+ * GET /api/hub/sales-leader/priorities
+ * Get team priorities for Sales Leader
+ */
+router.get('/hub/sales-leader/priorities', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const priorities = await HubData.getTeamPriorities(connection, userId);
+
+    res.json({
+      success: true,
+      data: priorities,
+      count: priorities.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching team priorities:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch team priorities',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/sales-leader/pipeline-forecast
+ * Get team pipeline and forecast for Sales Leader
+ */
+router.get('/hub/sales-leader/pipeline-forecast', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const forecast = await HubData.getTeamPipelineForecast(connection, userId);
+
+    res.json({
+      success: true,
+      data: forecast,
+    });
+  } catch (error: any) {
+    console.error('Error fetching team pipeline forecast:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch team pipeline forecast',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/debug/account-fields
  * Returns ALL fields from the first account to help identify 6sense field names
  */

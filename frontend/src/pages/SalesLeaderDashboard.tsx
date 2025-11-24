@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
+import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
+import PipelineForecastPanel from '../components/PipelineForecastPanel';
 
 interface TeamMetrics {
   quotaAttainment: {
@@ -81,6 +84,33 @@ export default function SalesLeaderDashboard() {
   const [minDealSize, setMinDealSize] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [availableUsers, setAvailableUsers] = useState<{id: string, name: string}[]>([]);
+
+  // Fetch team priorities
+  const { data: prioritiesData } = useQuery<{
+    success: boolean;
+    data: any[];
+  }>({
+    queryKey: ['sales-leader-priorities'],
+    queryFn: async () => {
+      const response = await api.get('/api/hub/sales-leader/priorities');
+      return response.data;
+    },
+  });
+
+  // Fetch team pipeline forecast
+  const { data: forecastData } = useQuery<{
+    success: boolean;
+    data: any;
+  }>({
+    queryKey: ['sales-leader-pipeline-forecast'],
+    queryFn: async () => {
+      const response = await api.get('/api/hub/sales-leader/pipeline-forecast');
+      return response.data;
+    },
+  });
+
+  const priorities = prioritiesData?.data || [];
+  const forecast = forecastData?.data;
 
   useEffect(() => {
     fetchAvailableUsers();
@@ -406,6 +436,15 @@ export default function SalesLeaderDashboard() {
           </div>
         </div>
       )}
+
+      {/* Today's Priorities and Pipeline/Forecast - Two Column Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Team Priorities */}
+        <TodaysPrioritiesPanel priorities={priorities} />
+
+        {/* Team Pipeline & Forecast */}
+        {forecast && <PipelineForecastPanel forecast={forecast} />}
+      </div>
 
       {/* Top Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
