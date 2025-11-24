@@ -450,9 +450,10 @@ export async function getPriorityAccounts(
 ): Promise<PriorityAccount[]> {
   // Query high-value accounts WITHOUT open opportunities (potential new business)
   // These are priority accounts to target for new deals
+  // Note: Not using Rating field as it may not exist in all Salesforce orgs
   const query = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
-           Type, Rating, AnnualRevenue,
+           Type, AnnualRevenue,
            CreatedDate, LastModifiedDate,
            (SELECT Id, Name FROM Opportunities WHERE IsClosed = false LIMIT 1)
     FROM Account
@@ -460,11 +461,10 @@ export async function getPriorityAccounts(
       SELECT AccountId FROM Opportunity WHERE IsClosed = false
     )
     AND (
-      Rating IN ('Hot', 'Warm')
-      OR NumberOfEmployees > 500
+      NumberOfEmployees > 500
       OR AnnualRevenue > 1000000
     )
-    ORDER BY Rating DESC, LastModifiedDate DESC
+    ORDER BY AnnualRevenue DESC NULLS LAST, NumberOfEmployees DESC NULLS LAST, LastModifiedDate DESC
     LIMIT 50
   `;
 
@@ -479,7 +479,6 @@ export async function getPriorityAccounts(
       const sample = accounts[0];
       console.log(`[DEBUG] Sample account:`, {
         Name: sample.Name,
-        Rating: sample.Rating,
         NumberOfEmployees: sample.NumberOfEmployees,
         AnnualRevenue: sample.AnnualRevenue,
         Type: sample.Type
@@ -490,9 +489,8 @@ export async function getPriorityAccounts(
     const transformedAccounts = accounts.map((account, index) => {
       const employeeCount = account.NumberOfEmployees || 0;
       const revenue = account.AnnualRevenue || 0;
-      const rating = account.Rating || '';
 
-      // Calculate score from standard fields
+      // Calculate score from employee count and revenue only
       let score = 50; // base score
       if (employeeCount > 1000) score += 20;
       else if (employeeCount > 500) score += 15;
@@ -502,16 +500,13 @@ export async function getPriorityAccounts(
       else if (revenue > 1000000) score += 10;
       else if (revenue > 100000) score += 5;
 
-      if (rating === 'Hot') score += 15;
-      else if (rating === 'Warm') score += 10;
-
       const intentScore = Math.min(100, score);
 
       // Determine priority tier based on intent score
       let priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool';
-      if (intentScore >= 85) {
+      if (intentScore >= 75) {
         priorityTier = '🔥 Hot';
-      } else if (intentScore >= 70) {
+      } else if (intentScore >= 60) {
         priorityTier = '🔶 Warm';
       } else {
         priorityTier = '🔵 Cool';
@@ -523,15 +518,14 @@ export async function getPriorityAccounts(
           name: account.Name,
           employeeCount,
           revenue,
-          rating,
           calculatedScore: score,
           intentScore,
           priorityTier
         });
       }
 
-      // Use Rating or Type for buying stage
-      const buyingStage = rating || account.Type || 'Active';
+      // Use Type for buying stage
+      const buyingStage = account.Type || 'Prospect';
 
       // Calculate days since last activity
       const daysSinceUpdate = account.LastModifiedDate
