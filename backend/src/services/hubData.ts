@@ -468,8 +468,22 @@ export async function getPriorityAccounts(
     const result = await connection.query<Account>(query);
     const accounts = result.records || [];
 
+    console.log(`[DEBUG] getPriorityAccounts - Query returned ${accounts.length} accounts`);
+
+    if (accounts.length > 0) {
+      // Log first account for debugging
+      const sample = accounts[0];
+      console.log(`[DEBUG] Sample account:`, {
+        Name: sample.Name,
+        Rating: sample.Rating,
+        NumberOfEmployees: sample.NumberOfEmployees,
+        AnnualRevenue: sample.AnnualRevenue,
+        Type: sample.Type
+      });
+    }
+
     // Transform accounts with data calculated from standard fields
-    const transformedAccounts = accounts.map(account => {
+    const transformedAccounts = accounts.map((account, index) => {
       const employeeCount = account.NumberOfEmployees || 0;
       const revenue = account.AnnualRevenue || 0;
       const rating = account.Rating || '';
@@ -497,6 +511,19 @@ export async function getPriorityAccounts(
         priorityTier = '🔶 Warm';
       } else {
         priorityTier = '🔵 Cool';
+      }
+
+      // Log scoring details for first 3 accounts
+      if (index < 3) {
+        console.log(`[DEBUG] Account #${index + 1} scoring:`, {
+          name: account.Name,
+          employeeCount,
+          revenue,
+          rating,
+          calculatedScore: score,
+          intentScore,
+          priorityTier
+        });
       }
 
       // Use Rating or Type for buying stage
@@ -536,7 +563,18 @@ export async function getPriorityAccounts(
     );
 
     // Sort by intent score descending
-    return priorityAccounts.sort((a, b) => (b.intentScore || 0) - (a.intentScore || 0));
+    const sortedAccounts = priorityAccounts.sort((a, b) => (b.intentScore || 0) - (a.intentScore || 0));
+
+    // Log final distribution
+    const tierCounts = sortedAccounts.reduce((acc, account) => {
+      acc[account.priorityTier] = (acc[account.priorityTier] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    console.log(`[DEBUG] Priority account distribution:`, tierCounts);
+    console.log(`[DEBUG] Returning ${sortedAccounts.length} priority accounts`);
+
+    return sortedAccounts;
   } catch (error) {
     console.error('Error fetching priority accounts:', error);
     return [];
