@@ -8,6 +8,7 @@ import { Connection } from 'jsforce';
 import { Pool } from 'pg';
 import { Account, Opportunity } from './salesforceData';
 import * as agentforce from './agentforceService';
+import { getQuotaFieldName } from './configService';
 import { AdminSettingsService } from './adminSettings';
 
 /**
@@ -335,6 +336,23 @@ export async function getAEMetrics(
   const amountField = await getAmountFieldName(pool);
 
   try {
+    // Get user quota from Salesforce
+    const quotaFieldName = getQuotaFieldName('annual');
+    let annualQuota = 1000000; // Default fallback
+
+    try {
+      const userQuery = `SELECT Id, ${quotaFieldName} FROM User WHERE Id = '${userId}' LIMIT 1`;
+      const userResult = await connection.query(userQuery);
+      if (userResult.records && userResult.records.length > 0) {
+        const userQuota = (userResult.records[0] as any)[quotaFieldName];
+        if (userQuota && userQuota > 0) {
+          annualQuota = userQuota;
+        }
+      }
+    } catch (quotaError) {
+      console.log(`Note: Could not fetch user quota from field ${quotaFieldName}, using default`);
+    }
+
     // Get closed won opps for quota attainment
     const closedWonQuery = `
       SELECT Id, ${amountField}
@@ -378,8 +396,6 @@ export async function getAEMetrics(
     const pipelineCount = pipelineRecords.length;
     const hotProspects = (hotProspectsResult.records || []).length;
 
-    // Assume quota (could be from a custom field or user setting)
-    const annualQuota = 1000000; // $1M - this should come from user quota field
     const quotaRemaining = Math.max(0, annualQuota - closedWonTotal);
     const pipelineCoverage = quotaRemaining > 0 ? pipelineTotal / quotaRemaining : 0;
 
@@ -1750,7 +1766,7 @@ export async function getPipelineForecast(
 
     // Query opportunities for current quarter
     const currentQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField} Amount, CloseDate, Probability, ForecastCategory
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false
@@ -1761,7 +1777,7 @@ export async function getPipelineForecast(
 
     // Query opportunities for next quarter
     const nextQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField} Amount, CloseDate, Probability, ForecastCategory
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false

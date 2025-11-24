@@ -179,6 +179,11 @@ const defaultConfig: AppConfig = {
     { conceptName: 'Champion', category: 'meddpicc', salesforceField: 'MEDDPICCR_Champion__c', calculateInApp: false },
     { conceptName: 'Competition', category: 'meddpicc', salesforceField: 'MEDDPICCR_Competition__c', calculateInApp: false },
     { conceptName: 'MEDDPICC Score', category: 'meddpicc', salesforceField: null, calculateInApp: true },
+
+    // User Quota & Territory
+    { conceptName: 'Annual Quota', category: 'quota', salesforceField: 'Annual_Quota__c', calculateInApp: false },
+    { conceptName: 'Quarterly Quota', category: 'quota', salesforceField: 'Quarterly_Quota__c', calculateInApp: false },
+    { conceptName: 'Monthly Quota', category: 'quota', salesforceField: 'Monthly_Quota__c', calculateInApp: false },
   ],
   roleMapping: [
     { salesforceProfile: 'Sales User', appRole: 'ae' },
@@ -296,4 +301,22 @@ export function importConfig(jsonString: string, modifiedBy: string): AppConfig 
   };
 
   return { ...currentConfig };
+}
+
+/**
+ * Get configured quota field name for User object
+ */
+export function getQuotaFieldName(quotaType: 'annual' | 'quarterly' | 'monthly' = 'annual'): string {
+  const quotaMapping: Record<string, string> = {
+    annual: 'Annual_Quota__c',
+    quarterly: 'Quarterly_Quota__c',
+    monthly: 'Monthly_Quota__c',
+  };
+
+  // Check if user has configured a different field name
+  const mapping = currentConfig.fieldMappings.find(
+    (m) => m.category === 'quota' && m.conceptName === `${quotaType.charAt(0).toUpperCase() + quotaType.slice(1)} Quota`
+  );
+
+  return mapping?.salesforceField || quotaMapping[quotaType];
 }
