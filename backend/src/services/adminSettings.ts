@@ -8,8 +8,14 @@ export interface AIProviderConfig {
   enabled: boolean;
 }
 
+export interface SalesforceFieldConfig {
+  opportunityAmountField: string; // Field to use for opportunity amounts (e.g., 'Amount', 'New_ARR__c')
+  forecastCategoryField?: string; // Field to use for forecast categories (default: 'ForecastCategory')
+}
+
 export interface AdminSettings {
   aiProvider: AIProviderConfig;
+  salesforceFields: SalesforceFieldConfig;
   updatedAt: string;
   updatedBy: string;
 }
@@ -34,6 +40,11 @@ export class AdminSettingsService {
       -- Create default AI provider setting if not exists
       INSERT INTO admin_settings (setting_key, setting_value, updated_by)
       VALUES ('ai_provider', '{"provider": "none", "enabled": false}'::jsonb, 'system')
+      ON CONFLICT (setting_key) DO NOTHING;
+
+      -- Create default Salesforce field config if not exists
+      INSERT INTO admin_settings (setting_key, setting_value, updated_by)
+      VALUES ('salesforce_fields', '{"opportunityAmountField": "Amount"}'::jsonb, 'system')
       ON CONFLICT (setting_key) DO NOTHING;
     `;
 
@@ -64,8 +75,40 @@ export class AdminSettingsService {
     );
   }
 
+  async getSalesforceFieldConfig(): Promise<SalesforceFieldConfig> {
+    const result = await this.pool.query(
+      'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
+      ['salesforce_fields']
+    );
+
+    if (result.rows.length === 0) {
+      // Return default config
+      return {
+        opportunityAmountField: 'Amount',
+        forecastCategoryField: 'ForecastCategory',
+      };
+    }
+
+    const config = result.rows[0].setting_value as SalesforceFieldConfig;
+    return {
+      opportunityAmountField: config.opportunityAmountField || 'Amount',
+      forecastCategoryField: config.forecastCategoryField || 'ForecastCategory',
+    };
+  }
+
+  async setSalesforceFieldConfig(config: SalesforceFieldConfig, userId: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
+      ['salesforce_fields', JSON.stringify(config), userId]
+    );
+  }
+
   async getAllSettings(userId: string): Promise<AdminSettings> {
     const aiConfig = await this.getAIProviderConfig();
+    const sfFieldsConfig = await this.getSalesforceFieldConfig();
 
     const result = await this.pool.query(
       'SELECT updated_at, updated_by FROM admin_settings WHERE setting_key = $1',
@@ -74,6 +117,7 @@ export class AdminSettingsService {
 
     return {
       aiProvider: aiConfig,
+      salesforceFields: sfFieldsConfig,
       updatedAt: result.rows[0]?.updated_at || new Date().toISOString(),
       updatedBy: result.rows[0]?.updated_by || 'system',
     };

@@ -1,9 +1,18 @@
 import { Sequelize } from 'sequelize';
+import { Pool } from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/formation_dev';
 
 // Parse DATABASE_URL to handle Heroku's postgres:// protocol
 const databaseUrl = DATABASE_URL.replace(/^postgres:\/\//, 'postgresql://');
+
+// Create PostgreSQL pool for direct queries (used by admin settings and other services)
+export const pool = new Pool({
+  connectionString: databaseUrl,
+  ssl: process.env.NODE_ENV === 'production' ? {
+    rejectUnauthorized: false, // Required for Heroku PostgreSQL
+  } : false,
+});
 
 // Configure Sequelize with connection pooling and SSL for production
 const sequelize = new Sequelize(databaseUrl, {

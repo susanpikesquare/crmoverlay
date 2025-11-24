@@ -5,8 +5,10 @@
  */
 
 import { Connection } from 'jsforce';
+import { Pool } from 'pg';
 import { Account, Opportunity } from './salesforceData';
 import * as agentforce from './agentforceService';
+import { AdminSettingsService } from './adminSettings';
 
 /**
  * AE Hub Metrics
@@ -115,6 +117,20 @@ function extractDomainKey(accountName: string): string {
 
   // Otherwise use full cleaned name
   return cleaned.replace(/\s+/g, '');
+}
+
+/**
+ * Get configured opportunity amount field name
+ */
+async function getAmountFieldName(pool: Pool): Promise<string> {
+  try {
+    const adminSettings = new AdminSettingsService(pool);
+    const config = await adminSettings.getSalesforceFieldConfig();
+    return config.opportunityAmountField || 'Amount';
+  } catch (error) {
+    console.error('Error fetching amount field config:', error);
+    return 'Amount'; // Fallback to default
+  }
 }
 
 /**
@@ -280,13 +296,15 @@ async function generateDealRecommendation(
  */
 export async function getAEMetrics(
   connection: Connection,
-  userId: string
+  userId: string,
+  pool: Pool
 ): Promise<AEMetrics> {
   const currentYear = new Date().getFullYear();
+  const amountField = await getAmountFieldName(pool);
 
   // Get closed won opps for quota attainment
   const closedWonQuery = `
-    SELECT SUM(Amount) total
+    SELECT SUM(${amountField}) total
     FROM Opportunity
     WHERE OwnerId = '${userId}'
       AND IsWon = true
@@ -295,7 +313,7 @@ export async function getAEMetrics(
 
   // Get pipeline (open opps)
   const pipelineQuery = `
-    SELECT SUM(Amount) total, COUNT() count
+    SELECT SUM(${amountField}) total, COUNT() count
     FROM Opportunity
     WHERE OwnerId = '${userId}'
       AND IsClosed = false
@@ -425,10 +443,12 @@ export async function getPriorityAccounts(
  */
 export async function getAtRiskDeals(
   connection: Connection,
-  userId: string
+  userId: string,
+  pool: Pool
 ): Promise<AtRiskDeal[]> {
+  const amountField = await getAmountFieldName(pool);
   const query = `
-    SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
+    SELECT Id, Name, AccountId, Account.Name, ${amountField} Amount, StageName,
            CloseDate, LastModifiedDate, CreatedDate,
            COM_Metrics__c, MEDDPICCR_Economic_Buyer__c, Economic_Buyer_Name__c,
            MEDDPICCR_Decision_Criteria__c, MEDDPICCR_Decision_Process__c,
@@ -1646,9 +1666,11 @@ export async function getTodaysPriorities(
  */
 export async function getPipelineForecast(
   connection: Connection,
-  userId: string
+  userId: string,
+  pool: Pool
 ): Promise<PipelineForecast> {
   try {
+    const amountField = await getAmountFieldName(pool);
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
@@ -1665,7 +1687,7 @@ export async function getPipelineForecast(
 
     // Query opportunities for current quarter
     const currentQuarterQuery = `
-      SELECT Id, Name, StageName, Amount, CloseDate, Probability, ForecastCategory
+      SELECT Id, Name, StageName, ${amountField} Amount, CloseDate, Probability, ForecastCategory
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false
@@ -1676,7 +1698,7 @@ export async function getPipelineForecast(
 
     // Query opportunities for next quarter
     const nextQuarterQuery = `
-      SELECT Id, Name, StageName, Amount, CloseDate, Probability, ForecastCategory
+      SELECT Id, Name, StageName, ${amountField} Amount, CloseDate, Probability, ForecastCategory
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false

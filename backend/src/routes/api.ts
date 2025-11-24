@@ -3,6 +3,7 @@ import { isAuthenticated } from '../middleware/auth';
 import * as SFData from '../services/salesforceData';
 import * as HubData from '../services/hubData';
 import { aiService } from '../services/aiService';
+import { pool } from '../config/database';
 
 const router = Router();
 
@@ -757,7 +758,7 @@ router.get('/hub/ae/metrics', isAuthenticated, async (req: Request, res: Respons
       });
     }
 
-    const metrics = await HubData.getAEMetrics(connection, userId);
+    const metrics = await HubData.getAEMetrics(connection, userId, pool);
 
     res.json({
       success: true,
@@ -824,7 +825,7 @@ router.get('/hub/ae/at-risk-deals', isAuthenticated, async (req: Request, res: R
       });
     }
 
-    const deals = await HubData.getAtRiskDeals(connection, userId);
+    const deals = await HubData.getAtRiskDeals(connection, userId, pool);
 
     res.json({
       success: true,
@@ -892,7 +893,7 @@ router.get('/hub/ae/pipeline-forecast', isAuthenticated, async (req: Request, re
       });
     }
 
-    const forecast = await HubData.getPipelineForecast(connection, userId);
+    const forecast = await HubData.getPipelineForecast(connection, userId, pool);
 
     res.json({
       success: true,
