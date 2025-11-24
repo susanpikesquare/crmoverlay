@@ -448,17 +448,21 @@ export async function getPriorityAccounts(
   connection: Connection,
   userId: string
 ): Promise<PriorityAccount[]> {
-  // Query accounts that have opportunities owned by the AE
-  // This approach works because AEs typically own opportunities, not accounts
-  // Return all accounts with open opportunities, then score and filter by priority tier
+  // Query high-value accounts WITHOUT open opportunities (potential new business)
+  // These are priority accounts to target for new deals
   const query = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
            Type, Rating, AnnualRevenue,
            CreatedDate, LastModifiedDate,
-           (SELECT Id FROM Opportunities WHERE OwnerId = '${userId}' AND IsClosed = false LIMIT 1)
+           (SELECT Id, Name FROM Opportunities WHERE IsClosed = false LIMIT 1)
     FROM Account
-    WHERE Id IN (
-      SELECT AccountId FROM Opportunity WHERE OwnerId = '${userId}' AND IsClosed = false
+    WHERE Id NOT IN (
+      SELECT AccountId FROM Opportunity WHERE IsClosed = false
+    )
+    AND (
+      Rating IN ('Hot', 'Warm')
+      OR NumberOfEmployees > 500
+      OR AnnualRevenue > 1000000
     )
     ORDER BY Rating DESC, LastModifiedDate DESC
     LIMIT 50
