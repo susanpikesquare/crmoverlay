@@ -549,7 +549,7 @@ export async function getAtRiskDeals(
 
   // Query only standard Salesforce fields
   const query = `
-    SELECT Id, Name, AccountId, Account.Name, ${amountField} Amount, StageName,
+    SELECT Id, Name, AccountId, Account.Name, ${amountField}, StageName,
            CloseDate, LastModifiedDate, CreatedDate, NextStep, Description,
            Probability, Type, LeadSource
     FROM Opportunity
