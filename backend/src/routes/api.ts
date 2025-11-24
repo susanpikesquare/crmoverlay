@@ -406,6 +406,39 @@ router.get('/opportunities/:id', isAuthenticated, async (req: Request, res: Resp
 });
 
 /**
+ * GET /api/opportunities/:id/timeline
+ * Returns activity timeline for a specific opportunity
+ */
+router.get('/opportunities/:id/timeline', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const { id } = req.params;
+
+    if (!connection) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const activities = await HubData.getOpportunityTimeline(connection, id);
+
+    res.json({
+      success: true,
+      data: activities,
+      count: activities.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching opportunity timeline:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch opportunity timeline',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/accounts/:accountId/opportunities
  * Returns all opportunities for a specific account
  */

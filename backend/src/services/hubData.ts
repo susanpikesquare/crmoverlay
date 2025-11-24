@@ -2165,3 +2165,120 @@ export async function getTeamPipelineForecast(
     };
   }
 }
+
+
+// Activity Timeline for Deal Workspace
+export interface TimelineActivity {
+  id: string;
+  type: 'email' | 'call' | 'meeting' | 'task' | 'note' | 'stage_change';
+  date: string;
+  subject: string;
+  description: string;
+  participants?: string[];
+  relatedTo?: string;
+  status?: string;
+}
+
+export async function getOpportunityTimeline(
+  connection: Connection,
+  opportunityId: string
+): Promise<TimelineActivity[]> {
+  try {
+    const activities: TimelineActivity[] = [];
+
+    // Query Tasks related to this opportunity
+    const taskQuery = `
+      SELECT Id, Subject, Description, ActivityDate, Status, CreatedDate,
+             Type, Priority, Who.Name, What.Name
+      FROM Task
+      WHERE WhatId = '${opportunityId}'
+      ORDER BY CreatedDate DESC
+      LIMIT 50
+    `;
+
+    const taskResult = await connection.query(taskQuery);
+    const tasks = taskResult.records as any[];
+
+    for (const task of tasks) {
+      let activityType: TimelineActivity['type'] = 'task';
+
+      // Determine type based on Task Type field
+      if (task.Type) {
+        const taskType = task.Type.toLowerCase();
+        if (taskType.includes('email')) activityType = 'email';
+        else if (taskType.includes('call')) activityType = 'call';
+      }
+
+      activities.push({
+        id: task.Id,
+        type: activityType,
+        date: task.ActivityDate || task.CreatedDate,
+        subject: task.Subject || 'Untitled Task',
+        description: task.Description || '',
+        participants: task.Who?.Name ? [task.Who.Name] : [],
+        status: task.Status,
+      });
+    }
+
+    // Query Events (meetings) related to this opportunity
+    const eventQuery = `
+      SELECT Id, Subject, Description, StartDateTime, EndDateTime,
+             Type, Who.Name, What.Name
+      FROM Event
+      WHERE WhatId = '${opportunityId}'
+      ORDER BY StartDateTime DESC
+      LIMIT 50
+    `;
+
+    const eventResult = await connection.query(eventQuery);
+    const events = eventResult.records as any[];
+
+    for (const event of events) {
+      activities.push({
+        id: event.Id,
+        type: 'meeting',
+        date: event.StartDateTime,
+        subject: event.Subject || 'Meeting',
+        description: event.Description || '',
+        participants: event.Who?.Name ? [event.Who.Name] : [],
+      });
+    }
+
+    // Query Opportunity Field History for stage changes
+    const historyQuery = `
+      SELECT Id, Field, OldValue, NewValue, CreatedDate, CreatedBy.Name
+      FROM OpportunityFieldHistory
+      WHERE OpportunityId = '${opportunityId}'
+        AND Field = 'StageName'
+      ORDER BY CreatedDate DESC
+      LIMIT 20
+    `;
+
+    try {
+      const historyResult = await connection.query(historyQuery);
+      const historyRecords = historyResult.records as any[];
+
+      for (const record of historyRecords) {
+        const createdByName = record.CreatedBy ? record.CreatedBy.Name : 'System';
+        activities.push({
+          id: record.Id,
+          type: 'stage_change',
+          date: record.CreatedDate,
+          subject: `Stage changed from ${record.OldValue} to ${record.NewValue}`,
+          description: `Updated by ${createdByName}`,
+        });
+      }
+    } catch (error) {
+      // OpportunityFieldHistory may not be accessible in all orgs
+      console.warn('Could not query OpportunityFieldHistory:', error);
+    }
+
+    // Sort all activities by date (most recent first)
+    activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return activities;
+  } catch (error) {
+    console.error('Error fetching opportunity timeline:', error);
+    return [];
+  }
+}

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../services/api';
 import CommandOfMessageCard from '../components/CommandOfMessageCard';
+import ActivityTimeline from '../components/ActivityTimeline';
 
 interface Opportunity {
   Id: string;
@@ -64,6 +65,15 @@ export default function OpportunityDetail() {
       const response = await apiClient.get('/auth/user');
       return response.data.data;
     },
+  });
+
+  const { data: timelineData } = useQuery({
+    queryKey: ['opportunity-timeline', id],
+    queryFn: async () => {
+      const response = await apiClient.get(`/api/opportunities/${id}/timeline`);
+      return response.data.data;
+    },
+    enabled: !!id,
   });
 
   const handleViewInSalesforce = () => {
@@ -376,55 +386,8 @@ export default function OpportunityDetail() {
             </button>
           </div>
 
-          {/* Timeline & Activity */}
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Recent Activity</h2>
-
-            <div className="space-y-4">
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <span className="text-lg">📞</span>
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">Discovery call completed</p>
-                  <p className="text-sm text-gray-600">2 days ago</p>
-                  <p className="text-sm text-gray-700 mt-1">
-                    Discussed technical requirements and integration needs with IT Director.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <span className="text-lg">✉️</span>
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">Proposal sent</p>
-                  <p className="text-sm text-gray-600">5 days ago</p>
-                  <p className="text-sm text-gray-700 mt-1">
-                    Sent detailed proposal with ROI analysis and implementation timeline.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                  <span className="text-lg">👥</span>
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">Demo conducted</p>
-                  <p className="text-sm text-gray-600">1 week ago</p>
-                  <p className="text-sm text-gray-700 mt-1">
-                    Executive demo with VP of Learning and HR Director. Positive feedback.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <button className="mt-6 w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-blue-700 transition">
-              Log New Activity
-            </button>
-          </div>
+          {/* Activity Timeline */}
+          <ActivityTimeline activities={timelineData || []} />
         </div>
       </div>
     </div>
