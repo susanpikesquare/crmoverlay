@@ -11,15 +11,70 @@ export interface DealSummary {
   generatedAt: string;
 }
 
-type AIProvider = 'anthropic' | 'openai' | 'gemini';
+export interface AIProviderConfig {
+  provider: 'anthropic' | 'openai' | 'gemini' | 'none';
+  apiKey?: string;
+  model?: string;
+  customEndpoint?: string;
+  enabled: boolean;
+}
+
+type AIProvider = 'anthropic' | 'openai' | 'gemini' | 'none';
 
 export class AIService {
   private anthropicClient: Anthropic | null = null;
   private openaiClient: OpenAI | null = null;
   private geminiClient: GoogleGenerativeAI | null = null;
   private provider: AIProvider;
+  private model: string;
 
-  constructor() {
+  constructor(config?: AIProviderConfig) {
+    if (config && config.enabled) {
+      // Use provided configuration (from database)
+      this.initializeFromConfig(config);
+    } else {
+      // Fallback to environment variables
+      this.initializeFromEnv();
+    }
+  }
+
+  private initializeFromConfig(config: AIProviderConfig) {
+    this.provider = config.provider;
+
+    switch (config.provider) {
+      case 'anthropic':
+        if (config.apiKey) {
+          this.anthropicClient = new Anthropic({ apiKey: config.apiKey });
+          this.model = config.model || 'claude-3-5-sonnet-20241022';
+          console.log(`AI Service initialized with Anthropic Claude (${this.model})`);
+        }
+        break;
+      case 'openai':
+        if (config.apiKey) {
+          const openaiConfig: any = { apiKey: config.apiKey };
+          if (config.customEndpoint) {
+            // Support for Azure OpenAI
+            openaiConfig.baseURL = config.customEndpoint;
+          }
+          this.openaiClient = new OpenAI(openaiConfig);
+          this.model = config.model || 'gpt-4-turbo-preview';
+          console.log(`AI Service initialized with OpenAI (${this.model})`);
+        }
+        break;
+      case 'gemini':
+        if (config.apiKey) {
+          this.geminiClient = new GoogleGenerativeAI(config.apiKey);
+          this.model = config.model || 'gemini-pro';
+          console.log(`AI Service initialized with Google Gemini (${this.model})`);
+        }
+        break;
+      default:
+        this.provider = 'none';
+        console.warn('AI provider set to "none". AI features disabled.');
+    }
+  }
+
+  private initializeFromEnv() {
     // Determine which AI provider to use based on available API keys
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
@@ -29,19 +84,27 @@ export class AIService {
     if (anthropicKey) {
       this.anthropicClient = new Anthropic({ apiKey: anthropicKey });
       this.provider = 'anthropic';
-      console.log('AI Service initialized with Anthropic Claude');
+      this.model = 'claude-3-5-sonnet-20241022';
+      console.log('AI Service initialized with Anthropic Claude (env)');
     } else if (openaiKey) {
-      this.openaiClient = new OpenAI({ apiKey: openaiKey });
+      const openaiConfig: any = { apiKey: openaiKey };
+      if (process.env.AZURE_OPENAI_ENDPOINT) {
+        openaiConfig.baseURL = process.env.AZURE_OPENAI_ENDPOINT;
+      }
+      this.openaiClient = new OpenAI(openaiConfig);
       this.provider = 'openai';
-      console.log('AI Service initialized with OpenAI');
+      this.model = 'gpt-4-turbo-preview';
+      console.log('AI Service initialized with OpenAI (env)');
     } else if (geminiKey) {
       this.geminiClient = new GoogleGenerativeAI(geminiKey);
       this.provider = 'gemini';
-      console.log('AI Service initialized with Google Gemini');
+      this.model = 'gemini-pro';
+      console.log('AI Service initialized with Google Gemini (env)');
     } else {
-      this.provider = 'anthropic'; // Default, but will show error message
+      this.provider = 'none';
       console.warn('No AI API key configured. AI features will be disabled.');
       console.warn('Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_AI_API_KEY');
+      console.warn('Or configure through Admin Settings UI');
     }
   }
 
@@ -73,7 +136,7 @@ export class AIService {
     if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
 
     const message = await this.anthropicClient.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: this.model || 'claude-3-5-sonnet-20241022',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -86,7 +149,7 @@ export class AIService {
     if (!this.openaiClient) throw new Error('OpenAI client not initialized');
 
     const completion = await this.openaiClient.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: this.model || 'gpt-4-turbo-preview',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 1500,
       temperature: 0.7,
@@ -99,7 +162,7 @@ export class AIService {
   private async generateWithGemini(prompt: string): Promise<DealSummary> {
     if (!this.geminiClient) throw new Error('Gemini client not initialized');
 
-    const model = this.geminiClient.getGenerativeModel({ model: 'gemini-pro' });
+    const model = this.geminiClient.getGenerativeModel({ model: this.model || 'gemini-pro' });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const responseText = response.text();
