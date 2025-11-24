@@ -3,6 +3,8 @@ import { isAuthenticated } from '../middleware/auth';
 import { isAdmin } from '../middleware/adminAuth';
 import * as configService from '../services/configService';
 import { createConnection } from '../config/salesforce';
+import { pool } from '../config/database';
+import { AdminSettingsService } from '../services/adminSettings';
 
 const router = Router();
 
@@ -14,12 +16,20 @@ router.use(isAdmin);
  * GET /api/admin/config
  * Get current application configuration
  */
-router.get('/config', (_req: Request, res: Response) => {
+router.get('/config', async (_req: Request, res: Response) => {
   try {
     const config = configService.getConfig();
+
+    // Add Salesforce field settings from database
+    const adminSettings = new AdminSettingsService(pool);
+    const salesforceFields = await adminSettings.getSalesforceFieldConfig();
+
     res.json({
       success: true,
-      data: config,
+      data: {
+        ...config,
+        salesforceFields,
+      },
     });
   } catch (error: any) {
     console.error('Error fetching config:', error);
@@ -161,6 +171,43 @@ router.put('/config/display-settings', (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: 'Failed to update display settings',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/salesforce-fields
+ * Update Salesforce field configuration
+ */
+router.put('/config/salesforce-fields', async (req: Request, res: Response) => {
+  try {
+    const { opportunityAmountField, forecastCategoryField } = req.body;
+    const session = req.session as any;
+    const userId = session.userId || 'Unknown';
+
+    const adminSettings = new AdminSettingsService(pool);
+    await adminSettings.setSalesforceFieldConfig(
+      {
+        opportunityAmountField: opportunityAmountField || 'Amount',
+        forecastCategoryField: forecastCategoryField || 'ForecastCategory',
+      },
+      userId
+    );
+
+    res.json({
+      success: true,
+      data: {
+        opportunityAmountField: opportunityAmountField || 'Amount',
+        forecastCategoryField: forecastCategoryField || 'ForecastCategory',
+      },
+      message: 'Salesforce field settings updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating Salesforce field settings:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update Salesforce field settings',
       message: error.message,
     });
   }
