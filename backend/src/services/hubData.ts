@@ -448,15 +448,21 @@ export async function getPriorityAccounts(
   connection: Connection,
   userId: string
 ): Promise<PriorityAccount[]> {
-  // Query only standard Salesforce fields
+  // Query accounts with priority signals - owned by user OR recently active
+  // Focus on accounts that indicate buying intent (Hot/Warm rating, large company, etc.)
   const query = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
            Type, Rating, AnnualRevenue,
            CreatedDate, LastModifiedDate
     FROM Account
     WHERE OwnerId = '${userId}'
-      AND (CreatedDate = LAST_N_DAYS:90 OR LastModifiedDate = LAST_N_DAYS:30)
-    ORDER BY LastModifiedDate DESC
+      AND (
+        Rating IN ('Hot', 'Warm')
+        OR NumberOfEmployees > 500
+        OR AnnualRevenue > 1000000
+        OR LastModifiedDate = LAST_N_DAYS:60
+      )
+    ORDER BY Rating DESC, LastModifiedDate DESC
     LIMIT 20
   `;
 
@@ -604,6 +610,7 @@ export async function getAtRiskDeals(
 
         return {
           ...opp,
+          Amount: opp[amountField] || 0, // Normalize amount field to Amount for frontend
           Account: {
             Name: opp.Account?.Name || 'Unknown Account',
           },
