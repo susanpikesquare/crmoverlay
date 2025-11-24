@@ -450,17 +450,18 @@ export async function getPriorityAccounts(
 ): Promise<PriorityAccount[]> {
   // Query accounts that have opportunities owned by the AE
   // This approach works because AEs typically own opportunities, not accounts
-  // Return all accounts with open opportunities, then score and filter by priority tier
+  // Return all accounts with open opportunities, prioritizing those with 6sense data
   const query = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
            Type, Rating, AnnualRevenue,
+           accountIntentScore6sense__c, accountBuyingStage6sense__c,
            CreatedDate, LastModifiedDate,
            (SELECT Id FROM Opportunities WHERE OwnerId = '${userId}' AND IsClosed = false LIMIT 1)
     FROM Account
     WHERE Id IN (
       SELECT AccountId FROM Opportunity WHERE OwnerId = '${userId}' AND IsClosed = false
     )
-    ORDER BY Rating DESC, LastModifiedDate DESC
+    ORDER BY accountIntentScore6sense__c DESC NULLS LAST, Rating DESC, LastModifiedDate DESC
     LIMIT 50
   `;
 
@@ -468,29 +469,34 @@ export async function getPriorityAccounts(
     const result = await connection.query<Account>(query);
     const accounts = result.records || [];
 
-    // First, transform accounts with basic data from standard fields
+    // First, transform accounts with data from 6sense or calculated from standard fields
     const transformedAccounts = accounts.map(account => {
-      // Calculate a simple priority score based on available data
       const employeeCount = account.NumberOfEmployees || 0;
       const revenue = account.AnnualRevenue || 0;
       const rating = account.Rating || '';
 
-      // Simple scoring: larger companies with revenue and ratings get higher scores
-      let score = 50; // base score
-      if (employeeCount > 1000) score += 20;
-      else if (employeeCount > 500) score += 15;
-      else if (employeeCount > 100) score += 10;
+      // Use 6sense Intent Score if available, otherwise calculate from standard fields
+      let intentScore: number;
+      if ((account as any).accountIntentScore6sense__c) {
+        intentScore = (account as any).accountIntentScore6sense__c;
+      } else {
+        // Fallback: calculate score from standard fields
+        let score = 50; // base score
+        if (employeeCount > 1000) score += 20;
+        else if (employeeCount > 500) score += 15;
+        else if (employeeCount > 100) score += 10;
 
-      if (revenue > 10000000) score += 15;
-      else if (revenue > 1000000) score += 10;
-      else if (revenue > 100000) score += 5;
+        if (revenue > 10000000) score += 15;
+        else if (revenue > 1000000) score += 10;
+        else if (revenue > 100000) score += 5;
 
-      if (rating === 'Hot') score += 15;
-      else if (rating === 'Warm') score += 10;
+        if (rating === 'Hot') score += 15;
+        else if (rating === 'Warm') score += 10;
 
-      const intentScore = Math.min(100, score);
+        intentScore = Math.min(100, score);
+      }
 
-      // Determine priority tier
+      // Determine priority tier based on intent score
       let priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool';
       if (intentScore >= 85) {
         priorityTier = '🔥 Hot';
@@ -499,6 +505,9 @@ export async function getPriorityAccounts(
       } else {
         priorityTier = '🔵 Cool';
       }
+
+      // Use 6sense Buying Stage if available, otherwise use Rating or Type
+      const buyingStage = (account as any).accountBuyingStage6sense__c || rating || account.Type || 'Active';
 
       // Calculate days since last activity
       const daysSinceUpdate = account.LastModifiedDate
@@ -511,9 +520,9 @@ export async function getPriorityAccounts(
         employeeCount,
         employeeGrowthPct: 0, // Not available from standard fields
         intentScore,
-        buyingStage: rating || account.Type || 'Active',
+        buyingStage,
         techStack: account.Industry || 'Unknown',
-        topSignal: `${rating ? rating + ' rating • ' : ''}${daysSinceUpdate < 7 ? 'Recently active' : 'Last updated ' + daysSinceUpdate + ' days ago'}`,
+        topSignal: `${buyingStage !== 'Active' ? buyingStage + ' • ' : ''}${daysSinceUpdate < 7 ? 'Recently active' : 'Last updated ' + daysSinceUpdate + ' days ago'}`,
       };
     });
 
