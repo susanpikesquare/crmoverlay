@@ -558,62 +558,55 @@ export async function getDashboardStats(
   connection: Connection,
   userId: string
 ): Promise<DashboardStats> {
-  // Get account counts
-  const accountCountQuery = `
-    SELECT COUNT() total
-    FROM Account
-    WHERE OwnerId = '${userId}'
-  `;
-
-  const highPriorityAccountQuery = `
-    SELECT COUNT() total
-    FROM Account
-    WHERE OwnerId = '${userId}'
-      AND accountIntentScore6sense__c >= 70
-  `;
-
-  const highPriorityFallback = `
-    SELECT COUNT() total
-    FROM Account
-    WHERE OwnerId = '${userId}'
-  `;
-
-  // Get opportunity counts and values
-  const oppCountQuery = `
-    SELECT COUNT() total, SUM(Amount) totalValue
-    FROM Opportunity
-    WHERE OwnerId = '${userId}'
-      AND IsClosed = false
-  `;
-
-  const atRiskOppQuery = `
-    SELECT COUNT() total
-    FROM Opportunity
-    WHERE OwnerId = '${userId}'
-      AND IsClosed = false
-      AND IsAtRisk__c = true
-  `;
-
-  const atRiskOppFallback = `
-    SELECT COUNT() total
-    FROM Opportunity
-    WHERE OwnerId = '${userId}'
-      AND IsClosed = false
-  `;
-
   try {
-    const [accountCount, highPriorityCount, oppStats, atRiskCount] = await Promise.all([
-      connection.query(accountCountQuery),
-      safeQuery(connection, highPriorityAccountQuery, highPriorityFallback),
-      connection.query(oppCountQuery),
-      safeQuery(connection, atRiskOppQuery, atRiskOppFallback),
+    // Get account counts using standard queries
+    const accountsQuery = `
+      SELECT Id
+      FROM Account
+      WHERE OwnerId = '${userId}'
+    `;
+
+    // Get recently modified accounts as "high priority"
+    const highPriorityAccountQuery = `
+      SELECT Id
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND LastModifiedDate = LAST_N_DAYS:30
+    `;
+
+    // Get opportunity counts and values
+    const opportunitiesQuery = `
+      SELECT Id, Amount
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+    `;
+
+    // Get stale opportunities (more than 14 days without activity)
+    const atRiskOppQuery = `
+      SELECT Id
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+        AND LastModifiedDate < LAST_N_DAYS:14
+    `;
+
+    const [accountsResult, highPriorityResult, oppsResult, atRiskResult] = await Promise.all([
+      connection.query(accountsQuery),
+      connection.query(highPriorityAccountQuery),
+      connection.query(opportunitiesQuery),
+      connection.query(atRiskOppQuery),
     ]);
 
-    const totalAccounts = (accountCount.records[0] as any)?.total || 0;
-    const highPriority = (highPriorityCount[0] as any)?.total || Math.floor(totalAccounts * 0.3);
-    const totalOpps = (oppStats.records[0] as any)?.total || 0;
-    const totalValue = (oppStats.records[0] as any)?.totalValue || 0;
-    const atRisk = (atRiskCount[0] as any)?.total || Math.floor(totalOpps * 0.2);
+    const totalAccounts = (accountsResult.records || []).length;
+    const highPriority = (highPriorityResult.records || []).length;
+    const opportunities = oppsResult.records || [];
+    const atRisk = (atRiskResult.records || []).length;
+
+    // Calculate total value and average deal size
+    const totalValue = opportunities.reduce((sum: number, opp: any) => {
+      return sum + (opp.Amount || 0);
+    }, 0);
 
     return {
       accounts: {
@@ -621,10 +614,10 @@ export async function getDashboardStats(
         highPriority,
       },
       opportunities: {
-        total: totalOpps,
+        total: opportunities.length,
         atRisk,
         totalValue,
-        avgDealSize: totalOpps > 0 ? Math.round(totalValue / totalOpps) : 0,
+        avgDealSize: opportunities.length > 0 ? Math.round(totalValue / opportunities.length) : 0,
       },
     };
   } catch (error) {

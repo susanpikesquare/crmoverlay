@@ -180,6 +180,7 @@ function groupAccountsByDomain(accounts: any[]): any[] {
 
 /**
  * Calculate MEDDPICC score from individual components
+ * Falls back to standard fields if custom fields don't exist
  */
 function calculateMEDDPICCScore(opp: Opportunity): number {
   // If actual score field exists, use it
@@ -187,39 +188,63 @@ function calculateMEDDPICCScore(opp: Opportunity): number {
     return opp.MEDDPICC_Overall_Score__c;
   }
 
-  // Otherwise calculate based on filled fields
-  const fields = [
-    opp.COM_Metrics__c,
-    opp.MEDDPICCR_Economic_Buyer__c,
-    opp.MEDDPICCR_Decision_Criteria__c,
-    opp.MEDDPICCR_Decision_Process__c,
-    opp.MEDDPICCR_Paper_Process__c,
-    opp.MEDDPICCR_Implicate_Pain__c,
-    opp.MEDDPICCR_Champion__c,
-    opp.MEDDPICCR_Competition__c,
-  ];
+  // Check if custom MEDDPICC fields exist
+  const hasCustomFields =
+    'COM_Metrics__c' in opp ||
+    'MEDDPICCR_Economic_Buyer__c' in opp ||
+    'MEDDPICCR_Decision_Criteria__c' in opp;
 
-  const filledCount = fields.filter(f => f && f.trim().length > 0).length;
-  return Math.round((filledCount / fields.length) * 100);
+  if (hasCustomFields) {
+    // Otherwise calculate based on filled custom fields
+    const fields = [
+      opp.COM_Metrics__c,
+      opp.MEDDPICCR_Economic_Buyer__c,
+      opp.MEDDPICCR_Decision_Criteria__c,
+      opp.MEDDPICCR_Decision_Process__c,
+      opp.MEDDPICCR_Paper_Process__c,
+      opp.MEDDPICCR_Implicate_Pain__c,
+      opp.MEDDPICCR_Champion__c,
+      opp.MEDDPICCR_Competition__c,
+    ];
+
+    const filledCount = fields.filter(f => f && String(f).trim().length > 0).length;
+    return Math.round((filledCount / fields.length) * 100);
+  }
+
+  // Fallback: Calculate qualification score from standard fields
+  let score = 50; // base score
+  if (opp.NextStep && String(opp.NextStep).trim().length > 0) score += 20;
+  if (opp.Description && String(opp.Description).trim().length > 50) score += 15;
+  if (opp.Probability && opp.Probability > 50) score += 15;
+
+  return score;
 }
 
 /**
  * Generate AI recommendation for priority account using Agentforce
+ * Falls back to standard fields if custom fields don't exist
  */
 async function generateAccountRecommendation(
   connection: Connection,
   account: Account
 ): Promise<string> {
   try {
+    // Use available fields - custom or standard
+    const intentScore = (account as any).intentScore || 0;
+    const buyingStage = account.Rating || account.Type || '';
+    const employeeCount = account.NumberOfEmployees || 0;
+    const industry = account.Industry || '';
+    const revenue = account.AnnualRevenue || 0;
+
     const recommendation = await agentforce.getRecommendation(connection, {
       objectType: 'Account',
       recordId: account.Id,
       data: {
-        intentScore: account.accountIntentScore6sense__c || 0,
-        buyingStage: account.accountBuyingStage6sense__c,
-        signals: account.Clay_Active_Signals__c,
-        employeeCount: account.Clay_Employee_Count__c || account.Gemini_Employee_Count__c,
-        industry: account.Industry || account.Clay_Industry__c,
+        intentScore,
+        buyingStage,
+        employeeCount,
+        industry,
+        revenue,
       },
       promptType: 'ae_priority_account',
     });
@@ -227,19 +252,23 @@ async function generateAccountRecommendation(
     return recommendation.text;
   } catch (error) {
     console.error('Error generating account recommendation:', error);
-    // Fallback to simple recommendation
-    const stage = account.accountBuyingStage6sense__c || '';
-    const intentScore = account.accountIntentScore6sense__c || 0;
+    // Fallback to simple recommendation based on standard fields
+    const rating = account.Rating || '';
+    const employeeCount = account.NumberOfEmployees || 0;
+    const revenue = account.AnnualRevenue || 0;
 
-    if (stage.toLowerCase().includes('purchase') || intentScore > 85) {
-      return 'High intent detected. Schedule discovery call this week.';
+    if (rating === 'Hot' || employeeCount > 1000 || revenue > 10000000) {
+      return 'High-value prospect. Schedule discovery call this week to understand needs.';
+    } else if (rating === 'Warm' || employeeCount > 500) {
+      return 'Promising prospect. Send relevant case studies and request intro meeting.';
     }
-    return 'Monitor intent signals and engage with relevant content.';
+    return 'Continue nurturing. Share educational content and monitor engagement.';
   }
 }
 
 /**
  * Generate AI recommendation for at-risk deal using Agentforce
+ * Falls back to standard fields if custom fields don't exist
  */
 async function generateDealRecommendation(
   connection: Connection,
@@ -250,17 +279,15 @@ async function generateDealRecommendation(
     const meddpiccScore = calculateMEDDPICCScore(opp);
     const missingElements = [];
 
-    if (!opp.MEDDPICCR_Economic_Buyer__c && !opp.Economic_Buyer_Name__c) {
-      missingElements.push('Economic Buyer');
+    // Check for missing information in standard fields
+    if (!opp.NextStep || String(opp.NextStep).trim().length === 0) {
+      missingElements.push('Next Step');
     }
-    if (!opp.MEDDPICCR_Champion__c) {
-      missingElements.push('Champion');
+    if (!opp.Description || String(opp.Description).trim().length < 20) {
+      missingElements.push('Description');
     }
-    if (!opp.MEDDPICCR_Decision_Process__c) {
-      missingElements.push('Decision Process');
-    }
-    if (!opp.COM_Metrics__c) {
-      missingElements.push('Metrics');
+    if (!opp.Type) {
+      missingElements.push('Opportunity Type');
     }
 
     const recommendation = await agentforce.getRecommendation(connection, {
@@ -272,6 +299,7 @@ async function generateDealRecommendation(
         missingElements,
         stage: opp.StageName,
         amount: opp.Amount,
+        probability: opp.Probability || 0,
       },
       promptType: 'ae_at_risk_deal',
     });
@@ -279,11 +307,15 @@ async function generateDealRecommendation(
     return recommendation.text;
   } catch (error) {
     console.error('Error generating deal recommendation:', error);
-    // Fallback
-    if (daysSinceActivity > 14) {
-      return `No activity in ${daysSinceActivity} days. Schedule check-in call immediately.`;
+    // Fallback based on staleness and missing data
+    if (daysSinceActivity > 30) {
+      return `Critical: No activity in ${daysSinceActivity} days. Schedule urgent check-in call and confirm budget/timeline.`;
+    } else if (daysSinceActivity > 21) {
+      return `High priority: ${daysSinceActivity} days stale. Reach out to champion and schedule next steps meeting.`;
+    } else if (!opp.NextStep || String(opp.NextStep).trim().length === 0) {
+      return 'Define clear next steps with buyer. Schedule follow-up meeting to move deal forward.';
     }
-    return 'Update close date and next steps to keep momentum.';
+    return 'Update close date and confirm decision timeline to maintain momentum.';
   }
 }
 
@@ -302,42 +334,49 @@ export async function getAEMetrics(
   const currentYear = new Date().getFullYear();
   const amountField = await getAmountFieldName(pool);
 
-  // Get closed won opps for quota attainment
-  const closedWonQuery = `
-    SELECT SUM(${amountField}) total
-    FROM Opportunity
-    WHERE OwnerId = '${userId}'
-      AND IsWon = true
-      AND CALENDAR_YEAR(CloseDate) = ${currentYear}
-  `;
-
-  // Get pipeline (open opps)
-  const pipelineQuery = `
-    SELECT SUM(${amountField}) total, COUNT() count
-    FROM Opportunity
-    WHERE OwnerId = '${userId}'
-      AND IsClosed = false
-  `;
-
-  // Get hot prospects (high intent accounts)
-  const hotProspectsQuery = `
-    SELECT COUNT() total
-    FROM Account
-    WHERE OwnerId = '${userId}'
-      AND accountIntentScore6sense__c >= 80
-  `;
-
   try {
+    // Get closed won opps for quota attainment
+    const closedWonQuery = `
+      SELECT Id, ${amountField}
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsWon = true
+        AND CALENDAR_YEAR(CloseDate) = ${currentYear}
+    `;
+
+    // Get pipeline (open opps)
+    const pipelineQuery = `
+      SELECT Id, ${amountField}
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+    `;
+
+    // Get hot prospects (accounts owned by user, recently created or modified)
+    const hotProspectsQuery = `
+      SELECT Id
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND (CreatedDate = LAST_N_DAYS:30 OR LastModifiedDate = LAST_N_DAYS:30)
+    `;
+
     const [closedWonResult, pipelineResult, hotProspectsResult] = await Promise.all([
       connection.query(closedWonQuery),
       connection.query(pipelineQuery),
       connection.query(hotProspectsQuery),
     ]);
 
-    const closedWonTotal = (closedWonResult.records[0] as any)?.total || 0;
-    const pipelineTotal = (pipelineResult.records[0] as any)?.total || 0;
-    const pipelineCount = (pipelineResult.records[0] as any)?.count || 0;
-    const hotProspects = (hotProspectsResult.records[0] as any)?.total || 0;
+    // Calculate totals from records
+    const closedWonTotal = (closedWonResult.records || []).reduce((sum: number, record: any) => {
+      return sum + (record[amountField] || 0);
+    }, 0);
+
+    const pipelineRecords = pipelineResult.records || [];
+    const pipelineTotal = pipelineRecords.reduce((sum: number, record: any) => {
+      return sum + (record[amountField] || 0);
+    }, 0);
+    const pipelineCount = pipelineRecords.length;
+    const hotProspects = (hotProspectsResult.records || []).length;
 
     // Assume quota (could be from a custom field or user setting)
     const annualQuota = 1000000; // $1M - this should come from user quota field
@@ -362,24 +401,21 @@ export async function getAEMetrics(
 }
 
 /**
- * Get priority accounts for AE (high intent prospects)
+ * Get priority accounts for AE (recently active accounts)
  */
 export async function getPriorityAccounts(
   connection: Connection,
   userId: string
 ): Promise<PriorityAccount[]> {
+  // Query only standard Salesforce fields
   const query = `
-    SELECT Id, Name, Industry, OwnerId,
-           accountBuyingStage6sense__c, accountIntentScore6sense__c,
-           X6Sense_Segments__c,
-           Clay_Employee_Count__c, Gemini_Employee_Count__c,
-           Clay_Revenue__c, Clay_Industry__c,
-           LMS_System_s__c,
+    SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
+           Type, Rating, AnnualRevenue,
            CreatedDate, LastModifiedDate
     FROM Account
     WHERE OwnerId = '${userId}'
-      AND accountIntentScore6sense__c >= 70
-    ORDER BY accountIntentScore6sense__c DESC
+      AND (CreatedDate = LAST_N_DAYS:90 OR LastModifiedDate = LAST_N_DAYS:30)
+    ORDER BY LastModifiedDate DESC
     LIMIT 20
   `;
 
@@ -387,30 +423,52 @@ export async function getPriorityAccounts(
     const result = await connection.query<Account>(query);
     const accounts = result.records || [];
 
-    // First, transform accounts with basic data
+    // First, transform accounts with basic data from standard fields
     const transformedAccounts = accounts.map(account => {
-      const intentScore = account.accountIntentScore6sense__c || 70;
-      const employeeCount = account.Clay_Employee_Count__c || account.Gemini_Employee_Count__c || 0;
+      // Calculate a simple priority score based on available data
+      const employeeCount = account.NumberOfEmployees || 0;
+      const revenue = account.AnnualRevenue || 0;
+      const rating = account.Rating || '';
+
+      // Simple scoring: larger companies with revenue and ratings get higher scores
+      let score = 50; // base score
+      if (employeeCount > 1000) score += 20;
+      else if (employeeCount > 500) score += 15;
+      else if (employeeCount > 100) score += 10;
+
+      if (revenue > 10000000) score += 15;
+      else if (revenue > 1000000) score += 10;
+      else if (revenue > 100000) score += 5;
+
+      if (rating === 'Hot') score += 15;
+      else if (rating === 'Warm') score += 10;
+
+      const intentScore = Math.min(100, score);
 
       // Determine priority tier
       let priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool';
       if (intentScore >= 85) {
         priorityTier = '🔥 Hot';
-      } else if (intentScore >= 75) {
+      } else if (intentScore >= 70) {
         priorityTier = '🔶 Warm';
       } else {
         priorityTier = '🔵 Cool';
       }
 
+      // Calculate days since last activity
+      const daysSinceUpdate = account.LastModifiedDate
+        ? daysBetween(account.LastModifiedDate, new Date().toISOString())
+        : 999;
+
       return {
         ...account,
         priorityTier,
         employeeCount,
-        employeeGrowthPct: 15, // Mock value - could calculate from historical data
+        employeeGrowthPct: 0, // Not available from standard fields
         intentScore,
-        buyingStage: account.accountBuyingStage6sense__c || 'Awareness',
-        techStack: account.X6Sense_Segments__c || (account as any).LMS_System_s__c || 'Unknown',
-        topSignal: `Intent score: ${intentScore} • ${account.accountBuyingStage6sense__c || 'Active research'}`,
+        buyingStage: rating || account.Type || 'Active',
+        techStack: account.Industry || 'Unknown',
+        topSignal: `${rating ? rating + ' rating • ' : ''}${daysSinceUpdate < 7 ? 'Recently active' : 'Last updated ' + daysSinceUpdate + ' days ago'}`,
       };
     });
 
@@ -439,7 +497,7 @@ export async function getPriorityAccounts(
 }
 
 /**
- * Get at-risk deals for AE (stale or low MEDDPICC score)
+ * Get at-risk deals for AE (stale deals based on standard fields)
  */
 export async function getAtRiskDeals(
   connection: Connection,
@@ -447,14 +505,12 @@ export async function getAtRiskDeals(
   pool: Pool
 ): Promise<AtRiskDeal[]> {
   const amountField = await getAmountFieldName(pool);
+
+  // Query only standard Salesforce fields
   const query = `
     SELECT Id, Name, AccountId, Account.Name, ${amountField} Amount, StageName,
-           CloseDate, LastModifiedDate, CreatedDate,
-           COM_Metrics__c, MEDDPICCR_Economic_Buyer__c, Economic_Buyer_Name__c,
-           MEDDPICCR_Decision_Criteria__c, MEDDPICCR_Decision_Process__c,
-           MEDDPICCR_Paper_Process__c, MEDDPICCR_Implicate_Pain__c,
-           MEDDPICCR_Champion__c, MEDDPICCR_Competition__c,
-           MEDDPICC_Overall_Score__c, Risk__c
+           CloseDate, LastModifiedDate, CreatedDate, NextStep, Description,
+           Probability, Type, LeadSource
     FROM Opportunity
     WHERE OwnerId = '${userId}'
       AND IsClosed = false
@@ -469,30 +525,37 @@ export async function getAtRiskDeals(
 
     const now = new Date();
 
-    // Filter opportunities first
+    // Filter opportunities that are stale
     const filteredOpps = opportunities.filter(opp => {
       const daysSinceActivity = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
-      const meddpiccScore = calculateMEDDPICCScore(opp);
-
-      // Only include if stale (>14 days) or low MEDDPICC (<60%)
-      return daysSinceActivity >= 14 || meddpiccScore < 60;
+      // Only include if stale (>14 days)
+      return daysSinceActivity >= 14;
     });
 
     // Process with AI recommendations in parallel
     const atRiskDeals = await Promise.all(
       filteredOpps.map(async opp => {
         const daysSinceActivity = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
-        const meddpiccScore = calculateMEDDPICCScore(opp);
+
+        // Calculate a simple qualification score based on available fields
+        let qualificationScore = 50; // base score
+        if (opp.NextStep && opp.NextStep.trim().length > 0) qualificationScore += 20;
+        if (opp.Description && opp.Description.trim().length > 50) qualificationScore += 15;
+        if (opp.Probability && opp.Probability > 50) qualificationScore += 15;
+
+        const meddpiccScore = qualificationScore;
 
         let warning = '';
         if (daysSinceActivity > 30) {
           warning = `⚠️ No activity in ${daysSinceActivity} days`;
-        } else if (daysSinceActivity > 14) {
+        } else if (daysSinceActivity > 21) {
           warning = `⚡ ${daysSinceActivity} days since last update`;
-        } else if (meddpiccScore < 40) {
-          warning = `📉 MEDDPICC score critically low (${meddpiccScore}%)`;
-        } else if (meddpiccScore < 60) {
-          warning = `📊 MEDDPICC incomplete (${meddpiccScore}%)`;
+        } else if (daysSinceActivity > 14) {
+          warning = `⏰ ${daysSinceActivity} days since last update`;
+        }
+
+        if (!opp.NextStep || opp.NextStep.trim().length === 0) {
+          warning += warning ? ' • No next step defined' : '📋 No next step defined';
         }
 
         // Get AI recommendation
