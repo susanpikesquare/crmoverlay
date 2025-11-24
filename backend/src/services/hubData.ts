@@ -330,15 +330,36 @@ async function generateDealRecommendation(
 export async function getAEMetrics(
   connection: Connection,
   userId: string,
-  pool: Pool
+  pool: Pool,
+  timeframe: 'annual' | 'quarterly' = 'annual'
 ): Promise<AEMetrics> {
-  const currentYear = new Date().getFullYear();
+  const now = new Date();
+  const currentYear = now.getFullYear();
   const amountField = await getAmountFieldName(pool);
 
   try {
+    // Calculate date ranges based on timeframe
+    let startDate: Date;
+    let endDate: Date;
+    let quotaType: 'annual' | 'quarterly' | 'monthly';
+
+    if (timeframe === 'quarterly') {
+      // Calculate current quarter
+      const currentMonth = now.getMonth();
+      const currentQuarter = Math.floor(currentMonth / 3);
+      startDate = new Date(currentYear, currentQuarter * 3, 1);
+      endDate = new Date(currentYear, currentQuarter * 3 + 3, 0);
+      quotaType = 'quarterly';
+    } else {
+      // Annual - calendar year
+      startDate = new Date(currentYear, 0, 1);
+      endDate = new Date(currentYear, 11, 31);
+      quotaType = 'annual';
+    }
+
     // Get user quota from Salesforce
-    const quotaFieldName = getQuotaFieldName('annual');
-    let annualQuota = 1000000; // Default fallback
+    const quotaFieldName = getQuotaFieldName(quotaType);
+    let quota = timeframe === 'quarterly' ? 250000 : 1000000; // Default fallback
 
     try {
       const userQuery = `SELECT Id, ${quotaFieldName} FROM User WHERE Id = '${userId}' LIMIT 1`;
@@ -346,7 +367,7 @@ export async function getAEMetrics(
       if (userResult.records && userResult.records.length > 0) {
         const userQuota = (userResult.records[0] as any)[quotaFieldName];
         if (userQuota && userQuota > 0) {
-          annualQuota = userQuota;
+          quota = userQuota;
         }
       }
     } catch (quotaError) {
@@ -354,12 +375,16 @@ export async function getAEMetrics(
     }
 
     // Get closed won opps for quota attainment
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
     const closedWonQuery = `
       SELECT Id, ${amountField}
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsWon = true
-        AND CALENDAR_YEAR(CloseDate) = ${currentYear}
+        AND CloseDate >= ${startDateStr}
+        AND CloseDate <= ${endDateStr}
     `;
 
     // Get pipeline (open opps)
@@ -396,11 +421,11 @@ export async function getAEMetrics(
     const pipelineCount = pipelineRecords.length;
     const hotProspects = (hotProspectsResult.records || []).length;
 
-    const quotaRemaining = Math.max(0, annualQuota - closedWonTotal);
+    const quotaRemaining = Math.max(0, quota - closedWonTotal);
     const pipelineCoverage = quotaRemaining > 0 ? pipelineTotal / quotaRemaining : 0;
 
     return {
-      quotaAttainmentYTD: annualQuota > 0 ? (closedWonTotal / annualQuota) * 100 : 0,
+      quotaAttainmentYTD: quota > 0 ? (closedWonTotal / quota) * 100 : 0,
       pipelineCoverage,
       hotProspectsCount: hotProspects,
       avgDealSize: pipelineCount > 0 ? Math.round(pipelineTotal / pipelineCount) : 0,

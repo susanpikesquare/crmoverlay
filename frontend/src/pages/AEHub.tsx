@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import PriorityActionsTable from '../components/PriorityActionsTable';
@@ -42,15 +43,16 @@ interface AtRiskDeal {
 }
 
 export default function AEHub() {
+  const [timeframe, setTimeframe] = useState<'annual' | 'quarterly'>('annual');
 
   // Fetch metrics
   const { data: metricsData } = useQuery<{
     success: boolean;
     data: AEMetrics;
   }>({
-    queryKey: ['ae-metrics'],
+    queryKey: ['ae-metrics', timeframe],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/hub/ae/metrics`, {
+      const response = await axios.get(`${API_URL}/api/hub/ae/metrics?timeframe=${timeframe}`, {
         withCredentials: true,
       });
       return response.data;
@@ -141,9 +143,35 @@ export default function AEHub() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">Account Executive Hub</h1>
-          <p className="text-slate-600 mt-2">New business acquisition and pipeline building</p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Account Executive Hub</h1>
+            <p className="text-slate-600 mt-2">New business acquisition and pipeline building</p>
+          </div>
+
+          {/* Timeframe Toggle */}
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow-sm p-1 border border-slate-200">
+            <button
+              onClick={() => setTimeframe('annual')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                timeframe === 'annual'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Annual
+            </button>
+            <button
+              onClick={() => setTimeframe('quarterly')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                timeframe === 'quarterly'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Quarterly
+            </button>
+          </div>
         </div>
 
         {/* AI Assistant */}
@@ -155,11 +183,15 @@ export default function AEHub() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {/* Quota Attainment */}
           <div className="bg-white rounded-lg shadow-sm p-4 border-l-4 border-blue-500">
-            <div className="text-xs font-medium text-slate-600 mb-1">Quota Attainment YTD</div>
+            <div className="text-xs font-medium text-slate-600 mb-1">
+              Quota Attainment {timeframe === 'annual' ? 'YTD' : 'QTD'}
+            </div>
             <div className="text-2xl font-bold text-slate-900">
               {metrics ? formatPercent(metrics.quotaAttainmentYTD) : '—'}
             </div>
-            <div className="text-xs text-slate-500">of annual quota</div>
+            <div className="text-xs text-slate-500">
+              of {timeframe} quota
+            </div>
           </div>
 
           {/* Pipeline Coverage */}
@@ -168,7 +200,9 @@ export default function AEHub() {
             <div className="text-2xl font-bold text-slate-900">
               {metrics ? `${metrics.pipelineCoverage.toFixed(1)}x` : '—'}
             </div>
-            <div className="text-xs text-slate-500">vs. remaining quota</div>
+            <div className="text-xs text-slate-500">
+              vs. remaining {timeframe} quota
+            </div>
           </div>
 
           {/* Hot Prospects */}

@@ -744,12 +744,14 @@ router.get('/debug/account-fields', isAuthenticated, async (req: Request, res: R
 /**
  * GET /api/hub/ae/metrics
  * Get AE hub dashboard metrics
+ * Query params: timeframe (annual|quarterly) - defaults to annual
  */
 router.get('/hub/ae/metrics', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const connection = req.sfConnection;
     const session = req.session as any;
     const userId = session.userId;
+    const timeframe = (req.query.timeframe as 'annual' | 'quarterly') || 'annual';
 
     if (!connection || !userId) {
       return res.status(401).json({
@@ -758,7 +760,7 @@ router.get('/hub/ae/metrics', isAuthenticated, async (req: Request, res: Respons
       });
     }
 
-    const metrics = await HubData.getAEMetrics(connection, userId, pool);
+    const metrics = await HubData.getAEMetrics(connection, userId, pool, timeframe);
 
     res.json({
       success: true,
