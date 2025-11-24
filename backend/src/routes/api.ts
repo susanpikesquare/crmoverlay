@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { isAuthenticated } from '../middleware/auth';
 import * as SFData from '../services/salesforceData';
 import * as HubData from '../services/hubData';
+import { aiService } from '../services/aiService';
 
 const router = Router();
 
@@ -433,6 +434,51 @@ router.get('/opportunities/:id/timeline', isAuthenticated, async (req: Request, 
     res.status(500).json({
       success: false,
       error: 'Failed to fetch opportunity timeline',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/opportunities/:id/ai-summary
+ * Returns AI-generated deal summary for a specific opportunity
+ */
+router.get('/opportunities/:id/ai-summary', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const { id } = req.params;
+
+    if (!connection) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    // Fetch opportunity data
+    const opportunity = await SFData.getOpportunityById(connection, id);
+    if (!opportunity) {
+      return res.status(404).json({
+        success: false,
+        error: 'Opportunity not found',
+      });
+    }
+
+    // Fetch activity timeline
+    const activities = await HubData.getOpportunityTimeline(connection, id);
+
+    // Generate AI summary
+    const summary = await aiService.generateDealSummary(opportunity, activities);
+
+    res.json({
+      success: true,
+      data: summary,
+    });
+  } catch (error: any) {
+    console.error('Error generating AI summary:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate AI summary',
       message: error.message,
     });
   }

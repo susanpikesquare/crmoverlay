@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import apiClient from '../services/api';
 import CommandOfMessageCard from '../components/CommandOfMessageCard';
 import ActivityTimeline from '../components/ActivityTimeline';
+import AIDealSummary from '../components/AIDealSummary';
 
 interface Opportunity {
   Id: string;
@@ -74,6 +75,16 @@ export default function OpportunityDetail() {
       return response.data.data;
     },
     enabled: !!id,
+  });
+
+  const { data: aiSummary, isLoading: aiLoading } = useQuery({
+    queryKey: ['opportunity-ai-summary', id],
+    queryFn: async () => {
+      const response = await apiClient.get(`/api/opportunities/${id}/ai-summary`);
+      return response.data.data;
+    },
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   const handleViewInSalesforce = () => {
@@ -258,6 +269,9 @@ export default function OpportunityDetail() {
         <div className="grid grid-cols-1 gap-8">
           {/* Command of the Message - Full Width */}
           <CommandOfMessageCard opportunity={opportunity} />
+
+          {/* AI Deal Summary - Full Width */}
+          <AIDealSummary summary={aiSummary} isLoading={aiLoading} />
 
           {/* Two Column Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
