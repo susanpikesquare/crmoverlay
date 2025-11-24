@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 
@@ -14,6 +14,14 @@ interface Props {
   onSave: (status: 'idle' | 'saving' | 'saved' | 'error') => void;
 }
 
+interface SearchableFieldSelectProps {
+  value: string | null;
+  onChange: (value: string | null) => void;
+  fields: Array<{ name: string; label: string }>;
+  placeholder?: string;
+  disabled?: boolean;
+}
+
 const CATEGORIES = [
   { id: 'clay', label: 'Clay Enrichment', icon: '🏺', color: 'bg-purple-100 text-purple-800' },
   { id: '6sense', label: '6sense Intent', icon: '🎯', color: 'bg-blue-100 text-blue-800' },
@@ -21,6 +29,110 @@ const CATEGORIES = [
   { id: 'meddpicc', label: 'MEDDPICC', icon: '📊', color: 'bg-orange-100 text-orange-800' },
   { id: 'other', label: 'Other', icon: '📌', color: 'bg-gray-100 text-gray-800' },
 ];
+
+function SearchableFieldSelect({ value, onChange, fields, placeholder = "-- Select Field --", disabled = false }: SearchableFieldSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      setTimeout(() => searchInputRef.current?.focus(), 0);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const sortedFields = [...fields].sort((a, b) => a.label.localeCompare(b.label));
+
+  const filteredFields = sortedFields.filter(field => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      field.label.toLowerCase().includes(searchLower) ||
+      field.name.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const selectedField = fields.find(f => f.name === value);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className="w-full px-3 py-2 text-sm text-left border border-gray-300 rounded bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed flex items-center justify-between"
+      >
+        <span className={selectedField ? 'text-gray-900' : 'text-gray-500'}>
+          {selectedField ? `${selectedField.label} (${selectedField.name})` : placeholder}
+        </span>
+        <span className="text-gray-400">▼</span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-80 overflow-hidden">
+          <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search fields..."
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="overflow-y-auto max-h-64">
+            <button
+              type="button"
+              onClick={() => {
+                onChange(null);
+                setIsOpen(false);
+                setSearchTerm('');
+              }}
+              className="w-full px-3 py-2 text-sm text-left hover:bg-gray-100 text-gray-500 italic"
+            >
+              {placeholder}
+            </button>
+            {filteredFields.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                No fields found
+              </div>
+            ) : (
+              filteredFields.map(field => (
+                <button
+                  key={field.name}
+                  type="button"
+                  onClick={() => {
+                    onChange(field.name);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                  className={`w-full px-3 py-2 text-sm text-left hover:bg-blue-50 ${
+                    value === field.name ? 'bg-blue-100 font-medium' : ''
+                  }`}
+                >
+                  <div>{field.label}</div>
+                  <div className="text-xs text-gray-500 font-mono">{field.name}</div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function FieldMappingsTab({ config, onSave }: Props) {
   const queryClient = useQueryClient();
@@ -104,6 +216,11 @@ export default function FieldMappingsTab({ config, onSave }: Props) {
   const getCategoryInfo = (categoryId: string) => {
     return CATEGORIES.find(c => c.id === categoryId) || CATEGORIES[CATEGORIES.length - 1];
   };
+
+  const allSalesforceFields = [
+    ...(sfFieldsData?.accountFields || []),
+    ...(sfFieldsData?.opportunityFields || []),
+  ];
 
   return (
     <div>
@@ -219,23 +336,12 @@ export default function FieldMappingsTab({ config, onSave }: Props) {
                     {mapping.calculateInApp ? (
                       <span className="text-sm text-gray-500 italic">Calculated in app</span>
                     ) : (
-                      <select
-                        value={mapping.salesforceField || ''}
-                        onChange={(e) => handleUpdateMapping(mapping.conceptName, 'salesforceField', e.target.value || null)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">-- Select Field --</option>
-                        {sfFieldsData?.accountFields?.map((field: any) => (
-                          <option key={field.name} value={field.name}>
-                            {field.label} ({field.name})
-                          </option>
-                        ))}
-                        {sfFieldsData?.opportunityFields?.map((field: any) => (
-                          <option key={field.name} value={field.name}>
-                            {field.label} ({field.name})
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableFieldSelect
+                        value={mapping.salesforceField}
+                        onChange={(value) => handleUpdateMapping(mapping.conceptName, 'salesforceField', value)}
+                        fields={allSalesforceFields}
+                        placeholder="-- Select Field --"
+                      />
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -338,23 +444,12 @@ export default function FieldMappingsTab({ config, onSave }: Props) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Salesforce Field
                 </label>
-                <select
-                  value={newMapping.salesforceField || ''}
-                  onChange={(e) => setNewMapping({ ...newMapping, salesforceField: e.target.value || null })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  <option value="">-- Select Field --</option>
-                  {sfFieldsData?.accountFields?.map((field: any) => (
-                    <option key={field.name} value={field.name}>
-                      {field.label} ({field.name})
-                    </option>
-                  ))}
-                  {sfFieldsData?.opportunityFields?.map((field: any) => (
-                    <option key={field.name} value={field.name}>
-                      {field.label} ({field.name})
-                    </option>
-                  ))}
-                </select>
+                <SearchableFieldSelect
+                  value={newMapping.salesforceField}
+                  onChange={(value) => setNewMapping({ ...newMapping, salesforceField: value })}
+                  fields={allSalesforceFields}
+                  placeholder="-- Select Field --"
+                />
               </div>
             )}
 
