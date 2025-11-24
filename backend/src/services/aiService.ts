@@ -263,6 +263,108 @@ Provide ONLY the JSON response, no additional text.`;
       generatedAt: new Date().toISOString(),
     };
   }
+
+  async askQuestion(question: string, userData: any): Promise<string> {
+    if (!this.anthropicClient && !this.openaiClient && !this.geminiClient) {
+      return 'AI Assistant is not configured. Please contact your administrator to set up an AI provider.';
+    }
+
+    try {
+      const prompt = this.buildAssistantPrompt(question, userData);
+
+      switch (this.provider) {
+        case 'anthropic':
+          return await this.askWithAnthropic(prompt);
+        case 'openai':
+          return await this.askWithOpenAI(prompt);
+        case 'gemini':
+          return await this.askWithGemini(prompt);
+        default:
+          return 'AI Assistant is not configured. Please contact your administrator.';
+      }
+    } catch (error) {
+      console.error('Error asking AI question:', error);
+      throw new Error('Failed to get AI response');
+    }
+  }
+
+  private async askWithAnthropic(prompt: string): Promise<string> {
+    if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
+
+    const message = await this.anthropicClient.messages.create({
+      model: this.model || 'claude-3-5-sonnet-20241022',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    return message.content[0].type === 'text' ? message.content[0].text : '';
+  }
+
+  private async askWithOpenAI(prompt: string): Promise<string> {
+    if (!this.openaiClient) throw new Error('OpenAI client not initialized');
+
+    const completion = await this.openaiClient.chat.completions.create({
+      model: this.model || 'gpt-4-turbo-preview',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1000,
+      temperature: 0.7,
+    });
+
+    return completion.choices[0]?.message?.content || '';
+  }
+
+  private async askWithGemini(prompt: string): Promise<string> {
+    if (!this.geminiClient) throw new Error('Gemini client not initialized');
+
+    const model = this.geminiClient.getGenerativeModel({ model: this.model || 'gemini-pro' });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
+  }
+
+  private buildAssistantPrompt(question: string, userData: any): string {
+    const { opportunities, tasks, userName, userRole } = userData;
+
+    let contextInfo = `You are a helpful sales assistant for ${userName || 'the user'}`;
+
+    if (userRole) {
+      contextInfo += `, who is a ${userRole}`;
+    }
+
+    contextInfo += `. Answer their question based on the following context:\n\n`;
+
+    if (opportunities && opportunities.length > 0) {
+      contextInfo += `**Their Opportunities:**\n`;
+      opportunities.forEach((opp: any, idx: number) => {
+        contextInfo += `${idx + 1}. ${opp.Name} - ${opp.Account?.Name || 'Unknown Account'}\n`;
+        contextInfo += `   Stage: ${opp.StageName}, Amount: $${opp.Amount?.toLocaleString() || 0}\n`;
+        contextInfo += `   Close Date: ${opp.CloseDate}, Days in Stage: ${opp.DaysInStage__c || 0}\n`;
+        if (opp.IsAtRisk__c) {
+          contextInfo += `   ⚠️ AT RISK\n`;
+        }
+        if (opp.MEDDPICC_Overall_Score__c) {
+          contextInfo += `   MEDDPICC Score: ${opp.MEDDPICC_Overall_Score__c}%\n`;
+        }
+        contextInfo += `\n`;
+      });
+    }
+
+    if (tasks && tasks.length > 0) {
+      contextInfo += `**Their Upcoming Tasks:**\n`;
+      tasks.forEach((task: any, idx: number) => {
+        contextInfo += `${idx + 1}. ${task.subject} - Due: ${task.dueDate || 'No date'}\n`;
+        if (task.priority === 'High') {
+          contextInfo += `   🔴 High Priority\n`;
+        }
+      });
+      contextInfo += `\n`;
+    }
+
+    contextInfo += `**User's Question:** ${question}\n\n`;
+    contextInfo += `Provide a helpful, concise answer (2-4 sentences). Be specific and actionable. If suggesting they focus on something, explain why.`;
+
+    return contextInfo;
+  }
 }
 
 export const aiService = new AIService();

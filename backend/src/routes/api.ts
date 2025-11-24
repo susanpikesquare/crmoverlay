@@ -1170,4 +1170,79 @@ router.get('/sobjects/:objectType/:id/permissions', isAuthenticated, async (req:
   }
 });
 
+/**
+ * POST /api/ai/ask
+ * AI Assistant - Answer user questions with context
+ */
+router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const { question } = req.body;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    if (!question || typeof question !== 'string') {
+      return res.status(400).json({ success: false, error: 'Question is required' });
+    }
+
+    // Get current user info
+    const userInfo = await connection.identity();
+    const userName = userInfo.display_name || userInfo.username;
+
+    // Get user's opportunities
+    const oppResult = await connection.query(`
+      SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
+             Probability, DaysInStage__c, IsAtRisk__c, MEDDPICC_Overall_Score__c
+      FROM Opportunity
+      WHERE OwnerId = '${userInfo.user_id}'
+        AND IsClosed = false
+      ORDER BY CloseDate ASC
+      LIMIT 10
+    `);
+
+    // Get user's tasks
+    const taskResult = await connection.query(`
+      SELECT Id, Subject, ActivityDate, Priority, Status
+      FROM Task
+      WHERE OwnerId = '${userInfo.user_id}'
+        AND IsClosed = false
+        AND ActivityDate >= TODAY
+      ORDER BY ActivityDate ASC
+      LIMIT 10
+    `);
+
+    const userData = {
+      userName,
+      userRole: (req.session as any)?.userRole || 'User',
+      opportunities: oppResult.records,
+      tasks: taskResult.records.map((task: any) => ({
+        subject: task.Subject,
+        dueDate: task.ActivityDate,
+        priority: task.Priority,
+        status: task.Status,
+      })),
+    };
+
+    const answer = await aiService.askQuestion(question, userData);
+
+    res.json({
+      success: true,
+      data: {
+        question,
+        answer,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error('Error asking AI:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get AI response',
+      message: error.message,
+    });
+  }
+});
+
 export default router;

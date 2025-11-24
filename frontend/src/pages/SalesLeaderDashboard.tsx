@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
 import PipelineForecastPanel from '../components/PipelineForecastPanel';
+import AIAssistant from '../components/AIAssistant';
 
 interface TeamMetrics {
   quotaAttainment: {
@@ -266,6 +267,11 @@ export default function SalesLeaderDashboard() {
           </svg>
           Filters
         </button>
+      </div>
+
+      {/* AI Assistant */}
+      <div className="mb-6">
+        <AIAssistant userRole="Sales Leader" />
       </div>
 
       {/* Filters Panel */}

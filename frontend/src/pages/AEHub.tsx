@@ -4,6 +4,7 @@ import PriorityActionsTable from '../components/PriorityActionsTable';
 import AtRiskDealsTable from '../components/AtRiskDealsTable';
 import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
 import PipelineForecastPanel from '../components/PipelineForecastPanel';
+import AIAssistant from '../components/AIAssistant';
 import { config } from '../config';
 
 const API_URL = config.apiBaseUrl;
@@ -143,6 +144,11 @@ export default function AEHub() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-900">Account Executive Hub</h1>
           <p className="text-slate-600 mt-2">New business acquisition and pipeline building</p>
+        </div>
+
+        {/* AI Assistant */}
+        <div className="mb-6">
+          <AIAssistant userRole="Account Executive" />
         </div>
 
         {/* Top Metrics Row - More Compact */}
