@@ -27,6 +27,7 @@ const CATEGORIES = [
   { id: 'clay', label: 'Clay Enrichment', icon: '🏺', color: 'bg-purple-100 text-purple-800' },
   { id: '6sense', label: '6sense Intent', icon: '🎯', color: 'bg-blue-100 text-blue-800' },
   { id: 'health', label: 'Health & Status', icon: '💚', color: 'bg-green-100 text-green-800' },
+  { id: 'command', label: 'Command of Message', icon: '💬', color: 'bg-indigo-100 text-indigo-800' },
   { id: 'meddpicc', label: 'MEDDPICC', icon: '📊', color: 'bg-orange-100 text-orange-800' },
   { id: 'other', label: 'Other', icon: '📌', color: 'bg-gray-100 text-gray-800' },
 ];

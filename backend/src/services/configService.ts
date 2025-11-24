@@ -164,8 +164,13 @@ const defaultConfig: AppConfig = {
     { conceptName: 'Health Score', category: 'health', salesforceField: 'Current_Gainsight_Score__c', calculateInApp: false },
     { conceptName: 'Renewal Date', category: 'health', salesforceField: 'Agreement_Expiry_Date__c', calculateInApp: false },
 
+    // Command of the Message
+    { conceptName: 'Before Scenario', category: 'command', salesforceField: 'COM_Before_Scenario__c', calculateInApp: false },
+    { conceptName: 'After Scenario', category: 'command', salesforceField: 'COM_After_Scenario__c', calculateInApp: false },
+    { conceptName: 'Required Capabilities', category: 'command', salesforceField: 'COM_Required_Capabilities__c', calculateInApp: false },
+    { conceptName: 'Metrics', category: 'command', salesforceField: 'COM_Metrics__c', calculateInApp: false },
+
     // MEDDPICC
-    { conceptName: 'Metrics', category: 'meddpicc', salesforceField: 'COM_Metrics__c', calculateInApp: false },
     { conceptName: 'Economic Buyer', category: 'meddpicc', salesforceField: 'MEDDPICCR_Economic_Buyer__c', calculateInApp: false },
     { conceptName: 'Decision Criteria', category: 'meddpicc', salesforceField: 'MEDDPICCR_Decision_Criteria__c', calculateInApp: false },
     { conceptName: 'Decision Process', category: 'meddpicc', salesforceField: 'MEDDPICCR_Decision_Process__c', calculateInApp: false },
