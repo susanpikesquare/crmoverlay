@@ -793,7 +793,17 @@ router.get('/hub/ae/priority-accounts', isAuthenticated, async (req: Request, re
       });
     }
 
+    console.log(`[API] Fetching priority accounts for user: ${userId}`);
     const accounts = await HubData.getPriorityAccounts(connection, userId);
+    console.log(`[API] getPriorityAccounts returned ${accounts.length} accounts`);
+
+    if (accounts.length > 0) {
+      const tierCounts = accounts.reduce((acc: any, account: any) => {
+        acc[account.priorityTier] = (acc[account.priorityTier] || 0) + 1;
+        return acc;
+      }, {});
+      console.log(`[API] Priority tier distribution:`, tierCounts);
+    }
 
     res.json({
       success: true,
