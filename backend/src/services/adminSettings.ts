@@ -63,7 +63,8 @@ export class AdminSettingsService {
   }
 
   async initializeSettingsTable() {
-    const query = `
+    // Create table
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS admin_settings (
         id SERIAL PRIMARY KEY,
         setting_key VARCHAR(255) UNIQUE NOT NULL,
@@ -71,24 +72,31 @@ export class AdminSettingsService {
         updated_at TIMESTAMP DEFAULT NOW(),
         updated_by VARCHAR(255)
       );
+    `);
 
-      -- Create default AI provider setting if not exists
-      INSERT INTO admin_settings (setting_key, setting_value, updated_by)
-      VALUES ('ai_provider', '{"provider": "none", "enabled": false}'::jsonb, 'system')
-      ON CONFLICT (setting_key) DO NOTHING;
+    // Create default AI provider setting if not exists
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (setting_key) DO NOTHING`,
+      ['ai_provider', JSON.stringify({ provider: 'none', enabled: false }), 'system']
+    );
 
-      -- Create default Salesforce field config if not exists
-      INSERT INTO admin_settings (setting_key, setting_value, updated_by)
-      VALUES ('salesforce_fields', '{"opportunityAmountField": "Amount"}'::jsonb, 'system')
-      ON CONFLICT (setting_key) DO NOTHING;
+    // Create default Salesforce field config if not exists
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (setting_key) DO NOTHING`,
+      ['salesforce_fields', JSON.stringify({ opportunityAmountField: 'Amount' }), 'system']
+    );
 
-      -- Create default Hub layout config if not exists
-      INSERT INTO admin_settings (setting_key, setting_value, updated_by)
-      VALUES ('hub_layout', '${JSON.stringify(this.getDefaultHubLayout())}'::jsonb, 'system')
-      ON CONFLICT (setting_key) DO NOTHING;
-    `;
-
-    await this.pool.query(query);
+    // Create default Hub layout config if not exists
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (setting_key) DO NOTHING`,
+      ['hub_layout', JSON.stringify(this.getDefaultHubLayout()), 'system']
+    );
   }
 
   private getDefaultHubLayout(): HubLayoutConfig {
