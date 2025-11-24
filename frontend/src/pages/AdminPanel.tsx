@@ -11,8 +11,9 @@ import RoleMappingsTab from '../components/admin/RoleMappingsTab';
 import DisplaySettingsTab from '../components/admin/DisplaySettingsTab';
 import HubLayoutTab from '../components/admin/HubLayoutTab';
 import ConfigManagementTab from '../components/admin/ConfigManagementTab';
+import AIConfigTab from '../components/admin/AIConfigTab';
 
-type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'config-management';
+type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
 
 interface TabConfig {
   id: TabType;
@@ -57,6 +58,12 @@ const TABS: TabConfig[] = [
     label: 'Hub Layout',
     icon: '🏠',
     description: 'Customize hub page sections and add custom links',
+  },
+  {
+    id: 'ai-config',
+    label: 'AI Configuration',
+    icon: '🤖',
+    description: 'Configure AI provider API keys for intelligent features',
   },
   {
     id: 'config-management',
@@ -285,6 +292,7 @@ export default function AdminPanel() {
                 onSave={(status) => setSaveStatus(status)}
               />
             )}
+            {activeTab === 'ai-config' && <AIConfigTab />}
             {activeTab === 'config-management' && (
               <ConfigManagementTab
                 config={configData}
