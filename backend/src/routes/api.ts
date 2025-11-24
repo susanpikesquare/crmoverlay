@@ -696,6 +696,73 @@ router.get('/hub/ae/at-risk-deals', isAuthenticated, async (req: Request, res: R
 });
 
 /**
+ * GET /api/hub/ae/priorities
+ * Get today's priorities for AE
+ */
+router.get('/hub/ae/priorities', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const priorities = await HubData.getTodaysPriorities(connection, userId);
+
+    res.json({
+      success: true,
+      data: priorities,
+      count: priorities.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching priorities:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch priorities',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/ae/pipeline-forecast
+ * Get pipeline and forecast data for AE
+ */
+router.get('/hub/ae/pipeline-forecast', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const forecast = await HubData.getPipelineForecast(connection, userId);
+
+    res.json({
+      success: true,
+      data: forecast,
+    });
+  } catch (error: any) {
+    console.error('Error fetching pipeline forecast:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch pipeline forecast',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/hub/am/metrics
  * Get AM hub dashboard metrics
  */

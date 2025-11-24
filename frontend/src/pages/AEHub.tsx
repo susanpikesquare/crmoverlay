@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import PriorityActionsTable from '../components/PriorityActionsTable';
 import AtRiskDealsTable from '../components/AtRiskDealsTable';
+import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
+import PipelineForecastPanel from '../components/PipelineForecastPanel';
 import { config } from '../config';
 
 const API_URL = config.apiBaseUrl;
@@ -82,9 +84,39 @@ export default function AEHub() {
     },
   });
 
+  // Fetch today's priorities
+  const { data: prioritiesData } = useQuery<{
+    success: boolean;
+    data: any[];
+  }>({
+    queryKey: ['ae-priorities'],
+    queryFn: async () => {
+      const response = await axios.get(`${API_URL}/api/hub/ae/priorities`, {
+        withCredentials: true,
+      });
+      return response.data;
+    },
+  });
+
+  // Fetch pipeline forecast
+  const { data: forecastData } = useQuery<{
+    success: boolean;
+    data: any;
+  }>({
+    queryKey: ['ae-pipeline-forecast'],
+    queryFn: async () => {
+      const response = await axios.get(`${API_URL}/api/hub/ae/pipeline-forecast`, {
+        withCredentials: true,
+      });
+      return response.data;
+    },
+  });
+
   const metrics = metricsData?.data;
   const priorityAccounts = accountsData?.data || [];
   const atRiskDeals = dealsData?.data || [];
+  const priorities = prioritiesData?.data || [];
+  const forecast = forecastData?.data;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -165,6 +197,15 @@ export default function AEHub() {
               </>
             )}
           </div>
+        </div>
+
+        {/* Today's Priorities and Pipeline/Forecast - Two Column Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Today's Priorities */}
+          <TodaysPrioritiesPanel priorities={priorities} />
+
+          {/* Pipeline & Forecast */}
+          {forecast && <PipelineForecastPanel forecast={forecast} />}
         </div>
 
         {/* Priority Actions Section */}

@@ -1390,3 +1390,414 @@ function getEmptySalesLeaderDashboard(): SalesLeaderDashboard {
     recentLosses: [],
   };
 }
+
+/**
+ * Priority Item Interface
+ */
+export interface PriorityItem {
+  id: string;
+  type: 'deal-risk' | 'missing-info' | 'icp-alert' | 'task-due' | 'no-next-step' | 'stage-stuck';
+  title: string;
+  description: string;
+  urgency: 'critical' | 'high' | 'medium';
+  relatedAccountId?: string;
+  relatedAccountName?: string;
+  relatedOpportunityId?: string;
+  relatedOpportunityName?: string;
+  dueDate?: string;
+  actionButton: {
+    label: string;
+    action: string;
+  };
+}
+
+/**
+ * Pipeline Forecast Interface
+ */
+export interface PipelineForecast {
+  currentQuarter: {
+    quarterName: string;
+    totalPipeline: number;
+    commitForecast: number;
+    bestCaseForecast: number;
+    coverageRatio: number;
+    opportunitiesByStage: {
+      stageName: string;
+      count: number;
+      value: number;
+    }[];
+  };
+  nextQuarter: {
+    quarterName: string;
+    totalPipeline: number;
+    commitForecast: number;
+    bestCaseForecast: number;
+    coverageRatio: number;
+    opportunitiesByStage: {
+      stageName: string;
+      count: number;
+      value: number;
+    }[];
+  };
+  forecastStatus: {
+    isSubmitted: boolean;
+    lastSubmittedDate?: string;
+    submissionUrl: string;
+  };
+}
+
+/**
+ * Get Today's Priorities for AE
+ */
+export async function getTodaysPriorities(
+  connection: Connection,
+  userId: string
+): Promise<PriorityItem[]> {
+  try {
+    const now = new Date();
+    const priorities: PriorityItem[] = [];
+
+    // Get user's open opportunities
+    const oppQuery = `
+      SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
+             LastModifiedDate, CreatedDate,
+             Command_Why_Do_Anything__c, Command_Why_Now__c, Command_Why_Us__c,
+             MEDDPICC_Overall_Score__c, NextStep, IsAtRisk__c
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+      ORDER BY CloseDate ASC
+      LIMIT 100
+    `;
+
+    const oppResult = await connection.query(oppQuery);
+    const opportunities = oppResult.records as any[];
+
+    // 1. Deal Risk - Opportunities closing this month missing Command fields
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    opportunities.forEach((opp) => {
+      const closeDate = new Date(opp.CloseDate);
+      if (closeDate.getMonth() === currentMonth && closeDate.getFullYear() === currentYear) {
+        const missingFields: string[] = [];
+        if (!opp.Command_Why_Do_Anything__c) missingFields.push('Why Do Anything');
+        if (!opp.Command_Why_Now__c) missingFields.push('Why Now');
+        if (!opp.Command_Why_Us__c) missingFields.push('Why Us');
+
+        if (missingFields.length > 0) {
+          priorities.push({
+            id: `missing-cmd-${opp.Id}`,
+            type: 'missing-info',
+            title: `Complete Command of the Message for ${opp.Name}`,
+            description: `Closing ${formatDate(opp.CloseDate)} - Missing: ${missingFields.join(', ')}`,
+            urgency: 'critical',
+            relatedAccountId: opp.AccountId,
+            relatedAccountName: opp.Account?.Name,
+            relatedOpportunityId: opp.Id,
+            relatedOpportunityName: opp.Name,
+            dueDate: opp.CloseDate,
+            actionButton: {
+              label: 'Update Deal',
+              action: `/opportunity/${opp.Id}`,
+            },
+          });
+        }
+      }
+    });
+
+    // 2. Stage Stuck - Opportunities in stage > 30 days
+    opportunities.forEach((opp) => {
+      const daysInStage = daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now);
+      if (daysInStage > 30) {
+        priorities.push({
+          id: `stuck-${opp.Id}`,
+          type: 'stage-stuck',
+          title: `${opp.Name} stuck in ${opp.StageName}`,
+          description: `No progress for ${daysInStage} days - Review and update status`,
+          urgency: 'high',
+          relatedAccountId: opp.AccountId,
+          relatedAccountName: opp.Account?.Name,
+          relatedOpportunityId: opp.Id,
+          relatedOpportunityName: opp.Name,
+          actionButton: {
+            label: 'Review Deal',
+            action: `/opportunity/${opp.Id}`,
+          },
+        });
+      }
+    });
+
+    // 3. Low MEDDPICC Score
+    opportunities.forEach((opp) => {
+      const score = opp.MEDDPICC_Overall_Score__c || 0;
+      if (score < 50 && opp.StageName !== 'Prospecting') {
+        priorities.push({
+          id: `low-meddpicc-${opp.Id}`,
+          type: 'missing-info',
+          title: `Improve qualification for ${opp.Name}`,
+          description: `MEDDPICC score is ${score}% - Missing key qualification criteria`,
+          urgency: 'high',
+          relatedAccountId: opp.AccountId,
+          relatedAccountName: opp.Account?.Name,
+          relatedOpportunityId: opp.Id,
+          relatedOpportunityName: opp.Name,
+          actionButton: {
+            label: 'Qualify Deal',
+            action: `/opportunity/${opp.Id}`,
+          },
+        });
+      }
+    });
+
+    // 4. No Next Step defined
+    opportunities.forEach((opp) => {
+      if (!opp.NextStep && opp.StageName !== 'Closed Won' && opp.StageName !== 'Closed Lost') {
+        priorities.push({
+          id: `no-next-step-${opp.Id}`,
+          type: 'no-next-step',
+          title: `Define next step for ${opp.Name}`,
+          description: `No next step defined - Add clear action item`,
+          urgency: 'medium',
+          relatedAccountId: opp.AccountId,
+          relatedAccountName: opp.Account?.Name,
+          relatedOpportunityId: opp.Id,
+          relatedOpportunityName: opp.Name,
+          actionButton: {
+            label: 'Add Next Step',
+            action: `/opportunity/${opp.Id}`,
+          },
+        });
+      }
+    });
+
+    // 5. At Risk Deals
+    opportunities.forEach((opp) => {
+      if (opp.IsAtRisk__c) {
+        priorities.push({
+          id: `at-risk-${opp.Id}`,
+          type: 'deal-risk',
+          title: `${opp.Name} flagged as At Risk`,
+          description: `Review risk factors and create action plan`,
+          urgency: 'critical',
+          relatedAccountId: opp.AccountId,
+          relatedAccountName: opp.Account?.Name,
+          relatedOpportunityId: opp.Id,
+          relatedOpportunityName: opp.Name,
+          actionButton: {
+            label: 'Review Risk',
+            action: `/opportunity/${opp.Id}`,
+          },
+        });
+      }
+    });
+
+    // 6. Get overdue and due today tasks
+    const taskQuery = `
+      SELECT Id, Subject, ActivityDate, WhatId, What.Name, What.Type
+      FROM Task
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+        AND ActivityDate <= ${now.toISOString().split('T')[0]}
+      ORDER BY ActivityDate ASC
+      LIMIT 20
+    `;
+
+    try {
+      const taskResult = await connection.query(taskQuery);
+      const tasks = taskResult.records as any[];
+
+      tasks.forEach((task) => {
+        const dueDate = new Date(task.ActivityDate);
+        const isOverdue = dueDate < now;
+
+        priorities.push({
+          id: `task-${task.Id}`,
+          type: 'task-due',
+          title: isOverdue ? `Overdue: ${task.Subject}` : `Due Today: ${task.Subject}`,
+          description: `Due ${formatDate(task.ActivityDate)}`,
+          urgency: isOverdue ? 'critical' : 'high',
+          relatedAccountId: task.What?.Type === 'Account' ? task.WhatId : undefined,
+          relatedOpportunityId: task.What?.Type === 'Opportunity' ? task.WhatId : undefined,
+          dueDate: task.ActivityDate,
+          actionButton: {
+            label: 'Complete Task',
+            action: task.WhatId ? `/${task.What.Type.toLowerCase()}/${task.WhatId}` : '/dashboard',
+          },
+        });
+      });
+    } catch (taskError) {
+      console.error('Error fetching tasks:', taskError);
+    }
+
+    // Sort by urgency and limit to top 15
+    const urgencyOrder = { critical: 0, high: 1, medium: 2 };
+    priorities.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
+
+    return priorities.slice(0, 15);
+  } catch (error) {
+    console.error('Error fetching priorities:', error);
+    return [];
+  }
+}
+
+/**
+ * Get Pipeline and Forecast for AE
+ */
+export async function getPipelineForecast(
+  connection: Connection,
+  userId: string
+): Promise<PipelineForecast> {
+  try {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    // Calculate current quarter
+    const currentQuarter = Math.floor(currentMonth / 3);
+    const currentQuarterStart = new Date(currentYear, currentQuarter * 3, 1);
+    const currentQuarterEnd = new Date(currentYear, currentQuarter * 3 + 3, 0);
+
+    // Calculate next quarter
+    const nextQuarterStart = new Date(currentQuarterEnd);
+    nextQuarterStart.setDate(nextQuarterStart.getDate() + 1);
+    const nextQuarterEnd = new Date(nextQuarterStart.getFullYear(), nextQuarterStart.getMonth() + 3, 0);
+
+    // Query opportunities for current quarter
+    const currentQuarterQuery = `
+      SELECT Id, Name, StageName, Amount, CloseDate, Probability, ForecastCategory
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+        AND CloseDate >= ${currentQuarterStart.toISOString().split('T')[0]}
+        AND CloseDate <= ${currentQuarterEnd.toISOString().split('T')[0]}
+      ORDER BY CloseDate ASC
+    `;
+
+    // Query opportunities for next quarter
+    const nextQuarterQuery = `
+      SELECT Id, Name, StageName, Amount, CloseDate, Probability, ForecastCategory
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+        AND CloseDate >= ${nextQuarterStart.toISOString().split('T')[0]}
+        AND CloseDate <= ${nextQuarterEnd.toISOString().split('T')[0]}
+      ORDER BY CloseDate ASC
+    `;
+
+    const [currentQtrResult, nextQtrResult] = await Promise.all([
+      connection.query(currentQuarterQuery),
+      connection.query(nextQuarterQuery),
+    ]);
+
+    const currentQtrOpps = currentQtrResult.records as any[];
+    const nextQtrOpps = nextQtrResult.records as any[];
+
+    // Helper function to calculate quarter metrics
+    const calculateQuarterMetrics = (opps: any[], quarterName: string) => {
+      const totalPipeline = opps.reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+
+      // Group by stage
+      const stageMap = new Map<string, { count: number; value: number }>();
+      opps.forEach((opp) => {
+        const stage = opp.StageName || 'Unknown';
+        if (!stageMap.has(stage)) {
+          stageMap.set(stage, { count: 0, value: 0 });
+        }
+        const stageData = stageMap.get(stage)!;
+        stageData.count++;
+        stageData.value += opp.Amount || 0;
+      });
+
+      const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
+        stageName,
+        count: data.count,
+        value: data.value,
+      }));
+
+      // Calculate forecast categories
+      const commitForecast = opps
+        .filter((opp) => opp.ForecastCategory === 'Commit' || opp.ForecastCategory === 'Closed')
+        .reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+
+      const bestCaseForecast = opps
+        .filter((opp) =>
+          opp.ForecastCategory === 'Commit' ||
+          opp.ForecastCategory === 'Closed' ||
+          opp.ForecastCategory === 'Best Case'
+        )
+        .reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+
+      // Calculate coverage ratio (pipeline / expected quota)
+      // Assuming quarterly quota is total annual quota / 4
+      // This is a simplified calculation - adjust based on actual quota data
+      const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
+
+      return {
+        quarterName,
+        totalPipeline,
+        commitForecast,
+        bestCaseForecast,
+        coverageRatio,
+        opportunitiesByStage,
+      };
+    };
+
+    const currentQuarterData = calculateQuarterMetrics(
+      currentQtrOpps,
+      `Q${currentQuarter + 1} ${currentYear}`
+    );
+
+    const nextQuarterNum = (currentQuarter + 1) % 4 + 1;
+    const nextQuarterYear = currentQuarter === 3 ? currentYear + 1 : currentYear;
+    const nextQuarterData = calculateQuarterMetrics(
+      nextQtrOpps,
+      `Q${nextQuarterNum} ${nextQuarterYear}`
+    );
+
+    // Get Salesforce instance URL for forecast submission
+    const identity = await connection.identity();
+    const instanceUrl = identity.urls?.enterprise?.replace('{version}', '60.0').split('/services')[0] || '';
+
+    return {
+      currentQuarter: currentQuarterData,
+      nextQuarter: nextQuarterData,
+      forecastStatus: {
+        isSubmitted: false, // TODO: Check actual forecast submission status
+        submissionUrl: `${instanceUrl}/lightning/o/Opportunity/list`,
+      },
+    };
+  } catch (error) {
+    console.error('Error fetching pipeline forecast:', error);
+    return {
+      currentQuarter: {
+        quarterName: 'Current Quarter',
+        totalPipeline: 0,
+        commitForecast: 0,
+        bestCaseForecast: 0,
+        coverageRatio: 0,
+        opportunitiesByStage: [],
+      },
+      nextQuarter: {
+        quarterName: 'Next Quarter',
+        totalPipeline: 0,
+        commitForecast: 0,
+        bestCaseForecast: 0,
+        coverageRatio: 0,
+        opportunitiesByStage: [],
+      },
+      forecastStatus: {
+        isSubmitted: false,
+        submissionUrl: '',
+      },
+    };
+  }
+}
+
+/**
+ * Helper to format date for display
+ */
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
