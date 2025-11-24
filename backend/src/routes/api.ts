@@ -42,6 +42,50 @@ function mapProfileToRole(profileName: string): 'sales-leader' | 'ae' | 'am' | '
 }
 
 /**
+ * GET /api/users
+ * Returns all active Salesforce users for filtering
+ */
+router.get('/users', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+
+    if (!connection) {
+      return res.status(401).json({
+        success: false,
+        error: 'No Salesforce connection available',
+      });
+    }
+
+    // Query all active users
+    const query = `
+      SELECT Id, Name
+      FROM User
+      WHERE IsActive = true
+      ORDER BY Name
+      LIMIT 200
+    `;
+
+    const result = await connection.query(query);
+    const users = result.records.map((user: any) => ({
+      id: user.Id,
+      name: user.Name,
+    }));
+
+    res.json({
+      success: true,
+      data: users,
+    });
+  } catch (error: any) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch users',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/user/me
  * Returns the current authenticated user's information from Salesforce
  * including their profile and mapped role for hub routing
@@ -449,8 +493,20 @@ router.get('/dashboard/sales-leader', isAuthenticated, async (req: Request, res:
     // Parse query parameters
     const filters: any = {};
 
+    // Date range handling
     if (req.query.dateRange) {
       filters.dateRange = req.query.dateRange as string;
+    }
+    if (req.query.startDate) {
+      filters.startDate = req.query.startDate as string;
+    }
+    if (req.query.endDate) {
+      filters.endDate = req.query.endDate as string;
+    }
+
+    // Team filter handling
+    if (req.query.teamFilter) {
+      filters.teamFilter = req.query.teamFilter as string;
     }
 
     if (req.query.reps) {

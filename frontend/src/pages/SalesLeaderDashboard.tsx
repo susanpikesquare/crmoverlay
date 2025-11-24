@@ -73,14 +73,33 @@ export default function SalesLeaderDashboard() {
   const [showAllReps, setShowAllReps] = useState(false);
 
   // Filter states
-  const [dateRange, setDateRange] = useState('thisYear'); // thisQuarter, lastQuarter, thisYear, custom
+  const [dateRange, setDateRange] = useState('thisYear');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [teamFilter, setTeamFilter] = useState('myTeam'); // myTeam, allUsers, specific user ID
   const [selectedReps, setSelectedReps] = useState<string[]>([]);
   const [minDealSize, setMinDealSize] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<{id: string, name: string}[]>([]);
+
+  useEffect(() => {
+    fetchAvailableUsers();
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
-  }, [dateRange, selectedReps, minDealSize]);
+  }, [dateRange, customStartDate, customEndDate, teamFilter, selectedReps, minDealSize]);
+
+  const fetchAvailableUsers = async () => {
+    try {
+      const response = await api.get('/api/users');
+      if (response.data.success) {
+        setAvailableUsers(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching users:', err);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -88,13 +107,25 @@ export default function SalesLeaderDashboard() {
 
       // Build query params
       const params = new URLSearchParams();
-      params.append('dateRange', dateRange);
+
+      // Date range handling
+      if (dateRange === 'custom') {
+        if (customStartDate) params.append('startDate', customStartDate);
+        if (customEndDate) params.append('endDate', customEndDate);
+      } else {
+        params.append('dateRange', dateRange);
+      }
+
+      // Team filter handling
+      params.append('teamFilter', teamFilter);
       if (selectedReps.length > 0) {
         params.append('reps', selectedReps.join(','));
       }
+
       if (minDealSize > 0) {
         params.append('minDealSize', minDealSize.toString());
       }
+
       params.append('includeAll', 'true'); // Fallback to show all if no team members found
 
       const response = await api.get(`/api/dashboard/sales-leader?${params.toString()}`);
@@ -210,26 +241,96 @@ export default function SalesLeaderDashboard() {
       {/* Filters Panel */}
       {showFilters && (
         <div className="mb-6 bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Date Range Filter */}
-            <div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Date Range Filter - Salesforce Style */}
+            <div className="lg:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
               <select
                 value={dateRange}
                 onChange={(e) => setDateRange(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
               >
-                <option value="thisQuarter">This Quarter</option>
-                <option value="lastQuarter">Last Quarter</option>
-                <option value="thisYear">This Year (Default)</option>
-                <option value="lastYear">Last Year</option>
-                <option value="all">All Time</option>
+                <optgroup label="Standard">
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="thisWeek">This Week</option>
+                  <option value="lastWeek">Last Week</option>
+                  <option value="thisMonth">This Month</option>
+                  <option value="lastMonth">Last Month</option>
+                </optgroup>
+                <optgroup label="Quarters">
+                  <option value="thisQuarter">This Quarter</option>
+                  <option value="lastQuarter">Last Quarter</option>
+                  <option value="nextQuarter">Next Quarter</option>
+                </optgroup>
+                <optgroup label="Fiscal">
+                  <option value="thisFiscalQuarter">This Fiscal Quarter</option>
+                  <option value="lastFiscalQuarter">Last Fiscal Quarter</option>
+                  <option value="thisFiscalYear">This Fiscal Year</option>
+                  <option value="lastFiscalYear">Last Fiscal Year</option>
+                </optgroup>
+                <optgroup label="Years">
+                  <option value="thisYear">This Year (Default)</option>
+                  <option value="lastYear">Last Year</option>
+                  <option value="nextYear">Next Year</option>
+                </optgroup>
+                <optgroup label="Other">
+                  <option value="last7Days">Last 7 Days</option>
+                  <option value="last30Days">Last 30 Days</option>
+                  <option value="last90Days">Last 90 Days</option>
+                  <option value="last120Days">Last 120 Days</option>
+                  <option value="all">All Time</option>
+                  <option value="custom">Custom Range...</option>
+                </optgroup>
               </select>
+
+              {/* Custom Date Range Inputs */}
+              {dateRange === 'custom' && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Team Member Filter */}
+            {/* Team Scope Filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Team Scope</label>
+              <select
+                value={teamFilter}
+                onChange={(e) => setTeamFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              >
+                <option value="myTeam">My Team</option>
+                <option value="allUsers">All Users</option>
+                {availableUsers.map(user => (
+                  <option key={user.id} value={user.id}>{user.name} & Their Team</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {teamFilter === 'myTeam' ? 'Your direct reports' : teamFilter === 'allUsers' ? 'Everyone in the org' : 'User and their team'}
+              </p>
+            </div>
+
+            {/* Specific Team Members Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Rep(s)</label>
               <select
                 multiple
                 value={selectedReps}
@@ -237,12 +338,15 @@ export default function SalesLeaderDashboard() {
                   const selected = Array.from(e.target.selectedOptions, option => option.value);
                   setSelectedReps(selected);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent h-24"
               >
-                <option value="">All Team Members</option>
-                {repPerformance.map(rep => (
-                  <option key={rep.repId} value={rep.repId}>{rep.repName}</option>
-                ))}
+                {availableUsers.length > 0 ? (
+                  availableUsers.map(user => (
+                    <option key={user.id} value={user.id}>{user.name}</option>
+                  ))
+                ) : (
+                  <option disabled>Loading users...</option>
+                )}
               </select>
               <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
             </div>

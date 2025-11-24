@@ -840,9 +840,155 @@ export interface SalesLeaderDashboard {
 
 interface DashboardFilters {
   dateRange?: string;
+  startDate?: string;
+  endDate?: string;
+  teamFilter?: string;
   reps?: string[];
   minDealSize?: number;
   includeAll?: boolean;
+}
+
+/**
+ * Build SOQL date filter based on dateRange parameter
+ * Fiscal year starts in February (month 2)
+ */
+function buildDateFilter(dateRange?: string, startDate?: string, endDate?: string): string {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed (0 = January)
+  const currentQuarter = Math.floor(currentMonth / 3) + 1;
+
+  // Fiscal year starts in February (month 1 in 0-indexed)
+  const FISCAL_YEAR_START_MONTH = 1; // February (0-indexed)
+
+  // Calculate fiscal year and quarter
+  const fiscalYear = currentMonth >= FISCAL_YEAR_START_MONTH ? currentYear : currentYear - 1;
+  const fiscalMonth = currentMonth >= FISCAL_YEAR_START_MONTH
+    ? currentMonth - FISCAL_YEAR_START_MONTH
+    : currentMonth + (12 - FISCAL_YEAR_START_MONTH);
+  const fiscalQuarter = Math.floor(fiscalMonth / 3) + 1;
+
+  switch (dateRange) {
+    // Standard date ranges
+    case 'today':
+      return 'CloseDate = TODAY';
+
+    case 'yesterday':
+      return 'CloseDate = YESTERDAY';
+
+    case 'thisWeek':
+      return 'CloseDate = THIS_WEEK';
+
+    case 'lastWeek':
+      return 'CloseDate = LAST_WEEK';
+
+    case 'thisMonth':
+      return 'CloseDate = THIS_MONTH';
+
+    case 'lastMonth':
+      return 'CloseDate = LAST_MONTH';
+
+    // Calendar quarters
+    case 'thisQuarter':
+      return `CALENDAR_YEAR(CloseDate) = ${currentYear} AND CALENDAR_QUARTER(CloseDate) = ${currentQuarter}`;
+
+    case 'lastQuarter': {
+      const lastQuarter = currentQuarter === 1 ? 4 : currentQuarter - 1;
+      const lastQuarterYear = currentQuarter === 1 ? currentYear - 1 : currentYear;
+      return `CALENDAR_YEAR(CloseDate) = ${lastQuarterYear} AND CALENDAR_QUARTER(CloseDate) = ${lastQuarter}`;
+    }
+
+    case 'nextQuarter': {
+      const nextQuarter = currentQuarter === 4 ? 1 : currentQuarter + 1;
+      const nextQuarterYear = currentQuarter === 4 ? currentYear + 1 : currentYear;
+      return `CALENDAR_YEAR(CloseDate) = ${nextQuarterYear} AND CALENDAR_QUARTER(CloseDate) = ${nextQuarter}`;
+    }
+
+    // Fiscal quarters (fiscal year starts in February)
+    case 'thisFiscalQuarter': {
+      const fiscalQuarterStartMonth = FISCAL_YEAR_START_MONTH + ((fiscalQuarter - 1) * 3);
+      const fiscalQuarterEndMonth = fiscalQuarterStartMonth + 2;
+
+      // Handle month wrap-around
+      if (fiscalQuarterEndMonth > 11) {
+        const monthsInCurrentYear = 11 - fiscalQuarterStartMonth + 1;
+        const monthsInNextYear = fiscalQuarterEndMonth - 11;
+        return `((CALENDAR_YEAR(CloseDate) = ${fiscalYear} AND CALENDAR_MONTH(CloseDate) >= ${fiscalQuarterStartMonth + 1}) OR (CALENDAR_YEAR(CloseDate) = ${fiscalYear + 1} AND CALENDAR_MONTH(CloseDate) <= ${monthsInNextYear}))`;
+      }
+      return `CALENDAR_YEAR(CloseDate) = ${fiscalYear} AND CALENDAR_MONTH(CloseDate) >= ${fiscalQuarterStartMonth + 1} AND CALENDAR_MONTH(CloseDate) <= ${fiscalQuarterEndMonth + 1}`;
+    }
+
+    case 'lastFiscalQuarter': {
+      const lastFiscalQuarter = fiscalQuarter === 1 ? 4 : fiscalQuarter - 1;
+      const lastFiscalQuarterYear = fiscalQuarter === 1 ? fiscalYear - 1 : fiscalYear;
+      const fiscalQuarterStartMonth = FISCAL_YEAR_START_MONTH + ((lastFiscalQuarter - 1) * 3);
+      const fiscalQuarterEndMonth = fiscalQuarterStartMonth + 2;
+
+      if (fiscalQuarterEndMonth > 11) {
+        const monthsInCurrentYear = 11 - fiscalQuarterStartMonth + 1;
+        const monthsInNextYear = fiscalQuarterEndMonth - 11;
+        return `((CALENDAR_YEAR(CloseDate) = ${lastFiscalQuarterYear} AND CALENDAR_MONTH(CloseDate) >= ${fiscalQuarterStartMonth + 1}) OR (CALENDAR_YEAR(CloseDate) = ${lastFiscalQuarterYear + 1} AND CALENDAR_MONTH(CloseDate) <= ${monthsInNextYear}))`;
+      }
+      return `CALENDAR_YEAR(CloseDate) = ${lastFiscalQuarterYear} AND CALENDAR_MONTH(CloseDate) >= ${fiscalQuarterStartMonth + 1} AND CALENDAR_MONTH(CloseDate) <= ${fiscalQuarterEndMonth + 1}`;
+    }
+
+    // Fiscal years (fiscal year starts in February)
+    case 'thisFiscalYear': {
+      const fiscalYearStartDate = new Date(fiscalYear, FISCAL_YEAR_START_MONTH, 1);
+      const fiscalYearEndDate = new Date(fiscalYear + 1, FISCAL_YEAR_START_MONTH, 0); // Last day of January next year
+      return `CloseDate >= ${fiscalYearStartDate.toISOString().split('T')[0]} AND CloseDate <= ${fiscalYearEndDate.toISOString().split('T')[0]}`;
+    }
+
+    case 'lastFiscalYear': {
+      const lastFiscalYear = fiscalYear - 1;
+      const fiscalYearStartDate = new Date(lastFiscalYear, FISCAL_YEAR_START_MONTH, 1);
+      const fiscalYearEndDate = new Date(lastFiscalYear + 1, FISCAL_YEAR_START_MONTH, 0);
+      return `CloseDate >= ${fiscalYearStartDate.toISOString().split('T')[0]} AND CloseDate <= ${fiscalYearEndDate.toISOString().split('T')[0]}`;
+    }
+
+    // Calendar years
+    case 'thisYear':
+      return `CALENDAR_YEAR(CloseDate) = ${currentYear}`;
+
+    case 'lastYear':
+      return `CALENDAR_YEAR(CloseDate) = ${currentYear - 1}`;
+
+    case 'nextYear':
+      return `CALENDAR_YEAR(CloseDate) = ${currentYear + 1}`;
+
+    // Rolling date ranges
+    case 'last7Days':
+      return 'CloseDate = LAST_N_DAYS:7';
+
+    case 'last30Days':
+      return 'CloseDate = LAST_N_DAYS:30';
+
+    case 'last90Days':
+      return 'CloseDate = LAST_N_DAYS:90';
+
+    case 'last120Days':
+      return 'CloseDate = LAST_N_DAYS:120';
+
+    // Custom date range
+    case 'custom':
+      if (startDate && endDate) {
+        return `CloseDate >= ${startDate} AND CloseDate <= ${endDate}`;
+      } else if (startDate) {
+        return `CloseDate >= ${startDate}`;
+      } else if (endDate) {
+        return `CloseDate <= ${endDate}`;
+      }
+      // Fall through to default if no dates provided
+      return `CALENDAR_YEAR(CloseDate) = ${currentYear}`;
+
+    // All time
+    case 'all':
+      return '1=1'; // No date filter
+
+    // Default to this year
+    default:
+      return `CALENDAR_YEAR(CloseDate) = ${currentYear}`;
+  }
 }
 
 /**
@@ -853,65 +999,102 @@ export async function getSalesLeaderDashboard(
   managerId: string,
   filters: DashboardFilters = {}
 ): Promise<SalesLeaderDashboard> {
-  const currentYear = new Date().getFullYear();
-  const currentMonth = new Date().getMonth();
-  const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-  const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-
   try {
-    // First, get all direct reports
-    const teamMembersQuery = `
-      SELECT Id, Name
-      FROM User
-      WHERE ManagerId = '${managerId}'
-        AND IsActive = true
-    `;
-    const teamMembersResult = await connection.query(teamMembersQuery);
-    const teamMembers = teamMembersResult.records as any[];
-    let teamMemberIds = teamMembers.map(u => u.Id);
+    // Determine which users to query based on teamFilter
+    let teamMembersQuery = '';
+    let teamMembers: any[] = [];
+    let teamMemberIds: string[] = [];
 
-    // FALLBACK: If no direct reports found and includeAll is true, get ALL active users
-    if (teamMemberIds.length === 0 && filters.includeAll) {
-      console.log('No direct reports found - falling back to all active users');
-      const allUsersQuery = `
+    const teamFilter = filters.teamFilter || 'myTeam';
+
+    if (teamFilter === 'allUsers') {
+      // Query all active users
+      console.log('Team filter: all active users');
+      teamMembersQuery = `
         SELECT Id, Name
         FROM User
         WHERE IsActive = true
-        LIMIT 100
+        LIMIT 200
       `;
-      const allUsersResult = await connection.query(allUsersQuery);
-      const allUsers = allUsersResult.records as any[];
-      teamMemberIds = allUsers.map(u => u.Id);
+      const teamMembersResult = await connection.query(teamMembersQuery);
+      teamMembers = teamMembersResult.records as any[];
+      teamMemberIds = teamMembers.map(u => u.Id);
+    } else if (teamFilter === 'myTeam') {
+      // Query manager's direct reports (existing behavior)
+      console.log('Team filter: my direct reports');
+      teamMembersQuery = `
+        SELECT Id, Name
+        FROM User
+        WHERE ManagerId = '${managerId}'
+          AND IsActive = true
+      `;
+      const teamMembersResult = await connection.query(teamMembersQuery);
+      teamMembers = teamMembersResult.records as any[];
+      teamMemberIds = teamMembers.map(u => u.Id);
+
+      // FALLBACK: If no direct reports found and includeAll is true, get ALL active users
+      if (teamMemberIds.length === 0 && filters.includeAll) {
+        console.log('No direct reports found - falling back to all active users');
+        const allUsersQuery = `
+          SELECT Id, Name
+          FROM User
+          WHERE IsActive = true
+          LIMIT 200
+        `;
+        const allUsersResult = await connection.query(allUsersQuery);
+        teamMembers = allUsersResult.records as any[];
+        teamMemberIds = teamMembers.map(u => u.Id);
+
+        if (teamMemberIds.length === 0) {
+          return getEmptySalesLeaderDashboard();
+        }
+      } else if (teamMemberIds.length === 0) {
+        // No direct reports and not fallback mode - return empty
+        return getEmptySalesLeaderDashboard();
+      }
+    } else {
+      // Specific user ID - query that user and their direct reports
+      console.log(`Team filter: specific user ${teamFilter} and their reports`);
+
+      // Get the specific user
+      const specificUserQuery = `
+        SELECT Id, Name
+        FROM User
+        WHERE Id = '${teamFilter}'
+          AND IsActive = true
+      `;
+      const specificUserResult = await connection.query(specificUserQuery);
+      const specificUser = specificUserResult.records as any[];
+
+      // Get their direct reports
+      const reportsQuery = `
+        SELECT Id, Name
+        FROM User
+        WHERE ManagerId = '${teamFilter}'
+          AND IsActive = true
+      `;
+      const reportsResult = await connection.query(reportsQuery);
+      const reports = reportsResult.records as any[];
+
+      // Combine the specific user and their reports
+      teamMembers = [...specificUser, ...reports];
+      teamMemberIds = teamMembers.map(u => u.Id);
 
       if (teamMemberIds.length === 0) {
         return getEmptySalesLeaderDashboard();
       }
-    } else if (teamMemberIds.length === 0) {
-      // No direct reports and not fallback mode - return empty
-      return getEmptySalesLeaderDashboard();
     }
 
-    // Apply rep filter if specified
+    // Apply rep filter if specified (overrides teamFilter)
     if (filters.reps && filters.reps.length > 0) {
       teamMemberIds = teamMemberIds.filter(id => filters.reps!.includes(id));
+      teamMembers = teamMembers.filter(u => filters.reps!.includes(u.Id));
     }
 
     const teamMemberIdsStr = teamMemberIds.map(id => `'${id}'`).join(',');
 
-    // Calculate date filter based on dateRange
-    let dateFilter = `CALENDAR_YEAR(CloseDate) = ${currentYear}`;
-    if (filters.dateRange === 'thisQuarter') {
-      const quarter = Math.floor(currentMonth / 3) + 1;
-      dateFilter = `CALENDAR_YEAR(CloseDate) = ${currentYear} AND CALENDAR_QUARTER(CloseDate) = ${quarter}`;
-    } else if (filters.dateRange === 'lastQuarter') {
-      const lastQuarter = currentMonth < 3 ? 4 : Math.floor(currentMonth / 3);
-      const lastQuarterYear = currentMonth < 3 ? currentYear - 1 : currentYear;
-      dateFilter = `CALENDAR_YEAR(CloseDate) = ${lastQuarterYear} AND CALENDAR_QUARTER(CloseDate) = ${lastQuarter}`;
-    } else if (filters.dateRange === 'lastYear') {
-      dateFilter = `CALENDAR_YEAR(CloseDate) = ${currentYear - 1}`;
-    } else if (filters.dateRange === 'all') {
-      dateFilter = '1=1'; // No date filter
-    }
+    // Build date filter using helper function
+    const dateFilter = buildDateFilter(filters.dateRange, filters.startDate, filters.endDate);
 
     // Get team quota attainment (closed won with date filter)
     const closedWonQuery = `
