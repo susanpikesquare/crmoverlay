@@ -23,7 +23,9 @@ export async function seedDatabase() {
       where: { email: 'susan@pikesquare.co' }
     });
 
-    const superAdminPassword = 'welcome1'; // Fixed password for super admin
+    // Super admin password should be set via environment variable for security
+    // Generate a random password if not provided
+    const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || generateSecurePassword(32);
 
     if (!existingSuperAdmin) {
       // Create super admin user
