@@ -13,9 +13,44 @@ export interface SalesforceFieldConfig {
   forecastCategoryField?: string; // Field to use for forecast categories (default: 'ForecastCategory')
 }
 
+export interface CustomLink {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  icon?: string;
+}
+
+export interface HubSectionConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  order: number;
+}
+
+export interface HubLayoutConfig {
+  ae: {
+    sections: HubSectionConfig[];
+    customLinks: CustomLink[];
+  };
+  am: {
+    sections: HubSectionConfig[];
+    customLinks: CustomLink[];
+  };
+  csm: {
+    sections: HubSectionConfig[];
+    customLinks: CustomLink[];
+  };
+  salesLeader: {
+    sections: HubSectionConfig[];
+    customLinks: CustomLink[];
+  };
+}
+
 export interface AdminSettings {
   aiProvider: AIProviderConfig;
   salesforceFields: SalesforceFieldConfig;
+  hubLayout?: HubLayoutConfig;
   updatedAt: string;
   updatedBy: string;
 }
@@ -46,9 +81,64 @@ export class AdminSettingsService {
       INSERT INTO admin_settings (setting_key, setting_value, updated_by)
       VALUES ('salesforce_fields', '{"opportunityAmountField": "Amount"}'::jsonb, 'system')
       ON CONFLICT (setting_key) DO NOTHING;
+
+      -- Create default Hub layout config if not exists
+      INSERT INTO admin_settings (setting_key, setting_value, updated_by)
+      VALUES ('hub_layout', '${JSON.stringify(this.getDefaultHubLayout())}'::jsonb, 'system')
+      ON CONFLICT (setting_key) DO NOTHING;
     `;
 
     await this.pool.query(query);
+  }
+
+  private getDefaultHubLayout(): HubLayoutConfig {
+    return {
+      ae: {
+        sections: [
+          { id: 'metrics', name: 'Key Metrics', enabled: true, order: 1 },
+          { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
+          { id: 'priorities', name: "Today's Priorities", enabled: true, order: 3 },
+          { id: 'forecast', name: 'Pipeline Forecast', enabled: true, order: 4 },
+          { id: 'priority-accounts', name: 'Priority Actions', enabled: true, order: 5 },
+          { id: 'at-risk-deals', name: 'At-Risk Deals', enabled: true, order: 6 },
+          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 7 },
+        ],
+        customLinks: [],
+      },
+      am: {
+        sections: [
+          { id: 'metrics', name: 'Key Metrics', enabled: true, order: 1 },
+          { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
+          { id: 'priorities', name: "Today's Priorities", enabled: true, order: 3 },
+          { id: 'renewals', name: 'Upcoming Renewals', enabled: true, order: 4 },
+          { id: 'expansion', name: 'Expansion Opportunities', enabled: true, order: 5 },
+          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 6 },
+        ],
+        customLinks: [],
+      },
+      csm: {
+        sections: [
+          { id: 'metrics', name: 'Key Metrics', enabled: true, order: 1 },
+          { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
+          { id: 'priorities', name: "Today's Priorities", enabled: true, order: 3 },
+          { id: 'at-risk', name: 'At-Risk Accounts', enabled: true, order: 4 },
+          { id: 'health', name: 'Health Score Trends', enabled: true, order: 5 },
+          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 6 },
+        ],
+        customLinks: [],
+      },
+      salesLeader: {
+        sections: [
+          { id: 'metrics', name: 'Key Metrics', enabled: true, order: 1 },
+          { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
+          { id: 'team-performance', name: 'Team Performance', enabled: true, order: 3 },
+          { id: 'pipeline', name: 'Pipeline Analysis', enabled: true, order: 4 },
+          { id: 'forecasts', name: 'Forecasts', enabled: true, order: 5 },
+          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 6 },
+        ],
+        customLinks: [],
+      },
+    };
   }
 
   async getAIProviderConfig(): Promise<AIProviderConfig> {
@@ -106,9 +196,34 @@ export class AdminSettingsService {
     );
   }
 
+  async getHubLayoutConfig(): Promise<HubLayoutConfig> {
+    const result = await this.pool.query(
+      'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
+      ['hub_layout']
+    );
+
+    if (result.rows.length === 0) {
+      // Return default config
+      return this.getDefaultHubLayout();
+    }
+
+    return result.rows[0].setting_value as HubLayoutConfig;
+  }
+
+  async setHubLayoutConfig(config: HubLayoutConfig, userId: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
+      ['hub_layout', JSON.stringify(config), userId]
+    );
+  }
+
   async getAllSettings(userId: string): Promise<AdminSettings> {
     const aiConfig = await this.getAIProviderConfig();
     const sfFieldsConfig = await this.getSalesforceFieldConfig();
+    const hubLayout = await this.getHubLayoutConfig();
 
     const result = await this.pool.query(
       'SELECT updated_at, updated_by FROM admin_settings WHERE setting_key = $1',
@@ -118,6 +233,7 @@ export class AdminSettingsService {
     return {
       aiProvider: aiConfig,
       salesforceFields: sfFieldsConfig,
+      hubLayout,
       updatedAt: result.rows[0]?.updated_at || new Date().toISOString(),
       updatedBy: result.rows[0]?.updated_by || 'system',
     };

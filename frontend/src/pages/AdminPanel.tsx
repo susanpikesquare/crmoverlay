@@ -9,9 +9,10 @@ import PriorityScoringTab from '../components/admin/PriorityScoringTab';
 import FieldMappingsTab from '../components/admin/FieldMappingsTab';
 import RoleMappingsTab from '../components/admin/RoleMappingsTab';
 import DisplaySettingsTab from '../components/admin/DisplaySettingsTab';
+import HubLayoutTab from '../components/admin/HubLayoutTab';
 import ConfigManagementTab from '../components/admin/ConfigManagementTab';
 
-type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'role-mappings' | 'display-settings' | 'config-management';
+type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'config-management';
 
 interface TabConfig {
   id: TabType;
@@ -50,6 +51,12 @@ const TABS: TabConfig[] = [
     label: 'Display Settings',
     icon: '⚙️',
     description: 'Configure default display preferences and pagination',
+  },
+  {
+    id: 'hub-layout',
+    label: 'Hub Layout',
+    icon: '🏠',
+    description: 'Customize hub page sections and add custom links',
   },
   {
     id: 'config-management',
@@ -268,6 +275,12 @@ export default function AdminPanel() {
             )}
             {activeTab === 'display-settings' && (
               <DisplaySettingsTab
+                config={configData}
+                onSave={(status) => setSaveStatus(status)}
+              />
+            )}
+            {activeTab === 'hub-layout' && (
+              <HubLayoutTab
                 config={configData}
                 onSave={(status) => setSaveStatus(status)}
               />

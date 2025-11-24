@@ -20,15 +20,17 @@ router.get('/config', async (_req: Request, res: Response) => {
   try {
     const config = configService.getConfig();
 
-    // Add Salesforce field settings from database
+    // Add Salesforce field settings and hub layout from database
     const adminSettings = new AdminSettingsService(pool);
     const salesforceFields = await adminSettings.getSalesforceFieldConfig();
+    const hubLayout = await adminSettings.getHubLayoutConfig();
 
     res.json({
       success: true,
       data: {
         ...config,
         salesforceFields,
+        hubLayout,
       },
     });
   } catch (error: any) {
@@ -208,6 +210,34 @@ router.put('/config/salesforce-fields', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: 'Failed to update Salesforce field settings',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/hub-layout
+ * Update Hub layout configuration
+ */
+router.put('/config/hub-layout', async (req: Request, res: Response) => {
+  try {
+    const { hubLayout } = req.body;
+    const session = req.session as any;
+    const userId = session.userId || 'Unknown';
+
+    const adminSettings = new AdminSettingsService(pool);
+    await adminSettings.setHubLayoutConfig(hubLayout, userId);
+
+    res.json({
+      success: true,
+      data: hubLayout,
+      message: 'Hub layout configuration updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating Hub layout configuration:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update Hub layout configuration',
       message: error.message,
     });
   }
