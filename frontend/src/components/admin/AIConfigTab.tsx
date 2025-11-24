@@ -1,9 +1,147 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import api from '../../services/api';
+
+interface AIApiKey {
+  id: string;
+  provider: 'anthropic' | 'openai' | 'google';
+  isActive: boolean;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProviderConfig {
+  provider: 'anthropic' | 'openai' | 'google';
+  name: string;
+  description: string;
+  icon: string;
+  getKeyUrl: string;
+  keyLabel: string;
+  keyPlaceholder: string;
+}
+
+const PROVIDERS: ProviderConfig[] = [
+  {
+    provider: 'anthropic',
+    name: 'Anthropic Claude',
+    description: 'Best quality for complex reasoning and detailed analysis',
+    icon: '🧠',
+    getKeyUrl: 'https://console.anthropic.com/',
+    keyLabel: 'Anthropic API Key',
+    keyPlaceholder: 'sk-ant-...',
+  },
+  {
+    provider: 'openai',
+    name: 'OpenAI ChatGPT',
+    description: 'Good for existing OpenAI customers and general use',
+    icon: '💬',
+    getKeyUrl: 'https://platform.openai.com/',
+    keyLabel: 'OpenAI API Key',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    provider: 'google',
+    name: 'Google Gemini',
+    description: 'Good for existing Google Cloud customers',
+    icon: '✨',
+    getKeyUrl: 'https://makersuite.google.com/app/apikey',
+    keyLabel: 'Google AI API Key',
+    keyPlaceholder: 'AIzaSy...',
+  },
+];
 
 export default function AIConfigTab() {
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const queryClient = useQueryClient();
+  const [configuredKeys, setConfiguredKeys] = useState<AIApiKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [apiKeys, setApiKeys] = useState<{ [key: string]: string }>({});
+  const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({});
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Fetch configured keys
+  useEffect(() => {
+    fetchConfiguredKeys();
+  }, []);
+
+  const fetchConfiguredKeys = async () => {
+    try {
+      const response = await api.get('/api/admin/ai-api-keys');
+      setConfiguredKeys(response.data.data || []);
+    } catch (error) {
+      console.error('Error fetching AI API keys:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSaveKey = async (provider: string) => {
+    const apiKey = apiKeys[provider];
+    if (!apiKey || apiKey.trim() === '') {
+      setMessage({ type: 'error', text: 'Please enter an API key' });
+      return;
+    }
+
+    setSaving(provider);
+    setMessage(null);
+
+    try {
+      const response = await api.post('/api/admin/ai-api-keys', {
+        provider,
+        apiKey,
+      });
+
+      setMessage({ type: 'success', text: response.data.message });
+      setApiKeys({ ...apiKeys, [provider]: '' }); // Clear the input
+      await fetchConfiguredKeys();
+      queryClient.invalidateQueries({ queryKey: ['adminConfig'] });
+    } catch (error: any) {
+      console.error('Error saving API key:', error);
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Failed to save API key',
+      });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleDeleteKey = async (provider: string) => {
+    if (!confirm(`Are you sure you want to delete the ${provider} API key?`)) {
+      return;
+    }
+
+    setSaving(provider);
+    setMessage(null);
+
+    try {
+      const response = await api.delete(`/api/admin/ai-api-keys/${provider}`);
+      setMessage({ type: 'success', text: response.data.message });
+      await fetchConfiguredKeys();
+      queryClient.invalidateQueries({ queryKey: ['adminConfig'] });
+    } catch (error: any) {
+      console.error('Error deleting API key:', error);
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Failed to delete API key',
+      });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const isConfigured = (provider: string) => {
+    return configuredKeys.some((k) => k.provider === provider && k.isActive);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -16,189 +154,146 @@ export default function AIConfigTab() {
         </p>
       </div>
 
-      {/* Important Security Notice */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+      {/* Message Display */}
+      {message && (
+        <div
+          className={`rounded-lg p-4 ${
+            message.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}
+        >
+          <div className="flex items-start">
+            <span className="text-xl mr-3">{message.type === 'success' ? '✓' : '✗'}</span>
+            <p className="text-sm font-medium">{message.text}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Security Notice */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start">
           <span className="text-2xl mr-3">🔒</span>
           <div>
-            <h3 className="text-sm font-semibold text-yellow-800">Security Notice</h3>
-            <p className="mt-1 text-sm text-yellow-700">
-              API keys are stored securely in Heroku Config Vars as environment variables.
-              They are never exposed in code or logs. Only administrators can view or modify these settings.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Provider Selection Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-start">
-          <span className="text-2xl mr-3">ℹ️</span>
-          <div>
-            <h3 className="text-sm font-semibold text-blue-800">How AI Provider Selection Works</h3>
+            <h3 className="text-sm font-semibold text-blue-800">Security Notice</h3>
             <p className="mt-1 text-sm text-blue-700">
-              You only need to configure ONE of the providers below. The system will check for API keys in this order:
+              API keys are encrypted and stored securely in the database. They are never exposed in logs or API responses.
+              Only administrators can configure these settings.
             </p>
-            <ol className="mt-2 text-sm text-blue-700 list-decimal list-inside space-y-1">
-              <li><strong>Anthropic Claude</strong> - Best quality for complex reasoning</li>
-              <li><strong>OpenAI ChatGPT</strong> - Good for existing OpenAI customers</li>
-              <li><strong>Google Gemini</strong> - Good for existing Google Cloud customers</li>
-            </ol>
           </div>
         </div>
       </div>
 
-      {/* Configuration Instructions */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">How to Configure AI Provider Keys</h3>
-        <p className="text-sm text-gray-600 mb-4">
-          AI API keys are securely managed through Heroku Config Vars (environment variables). Follow these steps to configure them:
-        </p>
+      {/* Provider Configuration Forms */}
+      <div className="space-y-6">
+        {PROVIDERS.map((providerConfig) => {
+          const configured = isConfigured(providerConfig.provider);
+          const isSaving = saving === providerConfig.provider;
 
-        <div className="space-y-4">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-900 mb-2">Step 1: Get your API Key</h4>
-            <p className="text-sm text-gray-600 mb-2">Choose ONE provider and get an API key:</p>
-            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1 ml-2">
-              <li>
-                <strong>Anthropic Claude (Recommended):</strong>{' '}
-                <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                  console.anthropic.com
-                </a>
-              </li>
-              <li>
-                <strong>OpenAI ChatGPT:</strong>{' '}
-                <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                  platform.openai.com
-                </a>
-              </li>
-              <li>
-                <strong>Google Gemini:</strong>{' '}
-                <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                  makersuite.google.com/app/apikey
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-900 mb-2">Step 2: Set the Config Var in Heroku</h4>
-            <p className="text-sm text-gray-600 mb-3">
-              Run this command in your terminal (replace YOUR_APP_NAME and YOUR_API_KEY):
-            </p>
-
-            {/* Anthropic */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-gray-700">For Anthropic Claude:</span>
+          return (
+            <div
+              key={providerConfig.provider}
+              className={`border rounded-lg p-6 ${
+                configured
+                  ? 'border-green-300 bg-green-50'
+                  : 'border-gray-200 bg-white'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start">
+                  <span className="text-3xl mr-3">{providerConfig.icon}</span>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      {providerConfig.name}
+                      {configured && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                          ✓ Configured
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">{providerConfig.description}</p>
+                  </div>
+                </div>
+                {configured && (
+                  <button
+                    onClick={() => handleDeleteKey(providerConfig.provider)}
+                    disabled={isSaving}
+                    className="text-sm text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+                  >
+                    {isSaving ? 'Deleting...' : 'Remove'}
+                  </button>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-                  heroku config:set ANTHROPIC_API_KEY=your-api-key --app YOUR-APP-NAME
-                </code>
-                <button
-                  onClick={() => copyToClipboard('heroku config:set ANTHROPIC_API_KEY=your-api-key --app YOUR-APP-NAME')}
-                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
-              </div>
+
+              {!configured && (
+                <div className="mt-4">
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        {providerConfig.keyLabel}
+                      </label>
+                      <a
+                        href={providerConfig.getKeyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Get API Key →
+                      </a>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type={showKeys[providerConfig.provider] ? 'text' : 'password'}
+                        value={apiKeys[providerConfig.provider] || ''}
+                        onChange={(e) => setApiKeys({ ...apiKeys, [providerConfig.provider]: e.target.value })}
+                        placeholder={providerConfig.keyPlaceholder}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      <button
+                        onClick={() =>
+                          setShowKeys({ ...showKeys, [providerConfig.provider]: !showKeys[providerConfig.provider] })
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50"
+                        title={showKeys[providerConfig.provider] ? 'Hide' : 'Show'}
+                      >
+                        {showKeys[providerConfig.provider] ? '👁️' : '👁️‍🗨️'}
+                      </button>
+                      <button
+                        onClick={() => handleSaveKey(providerConfig.provider)}
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {configured && (
+                <div className="mt-4 text-xs text-gray-500">
+                  {configuredKeys.find((k) => k.provider === providerConfig.provider)?.lastUsedAt
+                    ? `Last used: ${new Date(
+                        configuredKeys.find((k) => k.provider === providerConfig.provider)!.lastUsedAt!
+                      ).toLocaleString()}`
+                    : 'Not yet used'}
+                </div>
+              )}
             </div>
-
-            {/* OpenAI */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-gray-700">For OpenAI:</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-                  heroku config:set OPENAI_API_KEY=your-api-key --app YOUR-APP-NAME
-                </code>
-                <button
-                  onClick={() => copyToClipboard('heroku config:set OPENAI_API_KEY=your-api-key --app YOUR-APP-NAME')}
-                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-
-            {/* Google */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-gray-700">For Google Gemini:</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-                  heroku config:set GOOGLE_AI_API_KEY=your-api-key --app YOUR-APP-NAME
-                </code>
-                <button
-                  onClick={() => copyToClipboard('heroku config:set GOOGLE_AI_API_KEY=your-api-key --app YOUR-APP-NAME')}
-                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-900 mb-2">Step 3: Restart Your App (if needed)</h4>
-            <p className="text-sm text-gray-600 mb-3">
-              The app should automatically restart when you set a config var. If not, restart it manually:
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 bg-gray-900 text-gray-100 p-3 rounded text-xs">
-                heroku restart --app YOUR-APP-NAME
-              </code>
-              <button
-                onClick={() => copyToClipboard('heroku restart --app YOUR-APP-NAME')}
-                className="px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                title="Copy to clipboard"
-              >
-                Copy
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-900 mb-2">Step 4: Verify Configuration</h4>
-            <p className="text-sm text-gray-600 mb-3">
-              Check that your config var is set:
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 bg-gray-900 text-gray-100 p-3 rounded text-xs">
-                heroku config --app YOUR-APP-NAME
-              </code>
-              <button
-                onClick={() => copyToClipboard('heroku config --app YOUR-APP-NAME')}
-                className="px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                title="Copy to clipboard"
-              >
-                Copy
-              </button>
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
-      {/* Additional Resources */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-blue-900 mb-2">Need Help?</h3>
-        <p className="text-sm text-blue-700 mb-2">
-          For more information about managing Heroku Config Vars, see:
+      {/* Additional Help */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">Need Help?</h3>
+        <p className="text-sm text-gray-600 mb-2">
+          You only need to configure ONE provider. The system will automatically use the first available key.
+          If you configure multiple providers, they will be tried in this order: Anthropic, OpenAI, Google.
         </p>
-        <a
-          href="https://devcenter.heroku.com/articles/config-vars"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-blue-600 hover:text-blue-800 underline"
-        >
-          Heroku Config Vars Documentation →
-        </a>
+        <p className="text-sm text-gray-600">
+          For more information about getting API keys, visit the provider's website using the "Get API Key" link above.
+        </p>
       </div>
     </div>
   );

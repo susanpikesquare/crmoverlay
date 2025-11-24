@@ -5,6 +5,7 @@ import * as configService from '../services/configService';
 import { createConnection } from '../config/salesforce';
 import { pool } from '../config/database';
 import { AdminSettingsService } from '../services/adminSettings';
+import AIApiKey, { AIProvider } from '../models/AIApiKey';
 
 const router = Router();
 
@@ -361,6 +362,164 @@ router.post('/config/reset', (_req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to reset configuration',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/admin/ai-api-keys
+ * Get all configured AI API keys (without exposing the actual keys)
+ */
+router.get('/ai-api-keys', async (_req: Request, res: Response) => {
+  try {
+    // For now, use a default customer ID of '00000000-0000-0000-0000-000000000000'
+    // This will be updated when proper multi-tenancy is implemented
+    const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
+
+    const keys = await AIApiKey.findAll({
+      where: {
+        customerId: DEMO_CUSTOMER_ID,
+      },
+      attributes: ['id', 'provider', 'isActive', 'lastUsedAt', 'createdAt', 'updatedAt'],
+    });
+
+    res.json({
+      success: true,
+      data: keys,
+    });
+  } catch (error: any) {
+    console.error('Error fetching AI API keys:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch AI API keys',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/ai-api-keys
+ * Save or update an AI API key
+ */
+router.post('/ai-api-keys', async (req: Request, res: Response) => {
+  try {
+    const { provider, apiKey } = req.body;
+
+    if (!provider || !apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields',
+        message: 'Provider and apiKey are required',
+      });
+    }
+
+    if (!Object.values(AIProvider).includes(provider)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid provider',
+        message: `Provider must be one of: ${Object.values(AIProvider).join(', ')}`,
+      });
+    }
+
+    // For now, use a default customer ID
+    const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
+
+    // Check if key already exists for this provider
+    const existingKey = await AIApiKey.findOne({
+      where: {
+        customerId: DEMO_CUSTOMER_ID,
+        provider,
+      },
+    });
+
+    if (existingKey) {
+      // Update existing key
+      existingKey.apiKey = apiKey; // Will be encrypted by the setter
+      existingKey.isActive = true;
+      await existingKey.save();
+
+      res.json({
+        success: true,
+        data: {
+          id: existingKey.id,
+          provider: existingKey.provider,
+          isActive: existingKey.isActive,
+        },
+        message: `${provider} API key updated successfully`,
+      });
+    } else {
+      // Create new key
+      const newKey = await AIApiKey.create({
+        customerId: DEMO_CUSTOMER_ID,
+        provider,
+        apiKey, // Will be encrypted by the setter
+        isActive: true,
+        lastUsedAt: null,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          id: newKey.id,
+          provider: newKey.provider,
+          isActive: newKey.isActive,
+        },
+        message: `${provider} API key saved successfully`,
+      });
+    }
+  } catch (error: any) {
+    console.error('Error saving AI API key:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save AI API key',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/ai-api-keys/:provider
+ * Delete an AI API key for a specific provider
+ */
+router.delete('/ai-api-keys/:provider', async (req: Request, res: Response) => {
+  try {
+    const { provider } = req.params;
+
+    if (!Object.values(AIProvider).includes(provider as AIProvider)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid provider',
+        message: `Provider must be one of: ${Object.values(AIProvider).join(', ')}`,
+      });
+    }
+
+    const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
+
+    const deleted = await AIApiKey.destroy({
+      where: {
+        customerId: DEMO_CUSTOMER_ID,
+        provider,
+      },
+    });
+
+    if (deleted) {
+      res.json({
+        success: true,
+        message: `${provider} API key deleted successfully`,
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Not found',
+        message: `No API key found for provider: ${provider}`,
+      });
+    }
+  } catch (error: any) {
+    console.error('Error deleting AI API key:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete AI API key',
       message: error.message,
     });
   }

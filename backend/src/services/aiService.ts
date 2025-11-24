@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import AIApiKey, { AIProvider as AIApiKeyProvider } from '../models/AIApiKey';
 
 export interface DealSummary {
   overview: string;
@@ -33,8 +34,57 @@ export class AIService {
       // Use provided configuration (from database)
       this.initializeFromConfig(config);
     } else {
-      // Fallback to environment variables
+      // Try to load from database, fallback to environment variables
+      this.initializeAsync();
+    }
+  }
+
+  private async initializeAsync() {
+    const dbConfig = await this.loadConfigFromDatabase();
+    if (dbConfig) {
+      this.initializeFromConfig(dbConfig);
+    } else {
       this.initializeFromEnv();
+    }
+  }
+
+  private async loadConfigFromDatabase(): Promise<AIProviderConfig | null> {
+    try {
+      const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
+
+      // Try to find active API keys in priority order: Anthropic > OpenAI > Gemini
+      const providers = [AIApiKeyProvider.ANTHROPIC, AIApiKeyProvider.OPENAI, AIApiKeyProvider.GOOGLE];
+
+      for (const provider of providers) {
+        const apiKey = await AIApiKey.findOne({
+          where: {
+            customerId: DEMO_CUSTOMER_ID,
+            provider,
+            isActive: true,
+          },
+        });
+
+        if (apiKey) {
+          // Map database provider names to service provider names
+          let mappedProvider: 'anthropic' | 'openai' | 'gemini';
+          if (provider === AIApiKeyProvider.GOOGLE) {
+            mappedProvider = 'gemini';
+          } else {
+            mappedProvider = provider as 'anthropic' | 'openai';
+          }
+
+          return {
+            provider: mappedProvider,
+            apiKey: apiKey.getDecryptedApiKey(),
+            enabled: true,
+          };
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error loading AI config from database:', error);
+      return null;
     }
   }
 
