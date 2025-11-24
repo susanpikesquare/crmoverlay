@@ -668,7 +668,7 @@ router.get('/hub/sales-leader/pipeline-forecast', isAuthenticated, async (req: R
       });
     }
 
-    const forecast = await HubData.getTeamPipelineForecast(connection, userId);
+    const forecast = await HubData.getTeamPipelineForecast(connection, userId, pool);
 
     res.json({
       success: true,

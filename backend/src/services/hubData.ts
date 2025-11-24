@@ -2111,9 +2111,11 @@ function formatCurrency(value: number): string {
  */
 export async function getTeamPipelineForecast(
   connection: Connection,
-  managerId: string
+  managerId: string,
+  pool: Pool
 ): Promise<PipelineForecast> {
   try {
+    const amountField = await getAmountFieldName(pool);
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
@@ -2165,7 +2167,7 @@ export async function getTeamPipelineForecast(
 
     // Query team's opportunities for current quarter
     const currentQuarterQuery = `
-      SELECT Id, Name, StageName, Amount, CloseDate, Probability, ForecastCategory, OwnerId, Owner.Name
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory, OwnerId, Owner.Name
       FROM Opportunity
       WHERE OwnerId IN ('${teamMemberIds.join("','")}')
         AND IsClosed = false
@@ -2176,7 +2178,7 @@ export async function getTeamPipelineForecast(
 
     // Query team's opportunities for next quarter
     const nextQuarterQuery = `
-      SELECT Id, Name, StageName, Amount, CloseDate, Probability, ForecastCategory, OwnerId, Owner.Name
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory, OwnerId, Owner.Name
       FROM Opportunity
       WHERE OwnerId IN ('${teamMemberIds.join("','")}')
         AND IsClosed = false
