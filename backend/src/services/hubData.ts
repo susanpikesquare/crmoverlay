@@ -1821,7 +1821,7 @@ export async function getPipelineForecast(
 
     // Helper function to calculate quarter metrics
     const calculateQuarterMetrics = (opps: any[], quarterName: string) => {
-      const totalPipeline = opps.reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+      const totalPipeline = opps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       // Group by stage
       const stageMap = new Map<string, { count: number; value: number }>();
@@ -1832,7 +1832,7 @@ export async function getPipelineForecast(
         }
         const stageData = stageMap.get(stage)!;
         stageData.count++;
-        stageData.value += opp.Amount || 0;
+        stageData.value += opp[amountField] || 0;
       });
 
       const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
@@ -1844,7 +1844,7 @@ export async function getPipelineForecast(
       // Calculate forecast categories
       const commitForecast = opps
         .filter((opp) => opp.ForecastCategory === 'Commit' || opp.ForecastCategory === 'Closed')
-        .reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       const bestCaseForecast = opps
         .filter((opp) =>
@@ -1852,7 +1852,7 @@ export async function getPipelineForecast(
           opp.ForecastCategory === 'Closed' ||
           opp.ForecastCategory === 'Best Case'
         )
-        .reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       // Calculate coverage ratio (pipeline / expected quota)
       // Assuming quarterly quota is total annual quota / 4
@@ -2195,7 +2195,7 @@ export async function getTeamPipelineForecast(
 
     // Helper function to calculate quarter metrics
     const calculateQuarterMetrics = (opps: any[], quarterName: string) => {
-      const totalPipeline = opps.reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+      const totalPipeline = opps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       // Group by stage
       const stageMap = new Map<string, { count: number; value: number }>();
@@ -2206,7 +2206,7 @@ export async function getTeamPipelineForecast(
         }
         const stageData = stageMap.get(stage)!;
         stageData.count++;
-        stageData.value += opp.Amount || 0;
+        stageData.value += opp[amountField] || 0;
       });
 
       const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
@@ -2218,7 +2218,7 @@ export async function getTeamPipelineForecast(
       // Calculate forecast categories
       const commitForecast = opps
         .filter((opp) => opp.ForecastCategory === 'Commit' || opp.ForecastCategory === 'Closed')
-        .reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       const bestCaseForecast = opps
         .filter((opp) =>
@@ -2226,7 +2226,7 @@ export async function getTeamPipelineForecast(
           opp.ForecastCategory === 'Closed' ||
           opp.ForecastCategory === 'Best Case'
         )
-        .reduce((sum, opp) => sum + (opp.Amount || 0), 0);
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       // Calculate coverage ratio
       const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
