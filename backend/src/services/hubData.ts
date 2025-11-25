@@ -1834,7 +1834,7 @@ export async function getPipelineForecast(
 
     // Query opportunities for current quarter
     const currentQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false
@@ -1845,7 +1845,7 @@ export async function getPipelineForecast(
 
     // Query opportunities for next quarter
     const nextQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false
@@ -1884,17 +1884,15 @@ export async function getPipelineForecast(
         value: data.value,
       }));
 
-      // Calculate forecast categories
+      // Calculate forecast categories based on Probability
+      // Commit: High probability opportunities (>= 70%)
       const commitForecast = opps
-        .filter((opp) => opp.ForecastCategory === 'Commit' || opp.ForecastCategory === 'Closed')
+        .filter((opp) => (opp.Probability || 0) >= 70)
         .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
+      // Best Case: Medium+ probability opportunities (>= 50%)
       const bestCaseForecast = opps
-        .filter((opp) =>
-          opp.ForecastCategory === 'Commit' ||
-          opp.ForecastCategory === 'Closed' ||
-          opp.ForecastCategory === 'Best Case'
-        )
+        .filter((opp) => (opp.Probability || 0) >= 50)
         .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       // Calculate coverage ratio (pipeline / expected quota)
@@ -2210,7 +2208,7 @@ export async function getTeamPipelineForecast(
 
     // Query team's opportunities for current quarter
     const currentQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory, OwnerId, Owner.Name
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, OwnerId, Owner.Name
       FROM Opportunity
       WHERE OwnerId IN ('${teamMemberIds.join("','")}')
         AND IsClosed = false
@@ -2221,7 +2219,7 @@ export async function getTeamPipelineForecast(
 
     // Query team's opportunities for next quarter
     const nextQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ForecastCategory, OwnerId, Owner.Name
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, OwnerId, Owner.Name
       FROM Opportunity
       WHERE OwnerId IN ('${teamMemberIds.join("','")}')
         AND IsClosed = false
@@ -2260,17 +2258,15 @@ export async function getTeamPipelineForecast(
         value: data.value,
       }));
 
-      // Calculate forecast categories
+      // Calculate forecast categories based on Probability
+      // Commit: High probability opportunities (>= 70%)
       const commitForecast = opps
-        .filter((opp) => opp.ForecastCategory === 'Commit' || opp.ForecastCategory === 'Closed')
+        .filter((opp) => (opp.Probability || 0) >= 70)
         .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
+      // Best Case: Medium+ probability opportunities (>= 50%)
       const bestCaseForecast = opps
-        .filter((opp) =>
-          opp.ForecastCategory === 'Commit' ||
-          opp.ForecastCategory === 'Closed' ||
-          opp.ForecastCategory === 'Best Case'
-        )
+        .filter((opp) => (opp.Probability || 0) >= 50)
         .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
       // Calculate coverage ratio
