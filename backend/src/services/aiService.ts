@@ -114,7 +114,7 @@ export class AIService {
       case 'anthropic':
         if (config.apiKey) {
           this.anthropicClient = new Anthropic({ apiKey: config.apiKey });
-          this.model = config.model || 'claude-3-5-sonnet-20241022';
+          this.model = config.model || 'claude-3-5-sonnet-20240620';
           console.log(`AI Service initialized with Anthropic Claude (${this.model})`);
         }
         break;
@@ -153,7 +153,7 @@ export class AIService {
     if (anthropicKey) {
       this.anthropicClient = new Anthropic({ apiKey: anthropicKey });
       this.provider = 'anthropic';
-      this.model = 'claude-3-5-sonnet-20241022';
+      this.model = 'claude-3-5-sonnet-20240620';
       console.log('AI Service initialized with Anthropic Claude (env)');
     } else if (openaiKey) {
       const openaiConfig: any = { apiKey: openaiKey };
@@ -207,7 +207,7 @@ export class AIService {
     if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
 
     const message = await this.anthropicClient.messages.create({
-      model: this.model || 'claude-3-5-sonnet-20241022',
+      model: this.model || 'claude-3-5-sonnet-20240620',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -365,7 +365,7 @@ Provide ONLY the JSON response, no additional text.`;
     if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
 
     const message = await this.anthropicClient.messages.create({
-      model: this.model || 'claude-3-5-sonnet-20241022',
+      model: this.model || 'claude-3-5-sonnet-20240620',
       max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }],
     });
