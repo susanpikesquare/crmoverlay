@@ -57,6 +57,7 @@ export interface AppConfig {
   riskRules: RiskRule[];
   priorityScoring: PriorityConfig;
   fieldMappings: FieldMapping[];
+  opportunityStages?: string[]; // Sales stages to include in filters and queries
   roleMapping: Array<{
     salesforceProfile: string;
     appRole: 'ae' | 'am' | 'csm' | 'admin';
@@ -185,6 +186,7 @@ const defaultConfig: AppConfig = {
     { conceptName: 'Quarterly Quota', category: 'quota', salesforceField: 'Quarterly_Quota__c', calculateInApp: false },
     { conceptName: 'Monthly Quota', category: 'quota', salesforceField: 'Monthly_Quota__c', calculateInApp: false },
   ],
+  opportunityStages: ['Prospecting', 'Discovery', 'Value Confirmation', 'Technical Evaluation', 'Negotiation'],
   roleMapping: [
     { salesforceProfile: 'Sales User', appRole: 'ae' },
     { salesforceProfile: 'Client Sales', appRole: 'am' },
@@ -259,6 +261,18 @@ export function updatePriorityScoring(config: PriorityConfig, modifiedBy: string
  */
 export function updateFieldMappings(mappings: FieldMapping[], modifiedBy: string): AppConfig {
   currentConfig.fieldMappings = mappings;
+  currentConfig.lastModified = {
+    by: modifiedBy,
+    date: new Date().toISOString(),
+  };
+  return { ...currentConfig };
+}
+
+/**
+ * Update opportunity stages
+ */
+export function updateOpportunityStages(stages: string[], modifiedBy: string): AppConfig {
+  currentConfig.opportunityStages = stages;
   currentConfig.lastModified = {
     by: modifiedBy,
     date: new Date().toISOString(),

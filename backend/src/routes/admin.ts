@@ -180,6 +180,33 @@ router.put('/config/display-settings', (req: Request, res: Response) => {
 });
 
 /**
+ * PUT /api/admin/config/opportunity-stages
+ * Update opportunity stages configuration
+ */
+router.put('/config/opportunity-stages', (req: Request, res: Response) => {
+  try {
+    const { stages } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.updateOpportunityStages(stages, modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig.opportunityStages,
+      message: 'Opportunity stages updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating opportunity stages:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update opportunity stages',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * PUT /api/admin/config/salesforce-fields
  * Update Salesforce field configuration
  */

@@ -12,8 +12,9 @@ import DisplaySettingsTab from '../components/admin/DisplaySettingsTab';
 import HubLayoutTab from '../components/admin/HubLayoutTab';
 import ConfigManagementTab from '../components/admin/ConfigManagementTab';
 import AIConfigTab from '../components/admin/AIConfigTab';
+import OpportunityStagesTab from '../components/admin/OpportunityStagesTab';
 
-type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
+type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
 
 interface TabConfig {
   id: TabType;
@@ -40,6 +41,12 @@ const TABS: TabConfig[] = [
     label: 'Field Mappings',
     icon: '🔗',
     description: 'Map Salesforce custom fields to application concepts',
+  },
+  {
+    id: 'opportunity-stages',
+    label: 'Opportunity Stages',
+    icon: '📊',
+    description: 'Configure which sales stages appear in opportunity filters',
   },
   {
     id: 'role-mappings',
@@ -270,6 +277,12 @@ export default function AdminPanel() {
             )}
             {activeTab === 'field-mappings' && (
               <FieldMappingsTab
+                config={configData}
+                onSave={(status) => setSaveStatus(status)}
+              />
+            )}
+            {activeTab === 'opportunity-stages' && (
+              <OpportunityStagesTab
                 config={configData}
                 onSave={(status) => setSaveStatus(status)}
               />

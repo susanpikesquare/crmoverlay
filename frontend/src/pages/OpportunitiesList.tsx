@@ -29,6 +29,17 @@ export default function OpportunitiesList() {
     },
   });
 
+  // Fetch admin config to get opportunity stages
+  const { data: configData } = useQuery({
+    queryKey: ['adminConfig'],
+    queryFn: async () => {
+      const response = await apiClient.get('/api/admin/config');
+      return response.data.data;
+    },
+  });
+
+  const opportunityStages = configData?.opportunityStages || ['Discovery', 'Value Confirmation', 'Negotiation'];
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -165,9 +176,11 @@ export default function OpportunitiesList() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Stages</option>
-                <option value="Discovery">Discovery</option>
-                <option value="Value Confirmation">Value Confirmation</option>
-                <option value="Negotiation">Negotiation</option>
+                {opportunityStages.map((stage: string) => (
+                  <option key={stage} value={stage}>
+                    {stage}
+                  </option>
+                ))}
               </select>
             </div>
 
