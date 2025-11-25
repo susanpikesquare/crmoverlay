@@ -180,45 +180,23 @@ function groupAccountsByDomain(accounts: any[]): any[] {
 }
 
 /**
- * Calculate MEDDPICC score from individual components
- * Falls back to standard fields if custom fields don't exist
+ * Calculate qualification score from standard fields
+ * Since we're not querying custom MEDDPICC fields, use Probability as primary indicator
  */
 function calculateMEDDPICCScore(opp: Opportunity): number {
-  // If actual score field exists, use it
-  if (opp.MEDDPICC_Overall_Score__c) {
-    return opp.MEDDPICC_Overall_Score__c;
+  // Use Probability as the primary indicator (it's a standard field)
+  // Convert probability (0-100) to a qualification score
+  if (opp.Probability !== undefined && opp.Probability !== null) {
+    return opp.Probability;
   }
 
-  // Check if custom MEDDPICC fields exist
-  const hasCustomFields =
-    'COM_Metrics__c' in opp ||
-    'MEDDPICCR_Economic_Buyer__c' in opp ||
-    'MEDDPICCR_Decision_Criteria__c' in opp;
-
-  if (hasCustomFields) {
-    // Otherwise calculate based on filled custom fields
-    const fields = [
-      opp.COM_Metrics__c,
-      opp.MEDDPICCR_Economic_Buyer__c,
-      opp.MEDDPICCR_Decision_Criteria__c,
-      opp.MEDDPICCR_Decision_Process__c,
-      opp.MEDDPICCR_Paper_Process__c,
-      opp.MEDDPICCR_Implicate_Pain__c,
-      opp.MEDDPICCR_Champion__c,
-      opp.MEDDPICCR_Competition__c,
-    ];
-
-    const filledCount = fields.filter(f => f && String(f).trim().length > 0).length;
-    return Math.round((filledCount / fields.length) * 100);
-  }
-
-  // Fallback: Calculate qualification score from standard fields
-  let score = 50; // base score
+  // Fallback if Probability is not set - estimate from other standard fields
+  let score = 30; // base score for opportunities without probability
   if (opp.NextStep && String(opp.NextStep).trim().length > 0) score += 20;
   if (opp.Description && String(opp.Description).trim().length > 50) score += 15;
-  if (opp.Probability && opp.Probability > 50) score += 15;
+  if (opp.StageName && !['Prospecting', 'Qualification'].includes(opp.StageName)) score += 15;
 
-  return score;
+  return Math.min(score, 100);
 }
 
 /**
@@ -1277,11 +1255,7 @@ export async function getSalesLeaderDashboard(
     // Get team pipeline (open opps with filters)
     const pipelineQuery = `
       SELECT Id, Name, Amount, StageName, OwnerId, Owner.Name, AccountId, Account.Name,
-             CloseDate, CreatedDate, LastModifiedDate,
-             COM_Metrics__c, MEDDPICCR_Economic_Buyer__c, MEDDPICCR_Decision_Criteria__c,
-             MEDDPICCR_Decision_Process__c, MEDDPICCR_Paper_Process__c,
-             MEDDPICCR_Implicate_Pain__c, MEDDPICCR_Champion__c, MEDDPICCR_Competition__c,
-             MEDDPICC_Overall_Score__c
+             CloseDate, CreatedDate, LastModifiedDate, Probability
       FROM Opportunity
       WHERE OwnerId IN (${teamMemberIdsStr})
         AND IsClosed = false
@@ -1301,7 +1275,7 @@ export async function getSalesLeaderDashboard(
 
     // Get recent losses (last 30 days)
     const recentLossesQuery = `
-      SELECT Id, Name, Amount, OwnerId, Owner.Name, AccountId, Account.Name, Loss_Reason__c
+      SELECT Id, Name, Amount, OwnerId, Owner.Name, AccountId, Account.Name, CloseDate
       FROM Opportunity
       WHERE OwnerId IN (${teamMemberIdsStr})
         AND IsWon = false
@@ -1998,8 +1972,7 @@ export async function getTeamPriorities(
     const oppQuery = `
       SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
              LastModifiedDate, CreatedDate, OwnerId, Owner.Name,
-             Command_Why_Do_Anything__c, Command_Why_Now__c, Command_Why_Us__c,
-             MEDDPICC_Overall_Score__c, NextStep, IsAtRisk__c
+             NextStep, Probability
       FROM Opportunity
       WHERE OwnerId IN ('${teamMemberIds.join("','")}')
         AND IsClosed = false
@@ -2013,16 +1986,20 @@ export async function getTeamPriorities(
     // Track priorities by rep for diversity
     const prioritiesByRep = new Map<string, number>();
 
-    // 1. Critical: At Risk Deals
+    // 1. Critical: At Risk Deals (based on low probability and stale activity)
     opportunities.forEach((opp) => {
-      if (opp.IsAtRisk__c) {
+      const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+      const probability = opp.Probability || 0;
+      const isAtRisk = probability < 50 || daysSinceUpdate > 21; // Low probability or no activity in 3 weeks
+
+      if (isAtRisk && (opp.Amount || 0) > 25000) { // Only flag at-risk deals over $25K
         const repPriorities = prioritiesByRep.get(opp.OwnerId) || 0;
         if (repPriorities < 2) {
           priorities.push({
             id: `at-risk-${opp.Id}`,
             type: 'deal-risk',
             title: `${opp.Owner.Name}: ${opp.Name} flagged as At Risk`,
-            description: `${formatCurrency(opp.Amount || 0)} - Review with rep and create action plan`,
+            description: `${formatCurrency(opp.Amount || 0)} - ${probability}% probability, ${daysSinceUpdate} days since update`,
             urgency: 'critical',
             relatedAccountId: opp.AccountId,
             relatedAccountName: opp.Account?.Name,
@@ -2038,7 +2015,7 @@ export async function getTeamPriorities(
       }
     });
 
-    // 2. High: Large deals closing this month missing Command fields
+    // 2. High: Large deals closing this month missing critical info
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
@@ -2051,15 +2028,14 @@ export async function getTeamPriorities(
         amount > 50000
       ) {
         const missingFields: string[] = [];
-        if (!opp.Command_Why_Do_Anything__c) missingFields.push('Why Do Anything');
-        if (!opp.Command_Why_Now__c) missingFields.push('Why Now');
-        if (!opp.Command_Why_Us__c) missingFields.push('Why Us');
+        if (!opp.NextStep || String(opp.NextStep).trim().length === 0) missingFields.push('Next Step');
+        if (!opp.Probability || opp.Probability === 0) missingFields.push('Probability');
 
         if (missingFields.length > 0) {
           priorities.push({
-            id: `missing-cmd-${opp.Id}`,
+            id: `missing-info-${opp.Id}`,
             type: 'missing-info',
-            title: `${opp.Owner.Name}: Complete Command for ${opp.Name}`,
+            title: `${opp.Owner.Name}: Complete info for ${opp.Name}`,
             description: `${formatCurrency(amount)} closing ${formatDate(opp.CloseDate)} - Missing: ${missingFields.join(', ')}`,
             urgency: 'high',
             relatedAccountId: opp.AccountId,
