@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface PriorityItem {
@@ -23,6 +24,11 @@ interface TodaysPrioritiesPanelProps {
 
 export default function TodaysPrioritiesPanel({ priorities }: TodaysPrioritiesPanelProps) {
   const navigate = useNavigate();
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const displayLimit = 5;
+  const displayedPriorities = isExpanded ? priorities : priorities.slice(0, displayLimit);
+  const hasMore = priorities.length > displayLimit;
 
   const getUrgencyBadge = (urgency: string) => {
     switch (urgency) {
@@ -81,7 +87,7 @@ export default function TodaysPrioritiesPanel({ priorities }: TodaysPrioritiesPa
       </div>
 
       <div className="space-y-3">
-        {priorities.map((priority) => (
+        {displayedPriorities.map((priority) => (
           <div
             key={priority.id}
             className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
@@ -160,6 +166,32 @@ export default function TodaysPrioritiesPanel({ priorities }: TodaysPrioritiesPa
           </div>
         ))}
       </div>
+
+      {/* Expand/Collapse Button */}
+      {hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+          >
+            {isExpanded ? (
+              <>
+                Show Less
+                <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </>
+            ) : (
+              <>
+                Show {priorities.length - displayLimit} More
+                <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

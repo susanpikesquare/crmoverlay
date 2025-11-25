@@ -951,11 +951,9 @@ export interface SalesLeaderDashboard {
     coldAccounts: Array<{
       id: string;
       accountName: string;
-      opportunityName: string;
       owner: string;
-      amount: number;
-      stage: string;
-      daysInStage: number;
+      lastActivityDate: string | null;
+      daysSinceActivity: number | null;
     }>;
     largeDeals: Array<{
       id: string;
@@ -1285,18 +1283,35 @@ export async function getSalesLeaderDashboard(
       LIMIT 10
     `;
 
+    // Query for cold accounts: accounts without open opportunities and minimal recent activity
+    const coldAccountsQuery = `
+      SELECT Id, Name, OwnerId, Owner.Name, LastActivityDate, LastModifiedDate
+      FROM Account
+      WHERE OwnerId IN (${teamMemberIdsStr})
+        AND Id NOT IN (
+          SELECT AccountId
+          FROM Opportunity
+          WHERE IsClosed = false
+          AND AccountId != null
+        )
+      ORDER BY LastActivityDate ASC NULLS FIRST
+      LIMIT 20
+    `;
+
     // Execute all queries in parallel
-    const [closedWonResult, pipelineResult, recentWinsResult, recentLossesResult] = await Promise.all([
+    const [closedWonResult, pipelineResult, recentWinsResult, recentLossesResult, coldAccountsResult] = await Promise.all([
       connection.query(closedWonQuery),
       connection.query(pipelineQuery),
       connection.query(recentWinsQuery),
       connection.query(recentLossesQuery),
+      connection.query(coldAccountsQuery),
     ]);
 
     const closedWonByRep = closedWonResult.records as any[];
     const allPipeline = pipelineResult.records as any[];
     const wins = recentWinsResult.records as any[];
     const losses = recentLossesResult.records as any[];
+    const coldAccountsRaw = coldAccountsResult.records as any[];
 
     // Calculate team metrics
     const totalClosedWon = closedWonByRep.reduce((sum, r) => sum + (r.total || 0), 0);
@@ -1404,20 +1419,24 @@ export async function getSalesLeaderDashboard(
         meddpiccScore: calculateMEDDPICCScore(opp),
       }));
 
-    const coldAccounts = allPipeline
-      .filter(opp => {
-        const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
-        return daysSinceUpdate > 21; // No activity in 3+ weeks
+    // Cold Accounts: accounts without open opportunities and no recent activity
+    const coldAccounts = coldAccountsRaw
+      .filter(account => {
+        // Filter to accounts with no activity in 30+ days (or never)
+        const lastActivity = account.LastActivityDate || account.LastModifiedDate;
+        if (!lastActivity) return true; // No activity ever
+        const daysSinceActivity = daysBetween(lastActivity, now);
+        return daysSinceActivity > 30;
       })
       .slice(0, 10)
-      .map(opp => ({
-        id: opp.Id,
-        accountName: opp.Account?.Name || 'Unknown',
-        opportunityName: opp.Name,
-        owner: opp.Owner?.Name || 'Unknown',
-        amount: opp.Amount || 0,
-        stage: opp.StageName,
-        daysInStage: daysBetween(opp.LastModifiedDate || now.toISOString(), now),
+      .map(account => ({
+        id: account.Id,
+        accountName: account.Name || 'Unknown',
+        owner: account.Owner?.Name || 'Unknown',
+        lastActivityDate: account.LastActivityDate,
+        daysSinceActivity: account.LastActivityDate
+          ? daysBetween(account.LastActivityDate, now)
+          : null,
       }));
 
     const largeDeals = allPipeline
@@ -2077,16 +2096,16 @@ export async function getTeamPriorities(
       }
     });
 
-    // 4. Medium: Low MEDDPICC on significant deals
+    // 4. Medium: Low qualification on significant deals
     opportunities.forEach((opp) => {
-      const score = opp.MEDDPICC_Overall_Score__c || 0;
+      const probability = opp.Probability || 0;
       const amount = opp.Amount || 0;
-      if (score < 50 && amount > 50000 && opp.StageName !== 'Prospecting') {
+      if (probability < 50 && amount > 50000 && opp.StageName !== 'Prospecting') {
         priorities.push({
-          id: `low-meddpicc-${opp.Id}`,
+          id: `low-qualification-${opp.Id}`,
           type: 'missing-info',
           title: `${opp.Owner.Name}: Low qualification on ${opp.Name}`,
-          description: `${formatCurrency(amount)} - MEDDPICC ${score}% - Coach on qualification`,
+          description: `${formatCurrency(amount)} - ${probability}% probability - Coach on qualification`,
           urgency: 'medium',
           relatedAccountId: opp.AccountId,
           relatedAccountName: opp.Account?.Name,
