@@ -28,23 +28,42 @@ export class AIService {
   private geminiClient: GoogleGenerativeAI | null = null;
   private provider: AIProvider;
   private model: string;
+  private initPromise: Promise<void> | null = null;
+  private isInitialized: boolean = false;
 
   constructor(config?: AIProviderConfig) {
     if (config && config.enabled) {
       // Use provided configuration (from database)
       this.initializeFromConfig(config);
+      this.isInitialized = true;
     } else {
       // Try to load from database, fallback to environment variables
-      this.initializeAsync();
+      this.initPromise = this.initializeAsync();
     }
   }
 
-  private async initializeAsync() {
-    const dbConfig = await this.loadConfigFromDatabase();
-    if (dbConfig) {
-      this.initializeFromConfig(dbConfig);
-    } else {
+  private async initializeAsync(): Promise<void> {
+    try {
+      const dbConfig = await this.loadConfigFromDatabase();
+      if (dbConfig) {
+        this.initializeFromConfig(dbConfig);
+      } else {
+        this.initializeFromEnv();
+      }
+      this.isInitialized = true;
+    } catch (error) {
+      console.error('Error during AI service initialization:', error);
       this.initializeFromEnv();
+      this.isInitialized = true;
+    }
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+    if (this.initPromise) {
+      await this.initPromise;
     }
   }
 
@@ -159,6 +178,8 @@ export class AIService {
   }
 
   async generateDealSummary(opportunityData: any, activityData: any[]): Promise<DealSummary> {
+    await this.ensureInitialized();
+
     if (!this.anthropicClient && !this.openaiClient && !this.geminiClient) {
       return this.getPlaceholderSummary();
     }
@@ -315,6 +336,8 @@ Provide ONLY the JSON response, no additional text.`;
   }
 
   async askQuestion(question: string, userData: any): Promise<string> {
+    await this.ensureInitialized();
+
     if (!this.anthropicClient && !this.openaiClient && !this.geminiClient) {
       return 'AI Assistant is not configured. Please contact your administrator to set up an AI provider.';
     }
