@@ -1204,10 +1204,10 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
     const userInfo = await connection.identity();
     const userName = userInfo.display_name || userInfo.username;
 
-    // Get user's opportunities
+    // Get user's opportunities (using only standard fields)
     const oppResult = await connection.query(`
       SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
-             Probability, DaysInStage__c, IsAtRisk__c, MEDDPICC_Overall_Score__c
+             Probability, LastModifiedDate, CreatedDate
       FROM Opportunity
       WHERE OwnerId = '${userInfo.user_id}'
         AND IsClosed = false
