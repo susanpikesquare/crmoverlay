@@ -223,9 +223,14 @@ export default function AMHub() {
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-3xl font-bold text-slate-900">Account Manager Hub</h1>
           <p className="text-slate-600 mt-2">Renewals, expansions, and NRR optimization</p>
+        </div>
+
+        {/* AI Assistant - At Top */}
+        <div className="mb-6">
+          <AIAssistant userRole="Account Manager" />
         </div>
 
         {/* Top Metrics Row */}
@@ -456,11 +461,6 @@ export default function AMHub() {
               </div>
             )}
           </div>
-        </div>
-
-        {/* AI Assistant */}
-        <div className="mb-8">
-          <AIAssistant userRole="Account Manager" />
         </div>
       </div>
     </div>

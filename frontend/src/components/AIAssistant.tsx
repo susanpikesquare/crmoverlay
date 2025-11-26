@@ -5,6 +5,7 @@ import apiClient from '../services/api';
 interface AIAssistantProps {
   userRole?: string;
   userName?: string;
+  compact?: boolean;
 }
 
 interface AIMessage {
@@ -13,7 +14,7 @@ interface AIMessage {
   timestamp: Date;
 }
 
-export default function AIAssistant({ userRole, userName }: AIAssistantProps) {
+export default function AIAssistant({ userRole, userName, compact = true }: AIAssistantProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<AIMessage[]>([]);
@@ -68,62 +69,73 @@ export default function AIAssistant({ userRole, userName }: AIAssistantProps) {
 
   const suggestedQuestions = [
     "What should I focus on today?",
-    "Which opportunity needs the most attention?",
-    "Show me my at-risk deals",
-    "What are my upcoming tasks?",
-    "Summarize my pipeline health",
+    "Which deals need attention?",
+    "Show me at-risk accounts",
   ];
 
   if (!isExpanded) {
     return (
-      <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl shadow-lg p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl shadow-md px-4 py-3 text-white">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm flex-shrink-0">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
             </div>
-            <div>
-              <h3 className="text-xl font-bold">AI Assistant</h3>
-              <p className="text-sm text-white/90">Ask me anything about your work</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold">AI Assistant</h3>
+                <span className="text-xs text-white/70 hidden sm:inline">Ask me anything about your work</span>
+              </div>
             </div>
           </div>
-          <button
-            onClick={() => setIsExpanded(true)}
-            className="px-6 py-3 bg-white text-purple-600 font-semibold rounded-lg hover:bg-white/95 transition shadow-md flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-            Ask AI
-          </button>
+          <div className="flex items-center gap-2">
+            {suggestedQuestions.slice(0, 2).map((question, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setIsExpanded(true);
+                  setInput(question);
+                }}
+                className="hidden md:block px-3 py-1.5 bg-white/20 text-white text-xs rounded-lg hover:bg-white/30 transition truncate max-w-[150px]"
+              >
+                {question}
+              </button>
+            ))}
+            <button
+              onClick={() => setIsExpanded(true)}
+              className="px-4 py-1.5 bg-white text-purple-600 font-medium text-sm rounded-lg hover:bg-white/95 transition shadow-sm flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              Ask AI
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-200">
+    <div className="bg-white rounded-xl shadow-lg border border-gray-200">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-t-2xl p-4 text-white">
+      <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-t-xl px-4 py-3 text-white">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-bold">AI Assistant</h3>
-              <p className="text-sm text-white/90">Powered by AI</p>
-            </div>
+            <h3 className="text-sm font-semibold">AI Assistant</h3>
           </div>
           <button
             onClick={() => setIsExpanded(false)}
-            className="text-white/80 hover:text-white transition"
+            className="text-white/80 hover:text-white transition p-1"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -131,16 +143,16 @@ export default function AIAssistant({ userRole, userName }: AIAssistantProps) {
       </div>
 
       {/* Messages */}
-      <div className="p-6 space-y-4 max-h-96 overflow-y-auto">
+      <div className="p-4 space-y-3 max-h-72 overflow-y-auto">
         {messages.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-gray-600 mb-4">Ask me anything about your work!</p>
+          <div className="text-center py-4">
+            <p className="text-gray-500 text-sm mb-3">Ask me anything about your work!</p>
             <div className="flex flex-wrap gap-2 justify-center">
-              {suggestedQuestions.slice(0, 3).map((question, idx) => (
+              {suggestedQuestions.map((question, idx) => (
                 <button
                   key={idx}
                   onClick={() => setInput(question)}
-                  className="px-4 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm hover:bg-purple-100 transition"
+                  className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs hover:bg-purple-100 transition"
                 >
                   {question}
                 </button>
@@ -154,30 +166,23 @@ export default function AIAssistant({ userRole, userName }: AIAssistantProps) {
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-3xl rounded-lg p-4 ${
+                className={`max-w-[80%] rounded-lg px-3 py-2 ${
                   message.role === 'user'
                     ? 'bg-purple-600 text-white'
                     : 'bg-gray-100 text-gray-900'
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                <p
-                  className={`text-xs mt-2 ${
-                    message.role === 'user' ? 'text-white/70' : 'text-gray-500'
-                  }`}
-                >
-                  {message.timestamp.toLocaleTimeString()}
-                </p>
               </div>
             </div>
           ))
         )}
         {askAIMutation.isPending && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-lg p-4">
+            <div className="bg-gray-100 rounded-lg px-3 py-2">
               <div className="flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
-                <p className="text-sm text-gray-600">Thinking...</p>
+                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
+                <p className="text-xs text-gray-600">Thinking...</p>
               </div>
             </div>
           </div>
@@ -185,41 +190,24 @@ export default function AIAssistant({ userRole, userName }: AIAssistantProps) {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200">
-        <div className="flex gap-3">
+      <form onSubmit={handleSubmit} className="p-3 border-t border-gray-200">
+        <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask me anything..."
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             disabled={askAIMutation.isPending}
           />
           <button
             type="submit"
             disabled={!input.trim() || askAIMutation.isPending}
-            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-medium text-sm rounded-lg hover:from-purple-700 hover:to-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
             Send
           </button>
         </div>
-        {messages.length === 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {suggestedQuestions.map((question, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setInput(question)}
-                className="px-3 py-1.5 bg-gray-50 text-gray-700 rounded-md text-xs hover:bg-gray-100 transition"
-              >
-                {question}
-              </button>
-            ))}
-          </div>
-        )}
       </form>
     </div>
   );
