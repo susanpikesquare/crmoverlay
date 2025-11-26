@@ -655,23 +655,22 @@ export async function getAMMetrics(
   userId: string
 ): Promise<AMMetrics> {
   const renewalsAtRiskQuery = `
-    SELECT COUNT() total
+    SELECT COUNT(Id) cnt
     FROM Account
     WHERE OwnerId = '${userId}'
-      AND Customer_Stage__c = 'Renewal'
       AND (Risk__c = 'Red' OR Current_Gainsight_Score__c < 50)
   `;
 
   const expansionPipelineQuery = `
-    SELECT SUM(ARR__c) total
+    SELECT SUM(Amount) total
     FROM Opportunity
     WHERE OwnerId = '${userId}'
       AND IsClosed = false
-      AND Type = 'Upsell'
+      AND (Type = 'Upsell' OR Type = 'Expansion' OR Type = 'Add-On')
   `;
 
   const avgContractQuery = `
-    SELECT AVG(Total_ARR__c) avg
+    SELECT AVG(Total_ARR__c) avgValue
     FROM Account
     WHERE OwnerId = '${userId}'
       AND Total_ARR__c > 0
@@ -684,9 +683,9 @@ export async function getAMMetrics(
       connection.query(avgContractQuery),
     ]);
 
-    const atRiskCount = (renewalsAtRisk.records[0] as any)?.total || 0;
+    const atRiskCount = (renewalsAtRisk.records[0] as any)?.cnt || 0;
     const expansionTotal = (expansionPipeline.records[0] as any)?.total || 0;
-    const avgValue = (avgContract.records[0] as any)?.avg || 0;
+    const avgValue = (avgContract.records[0] as any)?.avgValue || 0;
 
     return {
       nrrTarget: 110, // Mock value - should come from user goal
@@ -915,7 +914,7 @@ export async function getAtRiskAccounts(
   userId: string
 ): Promise<AtRiskAccount[]> {
   try {
-    // Primary query with full fields
+    // Primary query with full fields - broadened to include active customers
     const query = `
       SELECT Id, Name, Current_Gainsight_Score__c, Risk__c,
              Total_ARR__c, Agreement_Expiry_Date__c,
@@ -923,8 +922,8 @@ export async function getAtRiskAccounts(
              Customer_Stage__c
       FROM Account
       WHERE (Customer_Success_Manager__c = '${userId}' OR OwnerId = '${userId}')
-        AND Customer_Stage__c = 'Customer'
-        AND (Risk__c = 'Red' OR Risk__c = 'At Risk' OR Current_Gainsight_Score__c < 60)
+        AND (Customer_Stage__c IN ('Customer', 'Active', 'Active Customer', 'Renewal', 'Implementation') OR Customer_Stage__c = null)
+        AND (Risk__c = 'Red' OR Risk__c = 'At Risk' OR Current_Gainsight_Score__c < 60 OR Agreement_Expiry_Date__c <= NEXT_N_DAYS:90)
       ORDER BY Current_Gainsight_Score__c ASC NULLS LAST
       LIMIT 50
     `;
@@ -2626,7 +2625,7 @@ export async function getUnderutilizedAccounts(
   threshold: number = 60
 ): Promise<LicenseUtilizationAccount[]> {
   try {
-    // Query accounts with license utilization data
+    // Query accounts with license utilization data - broadened filters
     const query = `
       SELECT Id, Name,
              Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
@@ -2639,8 +2638,7 @@ export async function getUnderutilizedAccounts(
              Customer_Stage__c, Risk__c
       FROM Account
       WHERE (OwnerId = '${userId}' OR Customer_Success_Manager__c = '${userId}')
-        AND Contract_Total_License_Seats__c > 0
-        AND Customer_Stage__c = 'Customer'
+        AND (Contract_Total_License_Seats__c > 0 OR Total_Hierarchy_Seats__c > 0 OR Logo_Seats__c > 0)
       ORDER BY License_Utilization_Max__c ASC NULLS LAST
       LIMIT 50
     `;
@@ -2650,7 +2648,6 @@ export async function getUnderutilizedAccounts(
              Current_Gainsight_Score__c, Customer_Stage__c
       FROM Account
       WHERE OwnerId = '${userId}'
-        AND Customer_Stage__c = 'Customer'
       ORDER BY Name
       LIMIT 50
     `;
@@ -2768,8 +2765,7 @@ export async function getExpansionOpportunityAccounts(
              Customer_Stage__c, Risk__c
       FROM Account
       WHERE (OwnerId = '${userId}' OR Customer_Success_Manager__c = '${userId}')
-        AND Contract_Total_License_Seats__c > 0
-        AND Customer_Stage__c = 'Customer'
+        AND (Contract_Total_License_Seats__c > 0 OR Total_Hierarchy_Seats__c > 0 OR Logo_Seats__c > 0)
       ORDER BY License_Utilization_Max__c DESC NULLS LAST
       LIMIT 50
     `;
@@ -2779,7 +2775,6 @@ export async function getExpansionOpportunityAccounts(
              Current_Gainsight_Score__c, Customer_Stage__c
       FROM Account
       WHERE OwnerId = '${userId}'
-        AND Customer_Stage__c = 'Customer'
       ORDER BY Name
       LIMIT 50
     `;
