@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
@@ -74,13 +74,18 @@ export default function SalesLeaderDashboard() {
   const [activeCoachingTab, setActiveCoachingTab] = useState('stuck');
   const [sortBy, setSortBy] = useState<keyof RepPerformance>('quotaAttainment');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [showAllReps, setShowAllReps] = useState(false);
+
+  // Expand states for scrollable panels
+  const [expandedReps, setExpandedReps] = useState(false);
+  const [expandedCoaching, setExpandedCoaching] = useState(false);
+  const [expandedWins, setExpandedWins] = useState(false);
+  const [expandedLosses, setExpandedLosses] = useState(false);
 
   // Filter states
   const [dateRange, setDateRange] = useState('thisYear');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [teamFilter, setTeamFilter] = useState('myTeam'); // myTeam, allUsers, specific user ID
+  const [teamFilter, setTeamFilter] = useState('myTeam');
   const [selectedReps, setSelectedReps] = useState<string[]>([]);
   const [minDealSize, setMinDealSize] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
@@ -135,11 +140,8 @@ export default function SalesLeaderDashboard() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-
-      // Build query params
       const params = new URLSearchParams();
 
-      // Date range handling
       if (dateRange === 'custom') {
         if (customStartDate) params.append('startDate', customStartDate);
         if (customEndDate) params.append('endDate', customEndDate);
@@ -147,7 +149,6 @@ export default function SalesLeaderDashboard() {
         params.append('dateRange', dateRange);
       }
 
-      // Team filter handling
       params.append('teamFilter', teamFilter);
       if (selectedReps.length > 0) {
         params.append('reps', selectedReps.join(','));
@@ -157,7 +158,7 @@ export default function SalesLeaderDashboard() {
         params.append('minDealSize', minDealSize.toString());
       }
 
-      params.append('includeAll', 'true'); // Fallback to show all if no team members found
+      params.append('includeAll', 'true');
 
       const response = await api.get(`/api/dashboard/sales-leader?${params.toString()}`);
       setData(response.data.data);
@@ -183,12 +184,6 @@ export default function SalesLeaderDashboard() {
     return `${Math.round(value)}%`;
   };
 
-  const getQuotaColor = (percentage: number) => {
-    if (percentage >= 80) return 'text-green-600 bg-green-50 border-green-200';
-    if (percentage >= 50) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-    return 'text-red-600 bg-red-50 border-red-200';
-  };
-
   const getAtRiskColor = (count: number) => {
     if (count > 5) return 'text-red-600 bg-red-50 border-red-300';
     if (count >= 3) return 'text-yellow-600 bg-yellow-50 border-yellow-300';
@@ -204,11 +199,68 @@ export default function SalesLeaderDashboard() {
     });
   };
 
-  const getRowColor = (quotaAttainment: number) => {
-    if (quotaAttainment >= 80) return 'bg-green-50';
-    if (quotaAttainment >= 50) return 'bg-yellow-50';
-    return 'bg-red-50';
+  const getQuotaColor = (quotaAttainment: number) => {
+    if (quotaAttainment >= 80) return 'bg-green-50 border-green-200';
+    if (quotaAttainment >= 50) return 'bg-yellow-50 border-yellow-200';
+    return 'bg-red-50 border-red-200';
   };
+
+  const getQuotaBarColor = (quotaAttainment: number) => {
+    if (quotaAttainment >= 80) return 'bg-green-500';
+    if (quotaAttainment >= 50) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+
+  // Panel header component
+  const PanelHeader = ({
+    title,
+    subtitle,
+    count,
+    badgeColor,
+    expanded,
+    onToggle,
+  }: {
+    title: string;
+    subtitle: string;
+    count: number;
+    badgeColor: string;
+    expanded: boolean;
+    onToggle: () => void;
+  }) => (
+    <div className="flex items-center justify-between mb-4">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+        <p className="text-sm text-gray-500">{subtitle}</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className={`px-3 py-1 ${badgeColor} text-sm font-medium rounded-full`}>
+          {count} items
+        </span>
+        {count > 5 && (
+          <button
+            onClick={onToggle}
+            className="text-sm text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1"
+          >
+            {expanded ? (
+              <>
+                Show Less
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </>
+            ) : (
+              <>
+                View All
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -239,7 +291,6 @@ export default function SalesLeaderDashboard() {
 
   const { teamMetrics, repPerformance, coachingOpportunities, recentWins, recentLosses } = data;
   const sortedReps = sortReps(repPerformance);
-  const displayedReps = showAllReps ? sortedReps : sortedReps.slice(0, 10);
 
   const coachingTabs = [
     { id: 'stuck', label: '🔴 Stuck Deals', data: coachingOpportunities.stuckDeals },
@@ -278,7 +329,7 @@ export default function SalesLeaderDashboard() {
       {showFilters && (
         <div className="mb-6 bg-white rounded-xl shadow-sm p-6 border border-gray-200">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Date Range Filter - Salesforce Style */}
+            {/* Date Range Filter */}
             <div className="lg:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
               <select
@@ -320,7 +371,6 @@ export default function SalesLeaderDashboard() {
                 </optgroup>
               </select>
 
-              {/* Custom Date Range Inputs */}
               {dateRange === 'custom' && (
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <div>
@@ -329,7 +379,7 @@ export default function SalesLeaderDashboard() {
                       type="date"
                       value={customStartDate}
                       onChange={(e) => setCustomStartDate(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
                     />
                   </div>
                   <div>
@@ -338,7 +388,7 @@ export default function SalesLeaderDashboard() {
                       type="date"
                       value={customEndDate}
                       onChange={(e) => setCustomEndDate(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
                     />
                   </div>
                 </div>
@@ -351,7 +401,7 @@ export default function SalesLeaderDashboard() {
               <select
                 value={teamFilter}
                 onChange={(e) => setTeamFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="myTeam">My Team</option>
                 <option value="allUsers">All Users</option>
@@ -359,32 +409,6 @@ export default function SalesLeaderDashboard() {
                   <option key={user.id} value={user.id}>{user.name} & Their Team</option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
-                {teamFilter === 'myTeam' ? 'Your direct reports' : teamFilter === 'allUsers' ? 'Everyone in the org' : 'User and their team'}
-              </p>
-            </div>
-
-            {/* Specific Team Members Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Rep(s)</label>
-              <select
-                multiple
-                value={selectedReps}
-                onChange={(e) => {
-                  const selected = Array.from(e.target.selectedOptions, option => option.value);
-                  setSelectedReps(selected);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent h-24"
-              >
-                {availableUsers.length > 0 ? (
-                  availableUsers.map(user => (
-                    <option key={user.id} value={user.id}>{user.name}</option>
-                  ))
-                ) : (
-                  <option disabled>Loading users...</option>
-                )}
-              </select>
-              <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
             </div>
 
             {/* Min Deal Size Filter */}
@@ -401,34 +425,10 @@ export default function SalesLeaderDashboard() {
                 onChange={(e) => setMinDealSize(Number(e.target.value))}
                 className="w-full"
               />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>$0</span>
-                <span>$500K+</span>
-              </div>
             </div>
           </div>
 
-          {/* Active Filters & Reset */}
-          <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
-            <div className="flex flex-wrap gap-2">
-              {dateRange !== 'thisYear' && (
-                <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
-                  {dateRange === 'thisQuarter' ? 'This Quarter' :
-                   dateRange === 'lastQuarter' ? 'Last Quarter' :
-                   dateRange === 'lastYear' ? 'Last Year' : 'All Time'}
-                </span>
-              )}
-              {selectedReps.length > 0 && (
-                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                  {selectedReps.length} rep{selectedReps.length > 1 ? 's' : ''} selected
-                </span>
-              )}
-              {minDealSize > 0 && (
-                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
-                  Min: {formatCurrency(minDealSize)}
-                </span>
-              )}
-            </div>
+          <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end">
             <button
               onClick={() => {
                 setDateRange('thisYear');
@@ -443,12 +443,9 @@ export default function SalesLeaderDashboard() {
         </div>
       )}
 
-      {/* Today's Priorities and Pipeline/Forecast - Two Column Grid */}
+      {/* Today's Priorities and Pipeline/Forecast */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Team Priorities */}
         <TodaysPrioritiesPanel priorities={priorities} />
-
-        {/* Team Pipeline & Forecast */}
         {forecast && <PipelineForecastPanel forecast={forecast} />}
       </div>
 
@@ -459,24 +456,24 @@ export default function SalesLeaderDashboard() {
           <div className="flex items-center justify-between mb-3">
             <span className="text-2xl">🎯</span>
             <span className={`text-sm font-medium ${teamMetrics.quotaAttainment.trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {teamMetrics.quotaAttainment.trend >= 0 ? '↗' : '↘'} {Math.abs(teamMetrics.quotaAttainment.trend)}% vs last month
+              {teamMetrics.quotaAttainment.trend >= 0 ? '↗' : '↘'} {Math.abs(teamMetrics.quotaAttainment.trend)}%
             </span>
           </div>
           <div className="text-4xl font-bold text-blue-600 mb-1">
             {formatPercentage(teamMetrics.quotaAttainment.percentage)}
           </div>
           <p className="text-sm text-gray-600 mb-2">
-            {formatCurrency(teamMetrics.quotaAttainment.current)} of {formatCurrency(teamMetrics.quotaAttainment.target)} team quota
+            {formatCurrency(teamMetrics.quotaAttainment.current)} of {formatCurrency(teamMetrics.quotaAttainment.target)}
           </p>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className="bg-blue-600 h-2 rounded-full"
               style={{ width: `${Math.min(teamMetrics.quotaAttainment.percentage, 100)}%` }}
             />
           </div>
         </div>
 
-        {/* Team Pipeline Health */}
+        {/* Pipeline Health */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
           <div className="flex items-center justify-between mb-3">
             <span className="text-2xl">📊</span>
@@ -505,7 +502,7 @@ export default function SalesLeaderDashboard() {
               }}
               className="text-sm font-medium hover:underline"
             >
-              View Details
+              View
             </button>
           </div>
           <div className="text-4xl font-bold mb-1">
@@ -521,135 +518,111 @@ export default function SalesLeaderDashboard() {
           <div className="flex items-center justify-between mb-3">
             <span className="text-2xl">⚡</span>
             <span className={`text-sm font-medium ${teamMetrics.avgDealCycle.trend <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {teamMetrics.avgDealCycle.trend <= 0 ? '↓' : '↑'} {Math.abs(teamMetrics.avgDealCycle.trend)} days vs last quarter
+              {teamMetrics.avgDealCycle.trend <= 0 ? '↓' : '↑'} {Math.abs(teamMetrics.avgDealCycle.trend)}d
             </span>
           </div>
           <div className="text-4xl font-bold text-purple-600 mb-1">
             {teamMetrics.avgDealCycle.days}
           </div>
           <p className="text-sm text-gray-600">
-            Average deal cycle (days)
+            Avg deal cycle (days)
           </p>
         </div>
       </div>
 
-      {/* Rep Performance Leaderboard */}
+      {/* Rep Performance Leaderboard - Scrollable Cards */}
       <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-8">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Rep Performance Leaderboard</h2>
+        <div className="flex justify-between items-center mb-4">
+          <PanelHeader
+            title="Rep Performance Leaderboard"
+            subtitle="Track team member performance"
+            count={repPerformance.length}
+            badgeColor="bg-purple-100 text-purple-800"
+            expanded={expandedReps}
+            onToggle={() => setExpandedReps(!expandedReps)}
+          />
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as keyof RepPerformance)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
           >
-            <option value="quotaAttainment">Sort by Quota Attainment</option>
-            <option value="pipelineCoverage">Sort by Pipeline Coverage</option>
-            <option value="activeDeals">Sort by Active Deals</option>
-            <option value="atRiskDeals">Sort by At-Risk Deals</option>
-            <option value="avgDealSize">Sort by Avg Deal Size</option>
-            <option value="lastActivity">Sort by Last Activity</option>
+            <option value="quotaAttainment">Quota %</option>
+            <option value="pipelineCoverage">Pipeline</option>
+            <option value="atRiskDeals">At-Risk</option>
+            <option value="avgDealSize">Deal Size</option>
           </select>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Rep Name</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Quota Attainment</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Pipeline Coverage</th>
-                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">Active Deals</th>
-                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">At-Risk</th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Avg Deal Size</th>
-                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">Last Activity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedReps.map((rep) => (
-                <tr
-                  key={rep.repId}
-                  className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${getRowColor(rep.quotaAttainment)}`}
-                  onClick={() => navigate(`/rep/${rep.repId}`)}
-                >
-                  <td className="py-4 px-4">
-                    <span className="font-medium text-gray-900">{rep.repName}</span>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${
-                              rep.quotaAttainment >= 80 ? 'bg-green-600' :
-                              rep.quotaAttainment >= 50 ? 'bg-yellow-600' : 'bg-red-600'
-                            }`}
-                            style={{ width: `${Math.min(rep.quotaAttainment, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                      <span className="text-sm font-semibold text-gray-900 min-w-[50px] text-right">
-                        {formatPercentage(rep.quotaAttainment)}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <span className={`font-semibold ${
-                      rep.pipelineCoverage >= 3 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {rep.pipelineCoverage.toFixed(1)}x
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 text-center">
-                    <span className="text-gray-900 font-medium">{rep.activeDeals}</span>
-                  </td>
-                  <td className="py-4 px-4 text-center">
-                    {rep.atRiskDeals > 0 ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">
-                        ⚠️ {rep.atRiskDeals}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <span className="text-gray-900 font-medium">{formatCurrency(rep.avgDealSize)}</span>
-                  </td>
-                  <td className="py-4 px-4 text-center">
-                    <span className={`text-sm ${
-                      rep.lastActivity > 7 ? 'text-red-600 font-semibold' : 'text-gray-600'
-                    }`}>
-                      {rep.lastActivity}d ago
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {!showAllReps && repPerformance.length > 10 && (
-          <div className="mt-4 text-center">
-            <button
-              onClick={() => setShowAllReps(true)}
-              className="px-6 py-2 text-purple-600 hover:text-purple-700 font-medium hover:bg-purple-50 rounded-lg transition-colors"
+        <div className={`space-y-3 ${expandedReps ? 'max-h-[600px]' : 'max-h-[400px]'} overflow-y-auto`}>
+          {(expandedReps ? sortedReps : sortedReps.slice(0, 5)).map((rep) => (
+            <Link
+              key={rep.repId}
+              to={`/rep/${rep.repId}`}
+              className={`block p-4 rounded-lg border transition-colors hover:shadow-md ${getQuotaColor(rep.quotaAttainment)}`}
             >
-              Show All {repPerformance.length} Reps
-            </button>
-          </div>
-        )}
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-gray-900">{rep.repName}</h3>
+                <span className={`text-lg font-bold ${
+                  rep.quotaAttainment >= 80 ? 'text-green-600' :
+                  rep.quotaAttainment >= 50 ? 'text-yellow-600' : 'text-red-600'
+                }`}>
+                  {formatPercentage(rep.quotaAttainment)}
+                </span>
+              </div>
+
+              {/* Quota Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+                <div
+                  className={`h-2 rounded-full ${getQuotaBarColor(rep.quotaAttainment)}`}
+                  style={{ width: `${Math.min(rep.quotaAttainment, 100)}%` }}
+                />
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                <div>
+                  <span className="text-gray-500">Pipeline</span>
+                  <p className={`font-semibold ${rep.pipelineCoverage >= 3 ? 'text-green-600' : 'text-red-600'}`}>
+                    {rep.pipelineCoverage.toFixed(1)}x
+                  </p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Active</span>
+                  <p className="font-semibold text-gray-900">{rep.activeDeals}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">At-Risk</span>
+                  <p className={`font-semibold ${rep.atRiskDeals > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                    {rep.atRiskDeals || '—'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Avg Size</span>
+                  <p className="font-semibold text-gray-900">{formatCurrency(rep.avgDealSize)}</p>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
-      {/* Coaching Opportunities */}
+      {/* Coaching Opportunities - Scrollable Cards */}
       <div id="coaching-section" className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Coaching Opportunities</h2>
+        <PanelHeader
+          title="Coaching Opportunities"
+          subtitle="Deals requiring manager attention"
+          count={activeCoachingData.length}
+          badgeColor="bg-amber-100 text-amber-800"
+          expanded={expandedCoaching}
+          onToggle={() => setExpandedCoaching(!expandedCoaching)}
+        />
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-gray-200">
+        <div className="flex gap-2 mb-4 border-b border-gray-200 overflow-x-auto">
           {coachingTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveCoachingTab(tab.id)}
-              className={`px-4 py-2 font-medium transition-colors border-b-2 ${
+              className={`px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
                 activeCoachingTab === tab.id
                   ? 'border-purple-600 text-purple-600'
                   : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -660,66 +633,73 @@ export default function SalesLeaderDashboard() {
           ))}
         </div>
 
-        {/* Tab Content */}
-        <div className="space-y-4">
+        {/* Tab Content - Scrollable */}
+        <div className={`space-y-3 ${expandedCoaching ? 'max-h-[600px]' : 'max-h-[400px]'} overflow-y-auto`}>
           {activeCoachingData.length === 0 ? (
             <p className="text-gray-500 text-center py-8">No deals in this category. Great work! 🎉</p>
           ) : (
-            activeCoachingData.map((deal) => (
-              <div key={deal.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 mb-1">{deal.accountName}</h3>
-                    <p className="text-sm text-gray-600 mb-2">{deal.opportunityName}</p>
-                    <div className="flex gap-4 text-sm text-gray-600">
-                      <span>Owner: <strong>{deal.owner}</strong></span>
-                      <span>Amount: <strong>{formatCurrency(deal.amount)}</strong></span>
-                      <span>Stage: <strong>{deal.stage}</strong></span>
-                      <span>Days in stage: <strong className="text-red-600">{deal.daysInStage}</strong></span>
-                      {deal.meddpiccScore && (
-                        <span>MEDDPICC: <strong className={deal.meddpiccScore < 60 ? 'text-red-600' : 'text-green-600'}>{deal.meddpiccScore}</strong></span>
-                      )}
-                    </div>
+            (expandedCoaching ? activeCoachingData : activeCoachingData.slice(0, 5)).map((deal) => (
+              <Link
+                key={deal.id}
+                to={`/opportunity/${deal.id}`}
+                className="block p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow bg-amber-50"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{deal.accountName}</h3>
+                    <p className="text-sm text-gray-600">{deal.opportunityName}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => navigate(`/opportunity/${deal.id}`)}
-                      className="px-4 py-2 text-purple-600 hover:bg-purple-50 rounded-lg font-medium transition-colors"
-                    >
-                      View Details
-                    </button>
-                    <button className="px-4 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded-lg font-medium transition-colors">
-                      Coaching Note
-                    </button>
-                  </div>
+                  <span className="text-lg font-bold text-gray-900">{formatCurrency(deal.amount)}</span>
                 </div>
-              </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="px-2 py-1 bg-gray-200 rounded">Owner: {deal.owner}</span>
+                  <span className="px-2 py-1 bg-gray-200 rounded">{deal.stage}</span>
+                  <span className={`px-2 py-1 rounded ${deal.daysInStage > 30 ? 'bg-red-100 text-red-700' : 'bg-gray-200'}`}>
+                    {deal.daysInStage}d in stage
+                  </span>
+                  {deal.meddpiccScore !== undefined && (
+                    <span className={`px-2 py-1 rounded ${deal.meddpiccScore < 60 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                      MEDDPICC: {deal.meddpiccScore}
+                    </span>
+                  )}
+                </div>
+              </Link>
             ))
           )}
         </div>
       </div>
 
-      {/* Recent Wins & Losses */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* Recent Wins & Losses - Two Scrollable Panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Wins */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-            Recent Wins 🎉
-          </h2>
-          <div className="space-y-4">
+          <PanelHeader
+            title="Recent Wins 🎉"
+            subtitle="Celebrate team success"
+            count={recentWins.length}
+            badgeColor="bg-green-100 text-green-800"
+            expanded={expandedWins}
+            onToggle={() => setExpandedWins(!expandedWins)}
+          />
+
+          <div className={`space-y-3 ${expandedWins ? 'max-h-[400px]' : 'max-h-[280px]'} overflow-y-auto`}>
             {recentWins.length === 0 ? (
               <p className="text-gray-500 text-center py-4">No recent wins yet</p>
             ) : (
-              recentWins.map((win) => (
-                <div key={win.id} className="border-l-4 border-green-500 bg-green-50 p-4 rounded-r-lg">
-                  <h3 className="font-semibold text-gray-900">{win.accountName}</h3>
-                  <p className="text-sm text-gray-600 mt-1">
+              (expandedWins ? recentWins : recentWins.slice(0, 4)).map((win) => (
+                <Link
+                  key={win.id}
+                  to={`/opportunity/${win.id}`}
+                  className="block p-3 border-l-4 border-green-500 bg-green-50 rounded-r-lg hover:bg-green-100 transition-colors"
+                >
+                  <h3 className="font-semibold text-gray-900 text-sm">{win.accountName}</h3>
+                  <p className="text-xs text-gray-600 mt-1">
                     {formatCurrency(win.amount)} • {win.owner}
                   </p>
-                  <p className="text-sm text-green-600 mt-2">
-                    Great work, {win.owner}! Closed in {win.daysInStage} days
+                  <p className="text-xs text-green-600 mt-1">
+                    Closed in {win.daysInStage} days
                   </p>
-                </div>
+                </Link>
               ))
             )}
           </div>
@@ -727,25 +707,35 @@ export default function SalesLeaderDashboard() {
 
         {/* Recent Losses */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-            Recent Losses 😞
-          </h2>
-          <div className="space-y-4">
+          <PanelHeader
+            title="Recent Losses 📉"
+            subtitle="Learn and improve"
+            count={recentLosses.length}
+            badgeColor="bg-red-100 text-red-800"
+            expanded={expandedLosses}
+            onToggle={() => setExpandedLosses(!expandedLosses)}
+          />
+
+          <div className={`space-y-3 ${expandedLosses ? 'max-h-[400px]' : 'max-h-[280px]'} overflow-y-auto`}>
             {recentLosses.length === 0 ? (
               <p className="text-gray-500 text-center py-4">No recent losses</p>
             ) : (
-              recentLosses.map((loss) => (
-                <div key={loss.id} className="border-l-4 border-red-500 bg-red-50 p-4 rounded-r-lg">
-                  <h3 className="font-semibold text-gray-900">{loss.accountName}</h3>
-                  <p className="text-sm text-gray-600 mt-1">
+              (expandedLosses ? recentLosses : recentLosses.slice(0, 4)).map((loss) => (
+                <Link
+                  key={loss.id}
+                  to={`/opportunity/${loss.id}`}
+                  className="block p-3 border-l-4 border-red-500 bg-red-50 rounded-r-lg hover:bg-red-100 transition-colors"
+                >
+                  <h3 className="font-semibold text-gray-900 text-sm">{loss.accountName}</h3>
+                  <p className="text-xs text-gray-600 mt-1">
                     {formatCurrency(loss.amount)} • {loss.owner}
                   </p>
                   {loss.lossReason && (
-                    <p className="text-sm text-red-600 mt-2">
-                      Reason: {loss.lossReason} • Learn from this
+                    <p className="text-xs text-red-600 mt-1">
+                      Reason: {loss.lossReason}
                     </p>
                   )}
-                </div>
+                </Link>
               ))
             )}
           </div>

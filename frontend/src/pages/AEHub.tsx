@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
-import PriorityActionsTable from '../components/PriorityActionsTable';
-import AtRiskDealsTable from '../components/AtRiskDealsTable';
+import { Link } from 'react-router-dom';
 import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
 import PipelineForecastPanel from '../components/PipelineForecastPanel';
 import AIAssistant from '../components/AIAssistant';
@@ -44,6 +43,8 @@ interface AtRiskDeal {
 
 export default function AEHub() {
   const [timeframe, setTimeframe] = useState<'annual' | 'quarterly'>('annual');
+  const [expandedPriority, setExpandedPriority] = useState(false);
+  const [expandedAtRisk, setExpandedAtRisk] = useState(false);
 
   // Fetch metrics
   const { data: metricsData } = useQuery<{
@@ -60,7 +61,7 @@ export default function AEHub() {
   });
 
   // Fetch priority accounts
-  const { data: accountsData } = useQuery<{
+  const { data: accountsData, isLoading: loadingAccounts } = useQuery<{
     success: boolean;
     data: PriorityAccount[];
   }>({
@@ -74,7 +75,7 @@ export default function AEHub() {
   });
 
   // Fetch at-risk deals
-  const { data: dealsData } = useQuery<{
+  const { data: dealsData, isLoading: loadingDeals } = useQuery<{
     success: boolean;
     data: AtRiskDeal[];
   }>({
@@ -138,6 +139,84 @@ export default function AEHub() {
   const hotCount = priorityAccounts.filter(a => a.priorityTier === '🔥 Hot').length;
   const warmCount = priorityAccounts.filter(a => a.priorityTier === '🔶 Warm').length;
   const criticalDeals = atRiskDeals.filter(d => d.daysStale > 30 || d.meddpiccScore < 50).length;
+
+  // Panel header component
+  const PanelHeader = ({
+    title,
+    subtitle,
+    count,
+    badgeColor,
+    expanded,
+    onToggle,
+  }: {
+    title: string;
+    subtitle: string;
+    count: number;
+    badgeColor: string;
+    expanded: boolean;
+    onToggle: () => void;
+  }) => (
+    <div className="flex items-center justify-between mb-4">
+      <div>
+        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+        <p className="text-sm text-slate-500">{subtitle}</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className={`px-3 py-1 ${badgeColor} text-sm font-medium rounded-full`}>
+          {count} items
+        </span>
+        {count > 5 && (
+          <button
+            onClick={onToggle}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+          >
+            {expanded ? (
+              <>
+                Show Less
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </>
+            ) : (
+              <>
+                View All
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const LoadingSkeleton = () => (
+    <div className="space-y-3">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="animate-pulse bg-gray-100 h-20 rounded-lg"></div>
+      ))}
+    </div>
+  );
+
+  const EmptyState = ({ message, submessage }: { message: string; submessage: string }) => (
+    <div className="text-center py-6 text-slate-500">
+      <p>{message}</p>
+      <p className="text-sm mt-1">{submessage}</p>
+    </div>
+  );
+
+  const getTierColor = (tier: string) => {
+    if (tier === '🔥 Hot') return 'bg-red-50 border-red-200 hover:bg-red-100';
+    if (tier === '🔶 Warm') return 'bg-orange-50 border-orange-200 hover:bg-orange-100';
+    return 'bg-blue-50 border-blue-200 hover:bg-blue-100';
+  };
+
+  const getTierBadgeColor = (tier: string) => {
+    if (tier === '🔥 Hot') return 'bg-red-100 text-red-800';
+    if (tier === '🔶 Warm') return 'bg-orange-100 text-orange-800';
+    return 'bg-blue-100 text-blue-800';
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -248,20 +327,130 @@ export default function AEHub() {
           {forecast && <PipelineForecastPanel forecast={forecast} />}
         </div>
 
-        {/* Priority Actions Section */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">
-            🎯 Priority Actions
-          </h2>
-          <PriorityActionsTable accounts={priorityAccounts} />
-        </div>
+        {/* Two Column Layout for Priority Actions and At-Risk Deals */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Priority Actions Panel */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <PanelHeader
+              title="🎯 Priority Actions"
+              subtitle="High-intent accounts to pursue"
+              count={priorityAccounts.length}
+              badgeColor="bg-blue-100 text-blue-800"
+              expanded={expandedPriority}
+              onToggle={() => setExpandedPriority(!expandedPriority)}
+            />
 
-        {/* At-Risk Deals Section */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">
-            ⚠️ At-Risk Deals
-          </h2>
-          <AtRiskDealsTable deals={atRiskDeals} />
+            {loadingAccounts ? (
+              <LoadingSkeleton />
+            ) : priorityAccounts.length === 0 ? (
+              <EmptyState
+                message="No priority accounts"
+                submessage="Check back for new prospects"
+              />
+            ) : (
+              <div className={`space-y-3 ${expandedPriority ? 'max-h-[600px]' : 'max-h-[400px]'} overflow-y-auto`}>
+                {(expandedPriority ? priorityAccounts : priorityAccounts.slice(0, 5)).map((account) => (
+                  <Link
+                    key={account.Id}
+                    to={`/account/${account.Id}`}
+                    className={`block p-4 rounded-lg transition-colors border ${getTierColor(account.priorityTier)}`}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <h3 className="font-semibold text-slate-900 text-sm">{account.Name}</h3>
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getTierBadgeColor(account.priorityTier)}`}>
+                        {account.priorityTier}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs text-slate-600 mb-2">
+                      <span>{account.employeeCount?.toLocaleString() || '—'} employees</span>
+                      {account.employeeGrowthPct > 0 && (
+                        <span className="text-green-600">+{account.employeeGrowthPct}% growth</span>
+                      )}
+                      <span>Intent: <strong>{account.intentScore || '—'}</strong></span>
+                    </div>
+
+                    {account.topSignal && (
+                      <div className="text-xs text-slate-700 bg-slate-100 px-2 py-1 rounded mb-2">
+                        💡 {account.topSignal}
+                      </div>
+                    )}
+
+                    {account.aiRecommendation && (
+                      <div className="text-xs text-purple-700 bg-purple-50 px-2 py-1 rounded">
+                        🤖 {account.aiRecommendation}
+                      </div>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* At-Risk Deals Panel */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <PanelHeader
+              title="⚠️ At-Risk Deals"
+              subtitle="Deals needing immediate attention"
+              count={atRiskDeals.length}
+              badgeColor="bg-amber-100 text-amber-800"
+              expanded={expandedAtRisk}
+              onToggle={() => setExpandedAtRisk(!expandedAtRisk)}
+            />
+
+            {loadingDeals ? (
+              <LoadingSkeleton />
+            ) : atRiskDeals.length === 0 ? (
+              <EmptyState
+                message="No at-risk deals"
+                submessage="Your pipeline looks healthy"
+              />
+            ) : (
+              <div className={`space-y-3 ${expandedAtRisk ? 'max-h-[600px]' : 'max-h-[400px]'} overflow-y-auto`}>
+                {(expandedAtRisk ? atRiskDeals : atRiskDeals.slice(0, 5)).map((deal) => (
+                  <Link
+                    key={deal.Id}
+                    to={`/opportunity/${deal.Id}`}
+                    className="block p-4 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors border border-amber-200"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <h3 className="font-semibold text-slate-900 text-sm">{deal.Account?.Name || 'Unknown Account'}</h3>
+                        <p className="text-xs text-slate-600">{deal.Name}</p>
+                      </div>
+                      <span className="text-lg font-bold text-slate-900">
+                        {formatCurrency(deal.Amount || 0)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs text-slate-600 mb-2">
+                      <span className="px-2 py-0.5 bg-slate-200 rounded">{deal.StageName}</span>
+                      <span className={deal.daysStale > 30 ? 'text-red-600 font-medium' : ''}>
+                        {deal.daysStale} days stale
+                      </span>
+                      {deal.meddpiccScore !== undefined && (
+                        <span className={deal.meddpiccScore < 50 ? 'text-red-600' : 'text-green-600'}>
+                          MEDDPICC: {deal.meddpiccScore}
+                        </span>
+                      )}
+                    </div>
+
+                    {deal.warning && (
+                      <div className="text-xs text-amber-700 bg-amber-100 px-2 py-1 rounded mb-2">
+                        ⚠️ {deal.warning}
+                      </div>
+                    )}
+
+                    {deal.aiRecommendation && (
+                      <div className="text-xs text-purple-700 bg-purple-50 px-2 py-1 rounded">
+                        🤖 {deal.aiRecommendation}
+                      </div>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
