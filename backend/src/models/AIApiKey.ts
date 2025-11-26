@@ -6,6 +6,7 @@ export enum AIProvider {
   ANTHROPIC = 'anthropic',
   OPENAI = 'openai',
   GOOGLE = 'google',
+  AGENTFORCE = 'agentforce',
 }
 
 export interface AIApiKeyAttributes {

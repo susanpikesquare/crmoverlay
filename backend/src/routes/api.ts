@@ -737,6 +737,91 @@ router.get('/debug/account-fields', isAuthenticated, async (req: Request, res: R
   }
 });
 
+/**
+ * GET /api/debug/axonify-fields
+ * Returns fields related to Axonify usage data (licenses, products, usage)
+ */
+router.get('/debug/axonify-fields', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    // Get all Account fields using describe
+    const accountDescribe = await connection.sobject('Account').describe();
+
+    // Filter for Axonify/license/usage related fields
+    const axonifyKeywords = [
+      'axonify', 'license', 'usage', 'product', 'subscription',
+      'active_user', 'seat', 'module', 'entitlement', 'utilization'
+    ];
+
+    const axonifyFields = accountDescribe.fields
+      .filter((f: any) => {
+        const name = f.name.toLowerCase();
+        const label = f.label.toLowerCase();
+        return axonifyKeywords.some(kw => name.includes(kw) || label.includes(kw));
+      })
+      .map((f: any) => ({
+        name: f.name,
+        label: f.label,
+        type: f.type,
+        length: f.length,
+        updateable: f.updateable,
+        custom: f.custom,
+      }));
+
+    // Also get ALL custom fields for reference
+    const allCustomFields = accountDescribe.fields
+      .filter((f: any) => f.custom)
+      .map((f: any) => ({
+        name: f.name,
+        label: f.label,
+        type: f.type,
+      }));
+
+    // Get a sample account with any found axonify fields
+    let sampleData = null;
+    if (axonifyFields.length > 0) {
+      const sampleQuery = `SELECT Id, Name FROM Account LIMIT 1`;
+      const sampleResult = await connection.query(sampleQuery);
+      const sampleAccountId = sampleResult.records[0]?.Id;
+
+      if (sampleAccountId) {
+        const fieldList = ['Id', 'Name', ...axonifyFields.map((f: any) => f.name)].join(', ');
+        const detailQuery = `SELECT ${fieldList} FROM Account WHERE Id = '${sampleAccountId}' LIMIT 1`;
+        const detailResult = await connection.query(detailQuery);
+        sampleData = detailResult.records[0];
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        axonifyFields,
+        allCustomFields,
+        sampleAccount: sampleData,
+        totalAxonifyFields: axonifyFields.length,
+        totalCustomFields: allCustomFields.length,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching Axonify fields:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Axonify fields',
+      message: error.message,
+    });
+  }
+});
+
 // ============================================================================
 // COCKPIT ENDPOINTS
 // ============================================================================
@@ -1016,6 +1101,214 @@ router.get('/hub/csm/metrics', isAuthenticated, async (req: Request, res: Respon
     res.status(500).json({
       success: false,
       error: 'Failed to fetch CSM metrics',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/csm/at-risk
+ * Get at-risk accounts for CSM (low health scores or flagged as at-risk)
+ */
+router.get('/hub/csm/at-risk', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const accounts = await HubData.getAtRiskAccounts(connection, userId);
+
+    res.json({
+      success: true,
+      data: accounts,
+      count: accounts.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching at-risk accounts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch at-risk accounts',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/csm/underutilized
+ * Get accounts with underutilization risk (low license utilization)
+ */
+router.get('/hub/csm/underutilized', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const threshold = req.query.threshold ? parseInt(req.query.threshold as string, 10) : 60;
+    const accounts = await HubData.getUnderutilizedAccounts(connection, userId, threshold);
+
+    res.json({
+      success: true,
+      data: accounts,
+      count: accounts.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching underutilized accounts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch underutilized accounts',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/csm/expansion-opportunities
+ * Get accounts with expansion opportunities (high license utilization)
+ */
+router.get('/hub/csm/expansion-opportunities', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const threshold = req.query.threshold ? parseInt(req.query.threshold as string, 10) : 80;
+    const accounts = await HubData.getExpansionOpportunityAccounts(connection, userId, threshold);
+
+    res.json({
+      success: true,
+      data: accounts,
+      count: accounts.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching expansion opportunity accounts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch expansion opportunity accounts',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/am/at-risk
+ * Get at-risk accounts for AM (low health scores or flagged as at-risk)
+ */
+router.get('/hub/am/at-risk', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const accounts = await HubData.getAtRiskAccounts(connection, userId);
+
+    res.json({
+      success: true,
+      data: accounts,
+      count: accounts.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching at-risk accounts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch at-risk accounts',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/am/underutilized
+ * Get accounts with underutilization risk (for AM)
+ */
+router.get('/hub/am/underutilized', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const threshold = req.query.threshold ? parseInt(req.query.threshold as string, 10) : 60;
+    const accounts = await HubData.getUnderutilizedAccounts(connection, userId, threshold);
+
+    res.json({
+      success: true,
+      data: accounts,
+      count: accounts.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching underutilized accounts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch underutilized accounts',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/am/expansion-opportunities
+ * Get accounts with expansion opportunities (for AM)
+ */
+router.get('/hub/am/expansion-opportunities', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const threshold = req.query.threshold ? parseInt(req.query.threshold as string, 10) : 80;
+    const accounts = await HubData.getExpansionOpportunityAccounts(connection, userId, threshold);
+
+    res.json({
+      success: true,
+      data: accounts,
+      count: accounts.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching expansion opportunity accounts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch expansion opportunity accounts',
       message: error.message,
     });
   }

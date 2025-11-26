@@ -4,6 +4,7 @@ import { useState } from 'react';
 import apiClient from '../services/api';
 import api from '../services/api';
 import EditableField from '../components/EditableField';
+import AIAssistant from '../components/AIAssistant';
 
 interface Account {
   Id: string;
@@ -31,6 +32,28 @@ interface Account {
   SixSense_Profile_Fit_Score__c: number;
   SixSense_Engaged_Campaigns__c: string;
   LastModifiedDate: string;
+
+  // Axonify License & Usage Data
+  Contract_Total_License_Seats__c?: number;
+  Total_Hierarchy_Seats__c?: number;
+  Logo_Seats__c?: number;
+  Total_Active_Users__c?: number;
+  Active_Users_Max__c?: number;
+  Active_Users_Learn__c?: number;
+  Active_Users_Comms__c?: number;
+  Active_Users_Tasks__c?: number;
+  License_Utilization_Max__c?: number;
+  License_Utilization_Learn__c?: number;
+  License_Utilization_Comms__c?: number;
+  License_Utilization_Tasks__c?: number;
+  Max_Usage_Trend__c?: string;
+  License_Utilization_current_Summary__c?: string;
+  License_Utilization_Active_User_Summary__c?: string;
+  Usage_Metrics_Next_Steps__c?: string;
+  Content_Studio_Licenses__c?: number;
+  Total_ARR__c?: number;
+  Current_Gainsight_Score__c?: number;
+  Customer_Stage__c?: string;
 }
 
 interface Opportunity {
@@ -517,7 +540,7 @@ export default function Account360() {
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4 border border-purple-200">
                 <h3 className="text-sm font-semibold text-purple-900 mb-2">
-                  💡 AI-Powered Insight
+                  AI-Powered Insight
                 </h3>
                 <p className="text-sm text-gray-800">
                   Based on recent signals and buying stage, this account shows high purchase
@@ -527,6 +550,167 @@ export default function Account360() {
               </div>
             </div>
           </div>
+
+          {/* License & Usage - Full Width */}
+          {(account.Contract_Total_License_Seats__c || account.Total_Active_Users__c) && (
+            <div className="lg:col-span-2 bg-white rounded-xl shadow-md p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">License & Usage</h2>
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                  Axonify
+                </span>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Licensed Seats</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {(account.Contract_Total_License_Seats__c || account.Total_Hierarchy_Seats__c || 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Active Users</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {(account.Total_Active_Users__c || account.Active_Users_Max__c || 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Utilization</p>
+                  <p className={`text-2xl font-bold ${
+                    (account.License_Utilization_Max__c || 0) >= 80 ? 'text-green-600' :
+                    (account.License_Utilization_Max__c || 0) >= 50 ? 'text-yellow-600' :
+                    'text-red-600'
+                  }`}>
+                    {Math.round(account.License_Utilization_Max__c || 0)}%
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Health Score</p>
+                  <p className={`text-2xl font-bold ${
+                    (account.Current_Gainsight_Score__c || 0) >= 80 ? 'text-green-600' :
+                    (account.Current_Gainsight_Score__c || 0) >= 50 ? 'text-yellow-600' :
+                    'text-red-600'
+                  }`}>
+                    {account.Current_Gainsight_Score__c || '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Utilization by Product */}
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Utilization by Product</h3>
+                <div className="space-y-3">
+                  {account.Active_Users_Learn__c !== undefined && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">Learn</span>
+                        <span className="font-medium">
+                          {account.Active_Users_Learn__c?.toLocaleString()} users ({Math.round(account.License_Utilization_Learn__c || 0)}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            (account.License_Utilization_Learn__c || 0) >= 80 ? 'bg-green-500' :
+                            (account.License_Utilization_Learn__c || 0) >= 50 ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(account.License_Utilization_Learn__c || 0, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                  {account.Active_Users_Comms__c !== undefined && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">Comms</span>
+                        <span className="font-medium">
+                          {account.Active_Users_Comms__c?.toLocaleString()} users ({Math.round(account.License_Utilization_Comms__c || 0)}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            (account.License_Utilization_Comms__c || 0) >= 80 ? 'bg-green-500' :
+                            (account.License_Utilization_Comms__c || 0) >= 50 ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(account.License_Utilization_Comms__c || 0, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                  {account.Active_Users_Tasks__c !== undefined && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">Tasks</span>
+                        <span className="font-medium">
+                          {account.Active_Users_Tasks__c?.toLocaleString()} users ({Math.round(account.License_Utilization_Tasks__c || 0)}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            (account.License_Utilization_Tasks__c || 0) >= 80 ? 'bg-green-500' :
+                            (account.License_Utilization_Tasks__c || 0) >= 50 ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(account.License_Utilization_Tasks__c || 0, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                  {account.Active_Users_Max__c !== undefined && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">Max</span>
+                        <span className="font-medium">
+                          {account.Active_Users_Max__c?.toLocaleString()} users ({Math.round(account.License_Utilization_Max__c || 0)}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            (account.License_Utilization_Max__c || 0) >= 80 ? 'bg-green-500' :
+                            (account.License_Utilization_Max__c || 0) >= 50 ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(account.License_Utilization_Max__c || 0, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Usage Trend & Next Steps */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {account.Max_Usage_Trend__c && (
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2">Usage Trend</h4>
+                    <p className="text-sm text-gray-700">{account.Max_Usage_Trend__c}</p>
+                  </div>
+                )}
+                {account.Usage_Metrics_Next_Steps__c && (
+                  <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+                    <h4 className="text-sm font-semibold text-amber-900 mb-2">Next Steps</h4>
+                    <p className="text-sm text-gray-700">{account.Usage_Metrics_Next_Steps__c}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Content Studio */}
+              {account.Content_Studio_Licenses__c !== undefined && account.Content_Studio_Licenses__c > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Content Studio Licenses</span>
+                    <span className="font-semibold text-gray-900">{account.Content_Studio_Licenses__c}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Related Opportunities */}
@@ -562,6 +746,11 @@ export default function Account360() {
             </div>
           </div>
         )}
+
+        {/* AI Assistant */}
+        <div className="mt-8">
+          <AIAssistant />
+        </div>
       </div>
     </div>
   );

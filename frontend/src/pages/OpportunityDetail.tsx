@@ -4,6 +4,7 @@ import apiClient from '../services/api';
 import CommandOfMessageCard from '../components/CommandOfMessageCard';
 import ActivityTimeline from '../components/ActivityTimeline';
 import AIDealSummary from '../components/AIDealSummary';
+import AIAssistant from '../components/AIAssistant';
 
 interface Opportunity {
   Id: string;
@@ -402,6 +403,11 @@ export default function OpportunityDetail() {
 
           {/* Activity Timeline */}
           <ActivityTimeline activities={timelineData || []} />
+
+          {/* AI Assistant */}
+          <div className="mt-6">
+            <AIAssistant />
+          </div>
         </div>
       </div>
     </div>

@@ -64,6 +64,38 @@ export interface Account {
   Last_QBR__c?: string;
   Last_Exec_Check_In__c?: string;
 
+  // Axonify Usage/License Data
+  Contract_Total_License_Seats__c?: number;
+  Total_Hierarchy_Seats__c?: number;
+  Logo_Seats__c?: number;
+  License_Override__c?: number;
+
+  // Active Users by Product
+  Total_Active_Users__c?: number;
+  Active_Users_Max__c?: number;
+  Active_Users_Learn__c?: number;
+  Active_Users_Comms__c?: number;
+  Active_Users_Tasks__c?: number;
+  Learn_Users__c?: number;
+  Comms_Users__c?: number;
+  Tasks_Users__c?: number;
+  Chat_Users__c?: number;
+  Max_Users__c?: number;
+  Recognition_Users__c?: number;
+  Content_Studio_Licenses__c?: number;
+
+  // License Utilization (percentages)
+  License_Utilization_Max__c?: number;
+  License_Utilization_Learn__c?: number;
+  License_Utilization_Comms__c?: number;
+  License_Utilization_Tasks__c?: number;
+
+  // Usage Summaries
+  Max_Usage_Trend__c?: string;
+  License_Utilization_current_Summary__c?: string;
+  License_Utilization_Active_User_Summary__c?: string;
+  Usage_Metrics_Next_Steps__c?: string;
+
   // Notes/Commentary
   Strategy_Notes__c?: string;
   Risk_Notes__c?: string;
@@ -323,11 +355,26 @@ export async function getAccountById(
   accountId: string
 ): Promise<Account | null> {
   const primaryQuery = `
-    SELECT Id, Name, Industry, OwnerId,
+    SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees,
+           BillingCity, BillingState, BillingCountry,
            accountBuyingStage6sense__c, accountIntentScore6sense__c,
            accountProfileFit6sense__c, accountProfileScore6sense__c,
            accountReachScore6sense__c, accountUpdateDate6sense__c,
            X6Sense_Segments__c, X6senseID__c,
+           Clay_Employee_Count__c, Clay_Revenue__c, Clay_Industry__c,
+           Clay_City__c, Clay_State__c, Clay_Country__c,
+           Total_ARR__c, Customer_Stage__c, Risk__c,
+           Agreement_Expiry_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
+           Current_Gainsight_Score__c,
+           Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
+           Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
+           Active_Users_Comms__c, Active_Users_Tasks__c,
+           Learn_Users__c, Comms_Users__c, Tasks_Users__c, Chat_Users__c,
+           Max_Users__c, Recognition_Users__c, Content_Studio_Licenses__c,
+           License_Utilization_Max__c, License_Utilization_Learn__c,
+           License_Utilization_Comms__c, License_Utilization_Tasks__c,
+           Max_Usage_Trend__c, License_Utilization_current_Summary__c,
+           License_Utilization_Active_User_Summary__c, Usage_Metrics_Next_Steps__c,
            CreatedDate, LastModifiedDate
     FROM Account
     WHERE Id = '${accountId}'
@@ -335,7 +382,9 @@ export async function getAccountById(
   `;
 
   const fallbackQuery = `
-    SELECT Id, Name, Industry, OwnerId, CreatedDate, LastModifiedDate
+    SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees,
+           BillingCity, BillingState, BillingCountry,
+           CreatedDate, LastModifiedDate
     FROM Account
     WHERE Id = '${accountId}'
     LIMIT 1
@@ -356,10 +405,10 @@ export async function getAccountById(
     Priority_Tier__c: account.accountBuyingStage6sense__c || '🔥 Hot',
     SixSense_Intent_Score__c: account.accountIntentScore6sense__c,
     SixSense_Buying_Stage__c: account.accountBuyingStage6sense__c,
-    Clay_Employee_Count__c: account.Clay_Employee_Count__c || 1000,
-    Clay_Employee_Growth_Pct__c: account.Clay_Employee_Growth_Pct__c || 15,
-    Clay_Current_LMS__c: account.Clay_Current_LMS__c || 'Unknown',
-    Clay_Active_Signals__c: account.Clay_Active_Signals__c || '',
+    Clay_Employee_Count__c: account.Clay_Employee_Count__c || account.NumberOfEmployees,
+    Clay_Employee_Growth_Pct__c: account.Clay_Employee_Growth_Pct__c,
+    Clay_Current_LMS__c: account.Clay_Current_LMS__c,
+    Clay_Active_Signals__c: account.Clay_Active_Signals__c,
   };
 }
 

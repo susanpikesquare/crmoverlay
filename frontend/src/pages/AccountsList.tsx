@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import apiClient from '../services/api';
+import AIAssistant from '../components/AIAssistant';
 
 interface Account {
   Id: string;
@@ -261,6 +262,11 @@ export default function AccountsList() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* AI Assistant */}
+        <div className="mt-8">
+          <AIAssistant />
         </div>
       </div>
     </div>

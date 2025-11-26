@@ -28,28 +28,18 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session configuration with PostgreSQL store
+// Session configuration - use PostgreSQL in production, memory store for local dev
 const PgSession = connectPgSimple(session);
 
 // Parse DATABASE_URL for session store (handle Heroku's postgres:// protocol)
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/formation_dev';
 const sessionConnectionString = DATABASE_URL.replace(/^postgres:\/\//, 'postgresql://');
 
-// Create PostgreSQL pool with SSL configuration for production
-// SSL is required for Heroku PostgreSQL connections
-const sessionPool = new Pool({
-  connectionString: sessionConnectionString,
-  ssl: process.env.NODE_ENV === 'production' ? {
-    rejectUnauthorized: false,
-  } : false,
-});
+// Determine if we should use PostgreSQL or in-memory sessions
+const usePostgres = process.env.NODE_ENV === 'production' || process.env.USE_POSTGRES_SESSIONS === 'true';
 
-app.use(session({
-  store: new PgSession({
-    pool: sessionPool,
-    tableName: 'session',
-    createTableIfMissing: true,
-  }),
+// Session configuration options
+const sessionConfig: session.SessionOptions = {
   secret: process.env.SESSION_SECRET || 'revenue-intelligence-secret-key',
   resave: false,
   saveUninitialized: false,
@@ -58,10 +48,31 @@ app.use(session({
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    // Don't set domain - let browser set it automatically
   },
-  proxy: process.env.NODE_ENV === 'production', // Trust Heroku's proxy
-}));
+  proxy: process.env.NODE_ENV === 'production',
+};
+
+if (usePostgres) {
+  // Create PostgreSQL pool with SSL configuration for production
+  const sessionPool = new Pool({
+    connectionString: sessionConnectionString,
+    ssl: process.env.NODE_ENV === 'production' ? {
+      rejectUnauthorized: false,
+    } : false,
+  });
+
+  sessionConfig.store = new PgSession({
+    pool: sessionPool,
+    tableName: 'session',
+    createTableIfMissing: true,
+  });
+  console.log('Using PostgreSQL session store');
+} else {
+  // Use default in-memory session store for local development
+  console.log('Using in-memory session store (PostgreSQL not configured)');
+}
+
+app.use(session(sessionConfig));
 
 // Request logging middleware
 app.use((req, _res, next) => {

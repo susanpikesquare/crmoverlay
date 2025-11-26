@@ -892,6 +892,153 @@ export async function getCSMMetrics(
   }
 }
 
+/**
+ * At-Risk Account for CSM Hub
+ */
+export interface AtRiskAccount {
+  id: string;
+  name: string;
+  healthScore: number;
+  riskFactors: string[];
+  arr?: number;
+  daysToRenewal?: number;
+  lastContactDate?: string;
+  csm?: string;
+}
+
+/**
+ * Get at-risk accounts for CSM Hub
+ * Returns accounts with low health scores or risk flags
+ */
+export async function getAtRiskAccounts(
+  connection: Connection,
+  userId: string
+): Promise<AtRiskAccount[]> {
+  try {
+    // Primary query with full fields
+    const query = `
+      SELECT Id, Name, Current_Gainsight_Score__c, Risk__c,
+             Total_ARR__c, Agreement_Expiry_Date__c,
+             LastActivityDate, Customer_Success_Manager__r.Name,
+             Customer_Stage__c
+      FROM Account
+      WHERE (Customer_Success_Manager__c = '${userId}' OR OwnerId = '${userId}')
+        AND Customer_Stage__c = 'Customer'
+        AND (Risk__c = 'Red' OR Risk__c = 'At Risk' OR Current_Gainsight_Score__c < 60)
+      ORDER BY Current_Gainsight_Score__c ASC NULLS LAST
+      LIMIT 50
+    `;
+
+    // Fallback query if custom fields don't exist
+    const fallbackQuery = `
+      SELECT Id, Name, LastActivityDate
+      FROM Account
+      WHERE OwnerId = '${userId}'
+      ORDER BY LastActivityDate ASC NULLS LAST
+      LIMIT 20
+    `;
+
+    let accounts: any[] = [];
+    let hasCustomFields = true;
+
+    try {
+      const result = await connection.query(query);
+      accounts = result.records as any[];
+    } catch (error: any) {
+      if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+        console.warn('At-risk fields not found, using fallback query');
+        hasCustomFields = false;
+        const fallbackResult = await connection.query(fallbackQuery);
+        accounts = fallbackResult.records as any[];
+      } else {
+        throw error;
+      }
+    }
+
+    // Transform to AtRiskAccount format
+    const atRiskAccounts: AtRiskAccount[] = accounts.map(acc => {
+      const riskFactors: string[] = [];
+
+      if (hasCustomFields) {
+        // Determine risk factors based on available data
+        const healthScore = acc.Current_Gainsight_Score__c || 0;
+        if (healthScore < 40) {
+          riskFactors.push('Critical health score');
+        } else if (healthScore < 60) {
+          riskFactors.push('Low health score');
+        }
+
+        if (acc.Risk__c === 'Red' || acc.Risk__c === 'At Risk') {
+          riskFactors.push('Flagged as at-risk');
+        }
+
+        // Calculate days to renewal
+        let daysToRenewal: number | undefined;
+        if (acc.Agreement_Expiry_Date__c) {
+          const renewalDate = new Date(acc.Agreement_Expiry_Date__c);
+          const today = new Date();
+          daysToRenewal = Math.ceil((renewalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (daysToRenewal <= 30) {
+            riskFactors.push('Renewal in <30 days');
+          } else if (daysToRenewal <= 60) {
+            riskFactors.push('Renewal approaching');
+          }
+        }
+
+        // Check last activity
+        if (acc.LastActivityDate) {
+          const lastActivity = new Date(acc.LastActivityDate);
+          const daysSinceActivity = Math.ceil((Date.now() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysSinceActivity > 60) {
+            riskFactors.push('No recent engagement');
+          }
+        } else {
+          riskFactors.push('No activity recorded');
+        }
+
+        return {
+          id: acc.Id,
+          name: acc.Name,
+          healthScore: acc.Current_Gainsight_Score__c || 0,
+          riskFactors,
+          arr: acc.Total_ARR__c,
+          daysToRenewal,
+          lastContactDate: acc.LastActivityDate,
+          csm: acc.Customer_Success_Manager__r?.Name,
+        };
+      } else {
+        // Fallback - just use last activity as risk indicator
+        if (acc.LastActivityDate) {
+          const lastActivity = new Date(acc.LastActivityDate);
+          const daysSinceActivity = Math.ceil((Date.now() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysSinceActivity > 90) {
+            riskFactors.push('No activity in 90+ days');
+          } else if (daysSinceActivity > 60) {
+            riskFactors.push('Low engagement');
+          }
+        } else {
+          riskFactors.push('No activity recorded');
+        }
+
+        return {
+          id: acc.Id,
+          name: acc.Name,
+          healthScore: 50, // Default when no health score available
+          riskFactors,
+          lastContactDate: acc.LastActivityDate,
+        };
+      }
+    });
+
+    // Sort by health score (lowest first)
+    return atRiskAccounts.sort((a, b) => a.healthScore - b.healthScore);
+  } catch (error) {
+    console.error('Error fetching at-risk accounts:', error);
+    return [];
+  }
+}
+
 // ============================================================================
 // SALES LEADER DASHBOARD
 // ============================================================================
@@ -2441,6 +2588,288 @@ export async function getOpportunityTimeline(
     return activities;
   } catch (error) {
     console.error('Error fetching opportunity timeline:', error);
+    return [];
+  }
+}
+
+/**
+ * License Utilization Account (for CSM/AM hub)
+ */
+export interface LicenseUtilizationAccount {
+  id: string;
+  name: string;
+  contractedSeats: number;
+  activeUsers: number;
+  utilizationPercent: number;
+  utilizationByProduct: {
+    learn?: { seats: number; activeUsers: number; utilization: number };
+    comms?: { seats: number; activeUsers: number; utilization: number };
+    tasks?: { seats: number; activeUsers: number; utilization: number };
+    max?: { seats: number; activeUsers: number; utilization: number };
+  };
+  usageTrend?: string;
+  nextSteps?: string;
+  healthScore?: number;
+  arr?: number;
+  renewalDate?: string;
+  daysToRenewal?: number;
+  riskLevel: 'critical' | 'warning' | 'healthy' | 'over-utilized';
+}
+
+/**
+ * Get accounts with underutilization risk
+ * Returns accounts where license utilization is below threshold (default 60%)
+ */
+export async function getUnderutilizedAccounts(
+  connection: Connection,
+  userId: string,
+  threshold: number = 60
+): Promise<LicenseUtilizationAccount[]> {
+  try {
+    // Query accounts with license utilization data
+    const query = `
+      SELECT Id, Name,
+             Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
+             Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
+             Active_Users_Comms__c, Active_Users_Tasks__c,
+             License_Utilization_Max__c, License_Utilization_Learn__c,
+             License_Utilization_Comms__c, License_Utilization_Tasks__c,
+             Max_Usage_Trend__c, Usage_Metrics_Next_Steps__c,
+             Current_Gainsight_Score__c, Total_ARR__c, Agreement_Expiry_Date__c,
+             Customer_Stage__c, Risk__c
+      FROM Account
+      WHERE (OwnerId = '${userId}' OR Customer_Success_Manager__c = '${userId}')
+        AND Contract_Total_License_Seats__c > 0
+        AND Customer_Stage__c = 'Customer'
+      ORDER BY License_Utilization_Max__c ASC NULLS LAST
+      LIMIT 50
+    `;
+
+    const fallbackQuery = `
+      SELECT Id, Name, Total_ARR__c, Agreement_Expiry_Date__c,
+             Current_Gainsight_Score__c, Customer_Stage__c
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND Customer_Stage__c = 'Customer'
+      ORDER BY Name
+      LIMIT 50
+    `;
+
+    let accounts: any[] = [];
+    try {
+      const result = await connection.query(query);
+      accounts = result.records as any[];
+    } catch (error: any) {
+      if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+        console.warn('License utilization fields not found, using fallback query');
+        const fallbackResult = await connection.query(fallbackQuery);
+        accounts = fallbackResult.records as any[];
+      } else {
+        throw error;
+      }
+    }
+
+    // Transform and filter for underutilized accounts
+    const utilizedAccounts: LicenseUtilizationAccount[] = accounts
+      .filter(acc => {
+        const utilization = acc.License_Utilization_Max__c || 0;
+        return utilization < threshold && utilization >= 0;
+      })
+      .map(acc => {
+        const contractedSeats = acc.Contract_Total_License_Seats__c || acc.Total_Hierarchy_Seats__c || 0;
+        const activeUsers = acc.Total_Active_Users__c || acc.Active_Users_Max__c || 0;
+        const utilizationPercent = acc.License_Utilization_Max__c ||
+          (contractedSeats > 0 ? (activeUsers / contractedSeats) * 100 : 0);
+
+        // Calculate days to renewal
+        let daysToRenewal: number | undefined;
+        if (acc.Agreement_Expiry_Date__c) {
+          const renewalDate = new Date(acc.Agreement_Expiry_Date__c);
+          const today = new Date();
+          daysToRenewal = Math.ceil((renewalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        // Determine risk level
+        let riskLevel: 'critical' | 'warning' | 'healthy' | 'over-utilized' = 'healthy';
+        if (utilizationPercent < 30) {
+          riskLevel = 'critical';
+        } else if (utilizationPercent < 50) {
+          riskLevel = 'warning';
+        } else if (utilizationPercent > 100) {
+          riskLevel = 'over-utilized';
+        }
+
+        return {
+          id: acc.Id,
+          name: acc.Name,
+          contractedSeats,
+          activeUsers,
+          utilizationPercent: Math.round(utilizationPercent),
+          utilizationByProduct: {
+            learn: acc.Active_Users_Learn__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Learn__c,
+              utilization: acc.License_Utilization_Learn__c || 0,
+            } : undefined,
+            comms: acc.Active_Users_Comms__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Comms__c,
+              utilization: acc.License_Utilization_Comms__c || 0,
+            } : undefined,
+            tasks: acc.Active_Users_Tasks__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Tasks__c,
+              utilization: acc.License_Utilization_Tasks__c || 0,
+            } : undefined,
+            max: acc.Active_Users_Max__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Max__c,
+              utilization: acc.License_Utilization_Max__c || 0,
+            } : undefined,
+          },
+          usageTrend: acc.Max_Usage_Trend__c,
+          nextSteps: acc.Usage_Metrics_Next_Steps__c,
+          healthScore: acc.Current_Gainsight_Score__c,
+          arr: acc.Total_ARR__c,
+          renewalDate: acc.Agreement_Expiry_Date__c,
+          daysToRenewal,
+          riskLevel,
+        };
+      })
+      .sort((a, b) => a.utilizationPercent - b.utilizationPercent); // Sort by lowest utilization first
+
+    return utilizedAccounts;
+  } catch (error) {
+    console.error('Error fetching underutilized accounts:', error);
+    return [];
+  }
+}
+
+/**
+ * Get accounts with expansion opportunity (over-utilized licenses)
+ * Returns accounts where license utilization is above threshold (default 80%)
+ */
+export async function getExpansionOpportunityAccounts(
+  connection: Connection,
+  userId: string,
+  threshold: number = 80
+): Promise<LicenseUtilizationAccount[]> {
+  try {
+    // Query accounts with license utilization data
+    const query = `
+      SELECT Id, Name,
+             Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
+             Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
+             Active_Users_Comms__c, Active_Users_Tasks__c,
+             License_Utilization_Max__c, License_Utilization_Learn__c,
+             License_Utilization_Comms__c, License_Utilization_Tasks__c,
+             Max_Usage_Trend__c, Usage_Metrics_Next_Steps__c,
+             Current_Gainsight_Score__c, Total_ARR__c, Agreement_Expiry_Date__c,
+             Customer_Stage__c, Risk__c
+      FROM Account
+      WHERE (OwnerId = '${userId}' OR Customer_Success_Manager__c = '${userId}')
+        AND Contract_Total_License_Seats__c > 0
+        AND Customer_Stage__c = 'Customer'
+      ORDER BY License_Utilization_Max__c DESC NULLS LAST
+      LIMIT 50
+    `;
+
+    const fallbackQuery = `
+      SELECT Id, Name, Total_ARR__c, Agreement_Expiry_Date__c,
+             Current_Gainsight_Score__c, Customer_Stage__c
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND Customer_Stage__c = 'Customer'
+      ORDER BY Name
+      LIMIT 50
+    `;
+
+    let accounts: any[] = [];
+    try {
+      const result = await connection.query(query);
+      accounts = result.records as any[];
+    } catch (error: any) {
+      if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+        console.warn('License utilization fields not found, using fallback query');
+        const fallbackResult = await connection.query(fallbackQuery);
+        accounts = fallbackResult.records as any[];
+      } else {
+        throw error;
+      }
+    }
+
+    // Transform and filter for over-utilized accounts (expansion opportunities)
+    const expansionAccounts: LicenseUtilizationAccount[] = accounts
+      .filter(acc => {
+        const utilization = acc.License_Utilization_Max__c || 0;
+        return utilization >= threshold;
+      })
+      .map(acc => {
+        const contractedSeats = acc.Contract_Total_License_Seats__c || acc.Total_Hierarchy_Seats__c || 0;
+        const activeUsers = acc.Total_Active_Users__c || acc.Active_Users_Max__c || 0;
+        const utilizationPercent = acc.License_Utilization_Max__c ||
+          (contractedSeats > 0 ? (activeUsers / contractedSeats) * 100 : 0);
+
+        // Calculate days to renewal
+        let daysToRenewal: number | undefined;
+        if (acc.Agreement_Expiry_Date__c) {
+          const renewalDate = new Date(acc.Agreement_Expiry_Date__c);
+          const today = new Date();
+          daysToRenewal = Math.ceil((renewalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        // Determine risk level (for expansion, over-utilized is actually good!)
+        let riskLevel: 'critical' | 'warning' | 'healthy' | 'over-utilized' = 'over-utilized';
+        if (utilizationPercent >= 100) {
+          riskLevel = 'over-utilized'; // Prime for expansion
+        } else if (utilizationPercent >= 90) {
+          riskLevel = 'warning'; // Getting close
+        } else {
+          riskLevel = 'healthy'; // Good utilization
+        }
+
+        return {
+          id: acc.Id,
+          name: acc.Name,
+          contractedSeats,
+          activeUsers,
+          utilizationPercent: Math.round(utilizationPercent),
+          utilizationByProduct: {
+            learn: acc.Active_Users_Learn__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Learn__c,
+              utilization: acc.License_Utilization_Learn__c || 0,
+            } : undefined,
+            comms: acc.Active_Users_Comms__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Comms__c,
+              utilization: acc.License_Utilization_Comms__c || 0,
+            } : undefined,
+            tasks: acc.Active_Users_Tasks__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Tasks__c,
+              utilization: acc.License_Utilization_Tasks__c || 0,
+            } : undefined,
+            max: acc.Active_Users_Max__c ? {
+              seats: contractedSeats,
+              activeUsers: acc.Active_Users_Max__c,
+              utilization: acc.License_Utilization_Max__c || 0,
+            } : undefined,
+          },
+          usageTrend: acc.Max_Usage_Trend__c,
+          nextSteps: acc.Usage_Metrics_Next_Steps__c,
+          healthScore: acc.Current_Gainsight_Score__c,
+          arr: acc.Total_ARR__c,
+          renewalDate: acc.Agreement_Expiry_Date__c,
+          daysToRenewal,
+          riskLevel,
+        };
+      })
+      .sort((a, b) => b.utilizationPercent - a.utilizationPercent); // Sort by highest utilization first
+
+    return expansionAccounts;
+  } catch (error) {
+    console.error('Error fetching expansion opportunity accounts:', error);
     return [];
   }
 }

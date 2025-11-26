@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Connection } from 'jsforce';
 import AIApiKey, { AIProvider as AIApiKeyProvider } from '../models/AIApiKey';
 
 export interface DealSummary {
@@ -13,23 +14,46 @@ export interface DealSummary {
 }
 
 export interface AIProviderConfig {
-  provider: 'anthropic' | 'openai' | 'gemini' | 'none';
+  provider: 'anthropic' | 'openai' | 'gemini' | 'agentforce' | 'none';
   apiKey?: string;
   model?: string;
   customEndpoint?: string;
   enabled: boolean;
 }
 
-type AIProvider = 'anthropic' | 'openai' | 'gemini' | 'none';
+type AIProvider = 'anthropic' | 'openai' | 'gemini' | 'agentforce' | 'none';
+
+// Agentforce configuration
+interface AgentforceConfig {
+  enabled: boolean;
+  promptTemplateId?: string;
+  agentId?: string;
+}
+
+// Multi-provider configuration - use different AI for different purposes
+export interface MultiProviderConfig {
+  // Primary provider for AI Assistant chat
+  chatProvider: AIProvider;
+  // Provider for deal summaries and recommendations (can use Agentforce for SF-native insights)
+  recommendationProvider: AIProvider;
+}
 
 export class AIService {
   private anthropicClient: Anthropic | null = null;
   private openaiClient: OpenAI | null = null;
   private geminiClient: GoogleGenerativeAI | null = null;
+  private agentforceConfig: AgentforceConfig | null = null;
   private provider: AIProvider;
   private model: string;
   private initPromise: Promise<void> | null = null;
   private isInitialized: boolean = false;
+
+  // Salesforce connection for Agentforce (set per-request)
+  private sfConnection: Connection | null = null;
+
+  // Multi-provider support: when both Agentforce AND another provider are configured,
+  // use Agentforce for SF-native recommendations and the other for general chat
+  private secondaryProvider: AIProvider = 'none';
 
   constructor(config?: AIProviderConfig) {
     if (config && config.enabled) {
@@ -71,8 +95,9 @@ export class AIService {
     try {
       const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
 
-      // Try to find active API keys in priority order: Anthropic > OpenAI > Gemini
-      const providers = [AIApiKeyProvider.ANTHROPIC, AIApiKeyProvider.OPENAI, AIApiKeyProvider.GOOGLE];
+      // Try to find active API keys in priority order: Agentforce > Anthropic > OpenAI > Gemini
+      // Agentforce doesn't need an API key, it uses the Salesforce connection
+      const providers = [AIApiKeyProvider.AGENTFORCE, AIApiKeyProvider.ANTHROPIC, AIApiKeyProvider.OPENAI, AIApiKeyProvider.GOOGLE];
 
       for (const provider of providers) {
         const apiKey = await AIApiKey.findOne({
@@ -85,16 +110,18 @@ export class AIService {
 
         if (apiKey) {
           // Map database provider names to service provider names
-          let mappedProvider: 'anthropic' | 'openai' | 'gemini';
+          let mappedProvider: 'anthropic' | 'openai' | 'gemini' | 'agentforce';
           if (provider === AIApiKeyProvider.GOOGLE) {
             mappedProvider = 'gemini';
+          } else if (provider === AIApiKeyProvider.AGENTFORCE) {
+            mappedProvider = 'agentforce';
           } else {
             mappedProvider = provider as 'anthropic' | 'openai';
           }
 
           return {
             provider: mappedProvider,
-            apiKey: apiKey.getDecryptedApiKey(),
+            apiKey: provider === AIApiKeyProvider.AGENTFORCE ? undefined : apiKey.getDecryptedApiKey(),
             enabled: true,
           };
         }
@@ -137,10 +164,25 @@ export class AIService {
           console.log(`AI Service initialized with Google Gemini (${this.model})`);
         }
         break;
+      case 'agentforce':
+        // Agentforce uses Salesforce connection, not API key
+        this.agentforceConfig = {
+          enabled: true,
+          promptTemplateId: process.env.AGENTFORCE_PROMPT_TEMPLATE_ID,
+          agentId: process.env.AGENTFORCE_AGENT_ID,
+        };
+        this.model = 'agentforce';
+        console.log('AI Service initialized with Salesforce Agentforce');
+        break;
       default:
         this.provider = 'none';
         console.warn('AI provider set to "none". AI features disabled.');
     }
+  }
+
+  // Set the Salesforce connection for Agentforce requests
+  public setSalesforceConnection(connection: Connection): void {
+    this.sfConnection = connection;
   }
 
   private initializeFromEnv() {
@@ -148,31 +190,74 @@ export class AIService {
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
     const geminiKey = process.env.GOOGLE_AI_API_KEY;
+    const agentforceEnabled = process.env.AGENTFORCE_ENABLED === 'true';
 
-    // Priority: Anthropic > OpenAI > Gemini (you can change this order)
+    // MULTI-PROVIDER SUPPORT:
+    // If both Agentforce AND an external AI (Claude/OpenAI/Gemini) are configured,
+    // use Agentforce for Salesforce-native recommendations and the external AI for chat
+
+    // First, initialize Agentforce if enabled
+    if (agentforceEnabled) {
+      this.agentforceConfig = {
+        enabled: true,
+        promptTemplateId: process.env.AGENTFORCE_PROMPT_TEMPLATE_ID,
+        agentId: process.env.AGENTFORCE_AGENT_ID,
+      };
+      console.log('AI Service: Agentforce enabled for Salesforce-native AI');
+    }
+
+    // Then, initialize external AI provider for chat/general AI
     if (anthropicKey) {
       this.anthropicClient = new Anthropic({ apiKey: anthropicKey });
-      this.provider = 'anthropic';
-      this.model = 'claude-3-7-sonnet-20250219';
-      console.log('AI Service initialized with Anthropic Claude (env)');
+      if (agentforceEnabled) {
+        // Both configured: Agentforce is primary for recommendations, Anthropic for chat
+        this.provider = 'agentforce';
+        this.secondaryProvider = 'anthropic';
+        this.model = 'claude-3-7-sonnet-20250219';
+        console.log('AI Service: Multi-provider mode - Agentforce + Anthropic Claude');
+      } else {
+        this.provider = 'anthropic';
+        this.model = 'claude-3-7-sonnet-20250219';
+        console.log('AI Service initialized with Anthropic Claude (env)');
+      }
     } else if (openaiKey) {
       const openaiConfig: any = { apiKey: openaiKey };
       if (process.env.AZURE_OPENAI_ENDPOINT) {
         openaiConfig.baseURL = process.env.AZURE_OPENAI_ENDPOINT;
       }
       this.openaiClient = new OpenAI(openaiConfig);
-      this.provider = 'openai';
-      this.model = 'gpt-4-turbo-preview';
-      console.log('AI Service initialized with OpenAI (env)');
+      if (agentforceEnabled) {
+        this.provider = 'agentforce';
+        this.secondaryProvider = 'openai';
+        this.model = 'gpt-4-turbo-preview';
+        console.log('AI Service: Multi-provider mode - Agentforce + OpenAI');
+      } else {
+        this.provider = 'openai';
+        this.model = 'gpt-4-turbo-preview';
+        console.log('AI Service initialized with OpenAI (env)');
+      }
     } else if (geminiKey) {
       this.geminiClient = new GoogleGenerativeAI(geminiKey);
-      this.provider = 'gemini';
-      this.model = 'gemini-pro';
-      console.log('AI Service initialized with Google Gemini (env)');
+      if (agentforceEnabled) {
+        this.provider = 'agentforce';
+        this.secondaryProvider = 'gemini';
+        this.model = 'gemini-pro';
+        console.log('AI Service: Multi-provider mode - Agentforce + Google Gemini');
+      } else {
+        this.provider = 'gemini';
+        this.model = 'gemini-pro';
+        console.log('AI Service initialized with Google Gemini (env)');
+      }
+    } else if (agentforceEnabled) {
+      // Only Agentforce, no external AI
+      this.provider = 'agentforce';
+      this.model = 'agentforce';
+      console.log('AI Service initialized with Salesforce Agentforce only (env)');
     } else {
       this.provider = 'none';
       console.warn('No AI API key configured. AI features will be disabled.');
-      console.warn('Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_AI_API_KEY');
+      console.warn('Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_AI_API_KEY');
+      console.warn('Or set AGENTFORCE_ENABLED=true to use Salesforce Agentforce');
       console.warn('Or configure through Admin Settings UI');
     }
   }
@@ -180,7 +265,7 @@ export class AIService {
   async generateDealSummary(opportunityData: any, activityData: any[]): Promise<DealSummary> {
     await this.ensureInitialized();
 
-    if (!this.anthropicClient && !this.openaiClient && !this.geminiClient) {
+    if (!this.anthropicClient && !this.openaiClient && !this.geminiClient && !this.agentforceConfig?.enabled) {
       return this.getPlaceholderSummary();
     }
 
@@ -194,6 +279,8 @@ export class AIService {
           return await this.generateWithOpenAI(prompt);
         case 'gemini':
           return await this.generateWithGemini(prompt);
+        case 'agentforce':
+          return await this.generateWithAgentforce(prompt, opportunityData);
         default:
           return this.getPlaceholderSummary();
       }
@@ -239,6 +326,83 @@ export class AIService {
     const responseText = response.text();
 
     return this.parseDealSummary(responseText);
+  }
+
+  private async generateWithAgentforce(prompt: string, opportunityData: any): Promise<DealSummary> {
+    if (!this.agentforceConfig?.enabled) {
+      throw new Error('Agentforce not enabled');
+    }
+    if (!this.sfConnection) {
+      throw new Error('Salesforce connection not available for Agentforce');
+    }
+
+    try {
+      // Call Salesforce Einstein/Agentforce API
+      // This uses the Prompt Builder/Einstein Generative API
+      const templateId = this.agentforceConfig.promptTemplateId;
+
+      if (templateId) {
+        // Use configured prompt template
+        const response: any = await this.sfConnection.request({
+          method: 'POST',
+          url: `/services/data/v60.0/einstein/prompt-templates/${templateId}/generations`,
+          body: JSON.stringify({
+            isPreview: false,
+            inputParams: {
+              opportunityId: opportunityData.Id,
+              opportunityName: opportunityData.Name,
+              accountName: opportunityData.Account?.Name || 'Unknown',
+              stage: opportunityData.StageName,
+              amount: opportunityData.Amount,
+              closeDate: opportunityData.CloseDate,
+            },
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.generations && response.generations.length > 0) {
+          return this.parseDealSummary(response.generations[0].text);
+        }
+      }
+
+      // Fallback: Use Einstein Chat Completions API (Einstein GPT)
+      const chatResponse: any = await this.sfConnection.request({
+        method: 'POST',
+        url: '/services/data/v60.0/einstein/ai-chat/completions',
+        body: JSON.stringify({
+          model: 'sfdc_ai__DefaultGPT4Omni',
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          maxTokens: 1500,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (chatResponse.choices && chatResponse.choices.length > 0) {
+        return this.parseDealSummary(chatResponse.choices[0].message.content);
+      }
+
+      throw new Error('No response from Agentforce');
+    } catch (error: any) {
+      console.error('Agentforce API error:', error);
+      // If Agentforce API fails, return a placeholder with error info
+      return {
+        overview: `Agentforce is configured but encountered an error. The opportunity "${opportunityData.Name}" may need manual review.`,
+        stakeholders: [],
+        currentStatus: `Stage: ${opportunityData.StageName}, Amount: $${opportunityData.Amount?.toLocaleString() || 0}`,
+        risks: ['Unable to generate AI insights via Agentforce'],
+        nextActions: ['Verify Agentforce configuration in Salesforce', 'Check Einstein API permissions'],
+        generatedAt: new Date().toISOString(),
+      };
+    }
   }
 
   private buildDealSummaryPrompt(opportunity: any, activities: any[]): string {
@@ -326,7 +490,8 @@ Provide ONLY the JSON response, no additional text.`;
       overview: `AI summary generation is not configured. To enable AI-powered insights, add one of the following to your environment variables:
 - ANTHROPIC_API_KEY (for Claude) - Get from https://console.anthropic.com/
 - OPENAI_API_KEY (for ChatGPT) - Get from https://platform.openai.com/
-- GOOGLE_AI_API_KEY (for Gemini) - Get from https://makersuite.google.com/`,
+- GOOGLE_AI_API_KEY (for Gemini) - Get from https://makersuite.google.com/
+- AGENTFORCE_ENABLED=true (for Salesforce Agentforce) - Uses your Salesforce org's Einstein AI`,
       stakeholders: [],
       currentStatus: 'Not available - AI service not configured',
       risks: ['No API key configured'],
@@ -338,20 +503,26 @@ Provide ONLY the JSON response, no additional text.`;
   async askQuestion(question: string, userData: any): Promise<string> {
     await this.ensureInitialized();
 
-    if (!this.anthropicClient && !this.openaiClient && !this.geminiClient) {
+    if (!this.anthropicClient && !this.openaiClient && !this.geminiClient && !this.agentforceConfig?.enabled) {
       return 'AI Assistant is not configured. Please contact your administrator to set up an AI provider.';
     }
 
     try {
       const prompt = this.buildAssistantPrompt(question, userData);
 
-      switch (this.provider) {
+      // In multi-provider mode, prefer external AI (Claude/OpenAI/Gemini) for chat
+      // because it's better for general conversation and complex reasoning
+      const chatProvider = this.secondaryProvider !== 'none' ? this.secondaryProvider : this.provider;
+
+      switch (chatProvider) {
         case 'anthropic':
           return await this.askWithAnthropic(prompt);
         case 'openai':
           return await this.askWithOpenAI(prompt);
         case 'gemini':
           return await this.askWithGemini(prompt);
+        case 'agentforce':
+          return await this.askWithAgentforce(prompt);
         default:
           return 'AI Assistant is not configured. Please contact your administrator.';
       }
@@ -393,6 +564,45 @@ Provide ONLY the JSON response, no additional text.`;
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
+  }
+
+  private async askWithAgentforce(prompt: string): Promise<string> {
+    if (!this.agentforceConfig?.enabled) {
+      throw new Error('Agentforce not enabled');
+    }
+    if (!this.sfConnection) {
+      throw new Error('Salesforce connection not available for Agentforce');
+    }
+
+    try {
+      // Use Einstein Chat Completions API for general questions
+      const chatResponse: any = await this.sfConnection.request({
+        method: 'POST',
+        url: '/services/data/v60.0/einstein/ai-chat/completions',
+        body: JSON.stringify({
+          model: 'sfdc_ai__DefaultGPT4Omni',
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          maxTokens: 1000,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (chatResponse.choices && chatResponse.choices.length > 0) {
+        return chatResponse.choices[0].message.content;
+      }
+
+      throw new Error('No response from Agentforce');
+    } catch (error: any) {
+      console.error('Agentforce Chat API error:', error);
+      return `I'm sorry, I couldn't process your question through Agentforce. Error: ${error.message || 'Unknown error'}. Please try again or contact your administrator to verify Agentforce configuration.`;
+    }
   }
 
   private buildAssistantPrompt(question: string, userData: any): string {
@@ -437,6 +647,28 @@ Provide ONLY the JSON response, no additional text.`;
     contextInfo += `Provide a helpful, concise answer (2-4 sentences). Be specific and actionable. If suggesting they focus on something, explain why.`;
 
     return contextInfo;
+  }
+
+  // Get current provider configuration status
+  public async getProviderStatus(): Promise<{
+    primaryProvider: AIProvider;
+    secondaryProvider: AIProvider;
+    agentforceEnabled: boolean;
+    chatProvider: AIProvider;
+    recommendationProvider: AIProvider;
+  }> {
+    await this.ensureInitialized();
+
+    const chatProvider = this.secondaryProvider !== 'none' ? this.secondaryProvider : this.provider;
+    const recommendationProvider = this.provider;
+
+    return {
+      primaryProvider: this.provider,
+      secondaryProvider: this.secondaryProvider,
+      agentforceEnabled: this.agentforceConfig?.enabled || false,
+      chatProvider,
+      recommendationProvider,
+    };
   }
 }
 
