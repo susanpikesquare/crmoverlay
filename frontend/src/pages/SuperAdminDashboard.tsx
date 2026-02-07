@@ -581,10 +581,77 @@ function CreateCustomerModal({ onClose, onCreate }: { onClose: () => void; onCre
 
 // Customer Detail Modal Component
 function CustomerDetailModal({ customer, onClose, onRefresh }: { customer: Customer; onClose: () => void; onRefresh: () => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [formData, setFormData] = useState({
+    companyName: customer.companyName,
+    subdomain: customer.subdomain,
+    salesforceInstanceUrl: customer.salesforceInstanceUrl || '',
+    salesforceClientId: '',
+    salesforceClientSecret: '',
+    subscriptionTier: customer.subscriptionTier,
+    subscriptionStatus: customer.subscriptionStatus,
+  });
+
   const handleConnectSalesforce = () => {
-    // Initiate Salesforce OAuth flow for this customer
     const authUrl = `${config.apiBaseUrl}/auth/salesforce?customerId=${customer.id}`;
     window.open(authUrl, '_blank', 'width=800,height=600');
+  };
+
+  const handleSave = async () => {
+    setEditError('');
+    setSaving(true);
+
+    try {
+      // Only send fields that were actually changed
+      const updates: Record<string, string> = {};
+      if (formData.companyName !== customer.companyName) updates.companyName = formData.companyName;
+      if (formData.subdomain !== customer.subdomain) updates.subdomain = formData.subdomain;
+      if (formData.salesforceInstanceUrl !== (customer.salesforceInstanceUrl || '')) updates.salesforceInstanceUrl = formData.salesforceInstanceUrl;
+      if (formData.salesforceClientId) updates.salesforceClientId = formData.salesforceClientId;
+      if (formData.salesforceClientSecret) updates.salesforceClientSecret = formData.salesforceClientSecret;
+      if (formData.subscriptionTier !== customer.subscriptionTier) updates.subscriptionTier = formData.subscriptionTier;
+      if (formData.subscriptionStatus !== customer.subscriptionStatus) updates.subscriptionStatus = formData.subscriptionStatus;
+
+      if (Object.keys(updates).length === 0) {
+        setIsEditing(false);
+        return;
+      }
+
+      const response = await fetch(`${config.apiBaseUrl}/api/superadmin/customers/${customer.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update customer');
+      }
+
+      setIsEditing(false);
+      await onRefresh();
+    } catch (err: any) {
+      setEditError(err.message || 'Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditError('');
+    setFormData({
+      companyName: customer.companyName,
+      subdomain: customer.subdomain,
+      salesforceInstanceUrl: customer.salesforceInstanceUrl || '',
+      salesforceClientId: '',
+      salesforceClientSecret: '',
+      subscriptionTier: customer.subscriptionTier,
+      subscriptionStatus: customer.subscriptionStatus,
+    });
   };
 
   return (
@@ -592,7 +659,9 @@ function CustomerDetailModal({ customer, onClose, onRefresh }: { customer: Custo
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200">
           <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-gray-900">{customer.companyName}</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {isEditing ? `Edit: ${customer.companyName}` : customer.companyName}
+            </h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -602,103 +671,228 @@ function CustomerDetailModal({ customer, onClose, onRefresh }: { customer: Custo
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Customer Information */}
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">Company Name</label>
-              <p className="text-lg font-semibold text-gray-900">{customer.companyName}</p>
+          {editError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">{editError}</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">Subdomain</label>
-              <p className="text-lg font-semibold text-gray-900">{customer.subdomain}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">Subscription Tier</label>
-              <span className="inline-flex px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800">
-                {customer.subscriptionTier}
-              </span>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">Status</label>
-              <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${
-                customer.isSuspended ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-              }`}>
-                {customer.isSuspended ? 'Suspended' : customer.subscriptionStatus}
-              </span>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">User Count</label>
-              <p className="text-lg font-semibold text-gray-900">{customer.userCount}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">Created</label>
-              <p className="text-lg font-semibold text-gray-900">
-                {new Date(customer.createdAt).toLocaleDateString()}
-              </p>
-            </div>
-          </div>
+          )}
 
-          {/* Salesforce Connection */}
-          <div className="border-t border-gray-200 pt-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Salesforce Integration</h3>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Instance URL</label>
-                <p className="text-sm font-mono text-gray-900">{customer.salesforceInstanceUrl || 'Not configured'}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Connected App Status</label>
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-sm font-semibold text-green-800">Credentials Configured</span>
+          {isEditing ? (
+            /* ---- Edit Mode ---- */
+            <>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
+                  <input
+                    type="text"
+                    value={formData.companyName}
+                    onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  />
                 </div>
-                <p className="text-xs text-gray-600 mt-1">
-                  Consumer Key and Secret are securely stored and encrypted
-                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Subdomain</label>
+                  <input
+                    type="text"
+                    value={formData.subdomain}
+                    onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  />
+                  <p className="mt-1 text-sm text-gray-500">Lowercase letters, numbers, and hyphens only</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Subscription Tier</label>
+                  <select
+                    value={formData.subscriptionTier}
+                    onChange={(e) => setFormData({ ...formData, subscriptionTier: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  >
+                    <option value="starter">Starter</option>
+                    <option value="professional">Professional</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Subscription Status</label>
+                  <select
+                    value={formData.subscriptionStatus}
+                    onChange={(e) => setFormData({ ...formData, subscriptionStatus: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  >
+                    <option value="trial">Trial</option>
+                    <option value="active">Active</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="past_due">Past Due</option>
+                  </select>
+                </div>
               </div>
-              <div className="pt-2">
-                <p className="text-sm text-gray-600 mb-2">
-                  Users from this customer can now authenticate with their Salesforce org using OAuth.
-                </p>
-                <button
-                  onClick={handleConnectSalesforce}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-                >
-                  Test OAuth Connection
-                </button>
-              </div>
-            </div>
-          </div>
 
-          {/* Suspension Info */}
-          {customer.isSuspended && customer.suspendedReason && (
-            <div className="border-t border-gray-200 pt-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Suspension Details</h3>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-red-700">
-                  <span className="font-semibold">Reason:</span> {customer.suspendedReason}
-                </p>
-                {customer.suspendedAt && (
-                  <p className="text-sm text-red-700 mt-1">
-                    <span className="font-semibold">Suspended on:</span>{' '}
-                    {new Date(customer.suspendedAt).toLocaleString()}
-                  </p>
-                )}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Salesforce Integration</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Instance URL</label>
+                    <input
+                      type="url"
+                      value={formData.salesforceInstanceUrl}
+                      onChange={(e) => setFormData({ ...formData, salesforceInstanceUrl: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                      placeholder="https://yourorg.my.salesforce.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Consumer Key (Client ID)</label>
+                    <input
+                      type="text"
+                      value={formData.salesforceClientId}
+                      onChange={(e) => setFormData({ ...formData, salesforceClientId: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent font-mono text-sm"
+                      placeholder="Leave blank to keep current value"
+                    />
+                    <p className="mt-1 text-sm text-gray-500">Leave blank to keep the existing encrypted value</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Consumer Secret (Client Secret)</label>
+                    <input
+                      type="password"
+                      value={formData.salesforceClientSecret}
+                      onChange={(e) => setFormData({ ...formData, salesforceClientSecret: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent font-mono text-sm"
+                      placeholder="Leave blank to keep current value"
+                    />
+                    <p className="mt-1 text-sm text-gray-500">Leave blank to keep the existing encrypted value</p>
+                  </div>
+                </div>
               </div>
-            </div>
+            </>
+          ) : (
+            /* ---- View Mode ---- */
+            <>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Company Name</label>
+                  <p className="text-lg font-semibold text-gray-900">{customer.companyName}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Subdomain</label>
+                  <p className="text-lg font-semibold text-gray-900">{customer.subdomain}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Subscription Tier</label>
+                  <span className="inline-flex px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800">
+                    {customer.subscriptionTier}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Status</label>
+                  <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${
+                    customer.isSuspended ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                  }`}>
+                    {customer.isSuspended ? 'Suspended' : customer.subscriptionStatus}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">User Count</label>
+                  <p className="text-lg font-semibold text-gray-900">{customer.userCount}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Created</label>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {new Date(customer.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Salesforce Connection */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Salesforce Integration</h3>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Instance URL</label>
+                    <p className="text-sm font-mono text-gray-900">{customer.salesforceInstanceUrl || 'Not configured'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Connected App Status</label>
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-sm font-semibold text-green-800">Credentials Configured</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Consumer Key and Secret are securely stored and encrypted
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <p className="text-sm text-gray-600 mb-2">
+                      Users from this customer can now authenticate with their Salesforce org using OAuth.
+                    </p>
+                    <button
+                      onClick={handleConnectSalesforce}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                    >
+                      Test OAuth Connection
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Suspension Info */}
+              {customer.isSuspended && customer.suspendedReason && (
+                <div className="border-t border-gray-200 pt-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Suspension Details</h3>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-sm text-red-700">
+                      <span className="font-semibold">Reason:</span> {customer.suspendedReason}
+                    </p>
+                    {customer.suspendedAt && (
+                      <p className="text-sm text-red-700 mt-1">
+                        <span className="font-semibold">Suspended on:</span>{' '}
+                        {new Date(customer.suspendedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
         <div className="p-6 border-t border-gray-200 bg-gray-50">
-          <div className="flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              Close
-            </button>
+          <div className="flex justify-end gap-3">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={saving}
+                  className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={onClose}
+                  className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Close
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

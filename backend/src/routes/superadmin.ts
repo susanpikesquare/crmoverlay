@@ -252,6 +252,119 @@ router.get('/customers/:id', isSuperAdmin, async (req: Request, res: Response) =
 });
 
 /**
+ * PUT /superadmin/customers/:id
+ *
+ * Update a customer's settings.
+ * Requires super admin authentication.
+ */
+router.put('/customers/:id', isSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const session = req.session as any;
+    const {
+      companyName,
+      subdomain,
+      salesforceInstanceUrl,
+      salesforceClientId,
+      salesforceClientSecret,
+      subscriptionTier,
+      subscriptionStatus,
+    } = req.body;
+
+    const customer = await Customer.findByPk(id);
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        error: 'Customer not found',
+      });
+    }
+
+    // If subdomain is being changed, check uniqueness
+    if (subdomain && subdomain !== customer.subdomain) {
+      const existing = await Customer.findOne({ where: { subdomain } });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          error: 'Subdomain already exists',
+        });
+      }
+    }
+
+    // Track what changed for audit log
+    const changes: Record<string, { from: any; to: any }> = {};
+
+    if (companyName !== undefined && companyName !== customer.companyName) {
+      changes.companyName = { from: customer.companyName, to: companyName };
+      customer.companyName = companyName;
+    }
+    if (subdomain !== undefined && subdomain !== customer.subdomain) {
+      changes.subdomain = { from: customer.subdomain, to: subdomain };
+      customer.subdomain = subdomain.toLowerCase();
+    }
+    if (salesforceInstanceUrl !== undefined && salesforceInstanceUrl !== customer.salesforceInstanceUrl) {
+      changes.salesforceInstanceUrl = { from: customer.salesforceInstanceUrl, to: salesforceInstanceUrl };
+      customer.salesforceInstanceUrl = salesforceInstanceUrl;
+    }
+    if (salesforceClientId !== undefined) {
+      changes.salesforceClientId = { from: '(encrypted)', to: '(encrypted)' };
+      customer.salesforceClientId = salesforceClientId;
+    }
+    if (salesforceClientSecret !== undefined) {
+      changes.salesforceClientSecret = { from: '(encrypted)', to: '(encrypted)' };
+      customer.salesforceClientSecret = salesforceClientSecret;
+    }
+    if (subscriptionTier !== undefined && subscriptionTier !== customer.subscriptionTier) {
+      changes.subscriptionTier = { from: customer.subscriptionTier, to: subscriptionTier };
+      customer.subscriptionTier = subscriptionTier;
+    }
+    if (subscriptionStatus !== undefined && subscriptionStatus !== customer.subscriptionStatus) {
+      changes.subscriptionStatus = { from: customer.subscriptionStatus, to: subscriptionStatus };
+      customer.subscriptionStatus = subscriptionStatus;
+    }
+
+    if (Object.keys(changes).length === 0) {
+      return res.json({
+        success: true,
+        data: { customer: customer.toJSON() },
+        message: 'No changes detected',
+      });
+    }
+
+    await customer.save();
+
+    // Log the action
+    await AuditLog.log({
+      userId: session.userId,
+      customerId: customer.id,
+      action: 'update_customer',
+      resourceType: 'customer',
+      resourceId: customer.id,
+      details: {
+        changes,
+        updatedBy: session.userInfo.name,
+      },
+      ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        customer: customer.toJSON(),
+      },
+    });
+  } catch (error: any) {
+    console.error('Error updating customer:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update customer',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * POST /superadmin/customers/:id/suspend
  *
  * Suspend a customer account.
