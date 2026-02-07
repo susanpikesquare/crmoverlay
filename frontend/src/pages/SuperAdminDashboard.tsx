@@ -413,7 +413,21 @@ export default function SuperAdminDashboard() {
             setShowDetailModal(false);
             setSelectedCustomer(null);
           }}
-          onRefresh={fetchData}
+          onRefresh={async () => {
+            await fetchData();
+            // Re-fetch the selected customer to update the modal
+            try {
+              const response = await fetch(`${config.apiBaseUrl}/api/superadmin/customers/${selectedCustomer.id}`, {
+                credentials: 'include',
+              });
+              if (response.ok) {
+                const data = await response.json();
+                setSelectedCustomer(data.data.customer);
+              }
+            } catch (err) {
+              // List was already refreshed
+            }
+          }}
         />
       )}
 
@@ -593,6 +607,19 @@ function CustomerDetailModal({ customer, onClose, onRefresh }: { customer: Custo
     subscriptionTier: customer.subscriptionTier,
     subscriptionStatus: customer.subscriptionStatus,
   });
+
+  // Update form data when customer prop changes (after re-fetch)
+  useEffect(() => {
+    setFormData({
+      companyName: customer.companyName,
+      subdomain: customer.subdomain,
+      salesforceInstanceUrl: customer.salesforceInstanceUrl || '',
+      salesforceClientId: '',
+      salesforceClientSecret: '',
+      subscriptionTier: customer.subscriptionTier,
+      subscriptionStatus: customer.subscriptionStatus,
+    });
+  }, [customer]);
 
   const handleConnectSalesforce = () => {
     const authUrl = `${config.apiBaseUrl}/auth/salesforce?customerId=${customer.id}`;
