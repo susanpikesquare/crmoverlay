@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 
@@ -38,6 +38,23 @@ interface PipelineForecastPanelProps {
   minDealSize?: number;
 }
 
+const DATE_RANGE_OPTIONS = [
+  { value: 'thisMonth', label: 'This Month' },
+  { value: 'thisQuarter', label: 'This Quarter' },
+  { value: 'thisYear', label: 'This Year' },
+  { value: 'lastQuarter', label: 'Last Quarter' },
+  { value: 'lastYear', label: 'Last Year' },
+  { value: 'custom', label: 'Custom' },
+] as const;
+
+const TEAM_OPTIONS = [
+  { value: 'me', label: 'Just Me' },
+  { value: 'myTeam', label: 'My Team' },
+  { value: 'allUsers', label: 'All Users' },
+] as const;
+
+const OPPORTUNITY_TYPES = ['New Business', 'Renewal', 'Customer Expansion', 'Upsell', 'Expansion', 'Add-On'];
+
 export default function PipelineForecastPanel({
   dateRange: parentDateRange,
   teamFilter: parentTeamFilter,
@@ -49,13 +66,16 @@ export default function PipelineForecastPanel({
   const [excludedStages, setExcludedStages] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
 
-  // Panel-local overrides (null = use parent value)
+  // Panel-local overrides (null = use parent/default value)
   const [localDateRange, setLocalDateRange] = useState<string | null>(null);
   const [localTeamFilter, setLocalTeamFilter] = useState<string | null>(null);
   const [localCustomStartDate, setLocalCustomStartDate] = useState('');
   const [localCustomEndDate, setLocalCustomEndDate] = useState('');
 
-  // Effective values: local override takes precedence
+  // Track all stages we've seen so excluded stages remain toggleable
+  const knownStagesRef = useRef<Set<string>>(new Set());
+
+  // Effective values: local override wins
   const dateRange = localDateRange ?? parentDateRange;
   const teamFilter = localTeamFilter ?? parentTeamFilter;
   const customStartDate = localDateRange === 'custom' ? localCustomStartDate : parentCustomStartDate;
@@ -95,6 +115,13 @@ export default function PipelineForecastPanel({
 
   const forecast = forecastResponse?.data;
 
+  // Accumulate known stages from every response so the toggle list stays complete
+  useEffect(() => {
+    if (forecast?.opportunitiesByStage) {
+      forecast.opportunitiesByStage.forEach(s => knownStagesRef.current.add(s.stageName));
+    }
+  }, [forecast]);
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -126,8 +153,14 @@ export default function PipelineForecastPanel({
     );
   };
 
-  // Common opportunity types
-  const availableTypes = ['New Business', 'Renewal', 'Customer Expansion', 'Upsell', 'Expansion', 'Add-On'];
+  const clearAllFilters = () => {
+    setExcludedStages([]);
+    setSelectedTypes([]);
+    setLocalDateRange(null);
+    setLocalTeamFilter(null);
+    setLocalCustomStartDate('');
+    setLocalCustomEndDate('');
+  };
 
   if (isLoading || !forecast) {
     return (
@@ -152,6 +185,29 @@ export default function PipelineForecastPanel({
   const activeFilterCount = excludedStages.length + selectedTypes.length
     + (localDateRange !== null ? 1 : 0)
     + (localTeamFilter !== null ? 1 : 0);
+
+  // Build complete stage list: union of current response stages + any we've excluded
+  const responseStageNames = new Set(forecast.opportunitiesByStage.map(s => s.stageName));
+  const allStageNames = Array.from(
+    new Set([...responseStageNames, ...excludedStages, ...knownStagesRef.current])
+  ).sort();
+
+  // Build active filter summary chips
+  const filterChips: string[] = [];
+  if (localDateRange !== null) {
+    const label = DATE_RANGE_OPTIONS.find(o => o.value === localDateRange)?.label ?? localDateRange;
+    filterChips.push(label);
+  }
+  if (localTeamFilter !== null) {
+    const label = TEAM_OPTIONS.find(o => o.value === localTeamFilter)?.label ?? localTeamFilter;
+    filterChips.push(label);
+  }
+  if (excludedStages.length > 0) {
+    filterChips.push(`${excludedStages.length} stage${excludedStages.length > 1 ? 's' : ''} excluded`);
+  }
+  if (selectedTypes.length > 0) {
+    filterChips.push(selectedTypes.join(', '));
+  }
 
   return (
     <div className="bg-white rounded-xl shadow-md p-6">
@@ -194,6 +250,23 @@ export default function PipelineForecastPanel({
         </div>
       </div>
 
+      {/* Active filter summary (visible when panel is collapsed) */}
+      {!showFilters && activeFilterCount > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5 items-center">
+          {filterChips.map((chip, i) => (
+            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+              {chip}
+            </span>
+          ))}
+          <button
+            onClick={clearAllFilters}
+            className="text-[10px] text-gray-400 hover:text-gray-600 ml-1"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Panel-local Filters */}
       {showFilters && (
         <div className="mb-4 bg-gray-50 rounded-lg p-3 border border-gray-200 space-y-3">
@@ -201,17 +274,19 @@ export default function PipelineForecastPanel({
           <div>
             <div className="text-xs font-medium text-gray-700 mb-1.5">Date Range:</div>
             <div className="flex flex-wrap gap-1.5">
-              {[
-                { value: null, label: 'Default' },
-                { value: 'thisMonth', label: 'This Month' },
-                { value: 'thisQuarter', label: 'This Quarter' },
-                { value: 'thisYear', label: 'This Year' },
-                { value: 'lastQuarter', label: 'Last Quarter' },
-                { value: 'lastYear', label: 'Last Year' },
-                { value: 'custom', label: 'Custom' },
-              ].map(option => (
+              <button
+                onClick={() => setLocalDateRange(null)}
+                className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                  localDateRange === null
+                    ? 'bg-blue-100 border-blue-300 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Default
+              </button>
+              {DATE_RANGE_OPTIONS.map(option => (
                 <button
-                  key={option.value ?? 'default'}
+                  key={option.value}
                   onClick={() => setLocalDateRange(option.value)}
                   className={`text-xs px-2 py-1 rounded-full border transition-colors ${
                     localDateRange === option.value
@@ -224,19 +299,19 @@ export default function PipelineForecastPanel({
               ))}
             </div>
             {localDateRange === 'custom' && (
-              <div className="flex gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2">
                 <input
                   type="date"
                   value={localCustomStartDate}
                   onChange={(e) => setLocalCustomStartDate(e.target.value)}
-                  className="text-xs px-2 py-1 border border-gray-300 rounded"
+                  className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="text-xs text-gray-500 self-center">to</span>
+                <span className="text-xs text-gray-500">to</span>
                 <input
                   type="date"
                   value={localCustomEndDate}
                   onChange={(e) => setLocalCustomEndDate(e.target.value)}
-                  className="text-xs px-2 py-1 border border-gray-300 rounded"
+                  className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             )}
@@ -246,14 +321,19 @@ export default function PipelineForecastPanel({
           <div>
             <div className="text-xs font-medium text-gray-700 mb-1.5">Team:</div>
             <div className="flex flex-wrap gap-1.5">
-              {[
-                { value: null, label: 'Default' },
-                { value: 'me', label: 'Just Me' },
-                { value: 'myTeam', label: 'My Team' },
-                { value: 'allUsers', label: 'All Users' },
-              ].map(option => (
+              <button
+                onClick={() => setLocalTeamFilter(null)}
+                className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                  localTeamFilter === null
+                    ? 'bg-blue-100 border-blue-300 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Default
+              </button>
+              {TEAM_OPTIONS.map(option => (
                 <button
-                  key={option.value ?? 'default'}
+                  key={option.value}
                   onClick={() => setLocalTeamFilter(option.value)}
                   className={`text-xs px-2 py-1 rounded-full border transition-colors ${
                     localTeamFilter === option.value
@@ -267,22 +347,22 @@ export default function PipelineForecastPanel({
             </div>
           </div>
 
-          {/* Stages */}
-          {forecast.opportunitiesByStage.length > 0 && (
+          {/* Exclude Stages */}
+          {allStageNames.length > 0 && (
             <div>
               <div className="text-xs font-medium text-gray-700 mb-1.5">Exclude Stages:</div>
               <div className="flex flex-wrap gap-1.5">
-                {forecast.opportunitiesByStage.map(stage => (
+                {allStageNames.map(stageName => (
                   <button
-                    key={stage.stageName}
-                    onClick={() => toggleStageExclusion(stage.stageName)}
+                    key={stageName}
+                    onClick={() => toggleStageExclusion(stageName)}
                     className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                      excludedStages.includes(stage.stageName)
+                      excludedStages.includes(stageName)
                         ? 'bg-red-100 border-red-300 text-red-700 line-through'
                         : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
                     }`}
                   >
-                    {stage.stageName}
+                    {stageName}
                   </button>
                 ))}
               </div>
@@ -293,7 +373,7 @@ export default function PipelineForecastPanel({
           <div>
             <div className="text-xs font-medium text-gray-700 mb-1.5">Opportunity Type:</div>
             <div className="flex flex-wrap gap-1.5">
-              {availableTypes.map(type => (
+              {OPPORTUNITY_TYPES.map(type => (
                 <button
                   key={type}
                   onClick={() => toggleType(type)}
@@ -311,14 +391,7 @@ export default function PipelineForecastPanel({
 
           {activeFilterCount > 0 && (
             <button
-              onClick={() => {
-                setExcludedStages([]);
-                setSelectedTypes([]);
-                setLocalDateRange(null);
-                setLocalTeamFilter(null);
-                setLocalCustomStartDate('');
-                setLocalCustomEndDate('');
-              }}
+              onClick={clearAllFilters}
               className="text-xs text-gray-500 hover:text-gray-700"
             >
               Clear all filters
