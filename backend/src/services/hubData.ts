@@ -133,6 +133,17 @@ async function getAmountFieldName(pool: Pool): Promise<string> {
   }
 }
 
+async function getForecastCategoryFieldName(pool: Pool): Promise<string> {
+  try {
+    const adminSettings = new AdminSettingsService(pool);
+    const config = await adminSettings.getSalesforceFieldConfig();
+    return config.forecastCategoryField || 'ForecastCategory';
+  } catch (error) {
+    console.error('Error fetching forecast category field config:', error);
+    return 'ForecastCategory';
+  }
+}
+
 /**
  * Group accounts by parent company/domain
  */
@@ -1720,9 +1731,18 @@ export interface PriorityItem {
 export interface PipelineForecast {
   periodName: string;
   totalPipeline: number;
-  commitForecast: number;
-  bestCaseForecast: number;
+  commitAmount: number;
+  bestCaseAmount: number;
+  pipelineAmount: number;
   closedWon: number;
+  weightedCommit: number;
+  weightedBestCase: number;
+  weightedPipeline: number;
+  weightedTotal: number;
+  stageWeightedPipeline: number;
+  commitProbability: number;
+  bestCaseProbability: number;
+  pipelineProbability: number;
   coverageRatio: number;
   opportunitiesByStage: {
     stageName: string;
@@ -1937,36 +1957,47 @@ export async function getTodaysPriorities(
 export async function getPipelineForecast(
   connection: Connection,
   userId: string,
-  pool: Pool
+  pool: Pool,
+  filters: { dateRange?: string; startDate?: string; endDate?: string; excludeStages?: string[]; opportunityTypes?: string[] } = {}
 ): Promise<PipelineForecast> {
   try {
     const amountField = await getAmountFieldName(pool);
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const currentQuarter = Math.floor(currentMonth / 3) + 1;
+    const forecastCategoryField = await getForecastCategoryFieldName(pool);
+    const adminSettings = new AdminSettingsService(pool);
+    const forecastConfig = await adminSettings.getForecastConfig();
 
-    // Use this quarter as the default period for AE view
-    const dateFilter = buildDateFilter('thisQuarter');
-    const periodName = `Q${currentQuarter} ${currentYear}`;
+    // Use this quarter as default if no dateRange specified
+    const dateFilter = buildDateFilter(filters.dateRange || 'thisQuarter', filters.startDate, filters.endDate);
+    const periodName = getPeriodName(filters.dateRange || 'thisQuarter', filters.startDate, filters.endDate);
+
+    // Build optional filters
+    const excludeStagesFilter = filters.excludeStages && filters.excludeStages.length > 0
+      ? `AND StageName NOT IN ('${filters.excludeStages.join("','")}')`
+      : '';
+    const typeFilter = filters.opportunityTypes && filters.opportunityTypes.length > 0
+      ? `AND Type IN ('${filters.opportunityTypes.join("','")}')`
+      : '';
 
     // Query open pipeline
     const openQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ${forecastCategoryField}, Type
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false
         AND ${dateFilter}
+        ${excludeStagesFilter}
+        ${typeFilter}
       ORDER BY CloseDate ASC
     `;
 
-    // Query closed-won for this quarter
+    // Query closed-won for the period
     const closedWonQuery = `
-      SELECT Id, ${amountField}
+      SELECT Id, ${amountField}, ${forecastCategoryField}
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND StageName = 'Closed Won'
         AND ${dateFilter}
+        ${typeFilter}
     `;
 
     const [openResult, closedWonResult] = await Promise.all([
@@ -1998,15 +2029,35 @@ export async function getPipelineForecast(
       value: data.value,
     }));
 
-    const commitForecast = openOpps
-      .filter((opp) => (opp.Probability || 0) >= 70)
+    // Group by ForecastCategory
+    const commitAmount = openOpps
+      .filter((opp) => opp[forecastCategoryField] === 'Commit')
       .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-    const bestCaseForecast = openOpps
-      .filter((opp) => (opp.Probability || 0) >= 50)
+    const bestCaseAmount = openOpps
+      .filter((opp) => opp[forecastCategoryField] === 'Best Case')
       .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
+    const pipelineAmount = openOpps
+      .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
+      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+
+    // Weighted amounts
+    const { commitProbability, bestCaseProbability, pipelineProbability } = forecastConfig;
+    const weightedCommit = commitAmount * (commitProbability / 100);
+    const weightedBestCase = bestCaseAmount * (bestCaseProbability / 100);
+    const weightedPipeline = pipelineAmount * (pipelineProbability / 100);
+    const weightedTotal = weightedCommit + weightedBestCase + weightedPipeline;
+
+    // Stage Weighted Pipeline
+    const stageWeights = forecastConfig.stageWeights || {};
+    const stageWeightedPipeline = openOpps.reduce((sum, opp) => {
+      const stage = opp.StageName || '';
+      const weight = stageWeights[stage] ?? 0;
+      return sum + ((opp[amountField] || 0) * (weight / 100));
+    }, 0);
+
+    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitAmount, 1) : 0;
 
     // Get Salesforce instance URL
     const identity = await connection.identity();
@@ -2015,9 +2066,18 @@ export async function getPipelineForecast(
     return {
       periodName,
       totalPipeline,
-      commitForecast,
-      bestCaseForecast,
+      commitAmount,
+      bestCaseAmount,
+      pipelineAmount,
       closedWon,
+      weightedCommit,
+      weightedBestCase,
+      weightedPipeline,
+      weightedTotal,
+      stageWeightedPipeline,
+      commitProbability,
+      bestCaseProbability,
+      pipelineProbability,
       coverageRatio,
       opportunitiesByStage,
       forecastStatus: {
@@ -2226,19 +2286,25 @@ export async function getTeamPipelineForecast(
   connection: Connection,
   managerId: string,
   pool: Pool,
-  filters: DashboardFilters = {}
+  filters: DashboardFilters & { excludeStages?: string[]; opportunityTypes?: string[] } = {}
 ): Promise<PipelineForecast> {
   try {
     const amountField = await getAmountFieldName(pool);
+    const forecastCategoryField = await getForecastCategoryFieldName(pool);
+    const adminSettings = new AdminSettingsService(pool);
+    const forecastConfig = await adminSettings.getForecastConfig();
     const teamFilter = filters.teamFilter || 'myTeam';
 
-    // Determine which users to query (same pattern as getSalesLeaderDashboard)
+    // Determine which users to query
     let teamMemberIds: string[] = [];
 
     if (teamFilter === 'allUsers') {
       const allUsersQuery = `SELECT Id FROM User WHERE IsActive = true LIMIT 200`;
       const allUsersResult = await connection.query(allUsersQuery);
       teamMemberIds = (allUsersResult.records as any[]).map(u => u.Id);
+    } else if (teamFilter === 'me') {
+      // Just the current user's own data
+      teamMemberIds = [managerId];
     } else if (teamFilter === 'myTeam') {
       // Get manager's direct reports
       const teamQuery = `SELECT Id FROM User WHERE ManagerId = '${managerId}' AND IsActive = true`;
@@ -2250,12 +2316,9 @@ export async function getTeamPipelineForecast(
         teamMemberIds.push(managerId);
       }
 
-      // Fallback: if only the manager (no reports), get all active users
+      // No fallback to all users - just show manager's own data if no reports
       if (teamMemberIds.length <= 1) {
-        console.log('No direct reports found for pipeline forecast - falling back to all active users');
-        const allUsersQuery = `SELECT Id FROM User WHERE IsActive = true LIMIT 200`;
-        const allUsersResult = await connection.query(allUsersQuery);
-        teamMemberIds = (allUsersResult.records as any[]).map(u => u.Id);
+        console.log('No direct reports found for pipeline forecast - showing manager data only');
       }
     } else {
       // Specific user ID - that user + their reports
@@ -2273,28 +2336,41 @@ export async function getTeamPipelineForecast(
     const ownerFilter = `OwnerId IN ('${teamMemberIds.join("','")}')`;
     const minDealFilter = filters.minDealSize ? `AND ${amountField} >= ${filters.minDealSize}` : '';
 
+    // Build stage exclusion filter
+    const excludeStagesFilter = filters.excludeStages && filters.excludeStages.length > 0
+      ? `AND StageName NOT IN ('${filters.excludeStages.join("','")}')`
+      : '';
+
+    // Build opportunity type filter
+    const typeFilter = filters.opportunityTypes && filters.opportunityTypes.length > 0
+      ? `AND Type IN ('${filters.opportunityTypes.join("','")}')`
+      : '';
+
     // Build period name from filter
     const periodName = getPeriodName(filters.dateRange, filters.startDate, filters.endDate);
 
     // Query open pipeline opportunities for the period
     const openPipelineQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, OwnerId, Owner.Name
+      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, ${forecastCategoryField}, Type, OwnerId, Owner.Name
       FROM Opportunity
       WHERE ${ownerFilter}
         AND IsClosed = false
         AND ${dateFilter}
         ${minDealFilter}
+        ${excludeStagesFilter}
+        ${typeFilter}
       ORDER BY CloseDate ASC
     `;
 
     // Query closed-won opportunities for the period
     const closedWonQuery = `
-      SELECT Id, ${amountField}
+      SELECT Id, ${amountField}, ${forecastCategoryField}
       FROM Opportunity
       WHERE ${ownerFilter}
         AND StageName = 'Closed Won'
         AND ${dateFilter}
         ${minDealFilter}
+        ${typeFilter}
     `;
 
     const [openResult, closedWonResult] = await Promise.all([
@@ -2327,16 +2403,35 @@ export async function getTeamPipelineForecast(
       value: data.value,
     }));
 
-    // Calculate forecast categories based on Probability
-    const commitForecast = openOpps
-      .filter((opp) => (opp.Probability || 0) >= 70)
+    // Group by ForecastCategory
+    const commitAmount = openOpps
+      .filter((opp) => opp[forecastCategoryField] === 'Commit')
       .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-    const bestCaseForecast = openOpps
-      .filter((opp) => (opp.Probability || 0) >= 50)
+    const bestCaseAmount = openOpps
+      .filter((opp) => opp[forecastCategoryField] === 'Best Case')
       .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
+    const pipelineAmount = openOpps
+      .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
+      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+
+    // Weighted amounts
+    const { commitProbability, bestCaseProbability, pipelineProbability } = forecastConfig;
+    const weightedCommit = commitAmount * (commitProbability / 100);
+    const weightedBestCase = bestCaseAmount * (bestCaseProbability / 100);
+    const weightedPipeline = pipelineAmount * (pipelineProbability / 100);
+    const weightedTotal = weightedCommit + weightedBestCase + weightedPipeline;
+
+    // Stage Weighted Pipeline
+    const stageWeights = forecastConfig.stageWeights || {};
+    const stageWeightedPipeline = openOpps.reduce((sum, opp) => {
+      const stage = opp.StageName || '';
+      const weight = stageWeights[stage] ?? 0;
+      return sum + ((opp[amountField] || 0) * (weight / 100));
+    }, 0);
+
+    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitAmount, 1) : 0;
 
     // Get Salesforce instance URL
     const identity = await connection.identity();
@@ -2345,9 +2440,18 @@ export async function getTeamPipelineForecast(
     return {
       periodName,
       totalPipeline,
-      commitForecast,
-      bestCaseForecast,
+      commitAmount,
+      bestCaseAmount,
+      pipelineAmount,
       closedWon,
+      weightedCommit,
+      weightedBestCase,
+      weightedPipeline,
+      weightedTotal,
+      stageWeightedPipeline,
+      commitProbability,
+      bestCaseProbability,
+      pipelineProbability,
       coverageRatio,
       opportunitiesByStage,
       forecastStatus: {
@@ -2365,9 +2469,18 @@ function getEmptyPipelineForecast(): PipelineForecast {
   return {
     periodName: '',
     totalPipeline: 0,
-    commitForecast: 0,
-    bestCaseForecast: 0,
+    commitAmount: 0,
+    bestCaseAmount: 0,
+    pipelineAmount: 0,
     closedWon: 0,
+    weightedCommit: 0,
+    weightedBestCase: 0,
+    weightedPipeline: 0,
+    weightedTotal: 0,
+    stageWeightedPipeline: 0,
+    commitProbability: 90,
+    bestCaseProbability: 70,
+    pipelineProbability: 30,
     coverageRatio: 0,
     opportunitiesByStage: [],
     forecastStatus: {

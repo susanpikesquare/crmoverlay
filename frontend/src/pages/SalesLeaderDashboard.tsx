@@ -103,32 +103,7 @@ export default function SalesLeaderDashboard() {
     },
   });
 
-  // Fetch team pipeline forecast (responds to filters)
-  const { data: forecastData } = useQuery<{
-    success: boolean;
-    data: any;
-  }>({
-    queryKey: ['sales-leader-pipeline-forecast', dateRange, customStartDate, customEndDate, teamFilter, minDealSize],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (dateRange === 'custom') {
-        params.append('dateRange', 'custom');
-        if (customStartDate) params.append('startDate', customStartDate);
-        if (customEndDate) params.append('endDate', customEndDate);
-      } else {
-        params.append('dateRange', dateRange);
-      }
-      params.append('teamFilter', teamFilter);
-      if (minDealSize > 0) {
-        params.append('minDealSize', minDealSize.toString());
-      }
-      const response = await api.get(`/api/hub/sales-leader/pipeline-forecast?${params.toString()}`);
-      return response.data;
-    },
-  });
-
   const priorities = prioritiesData?.data || [];
-  const forecast = forecastData?.data;
 
   useEffect(() => {
     fetchAvailableUsers();
@@ -458,7 +433,13 @@ export default function SalesLeaderDashboard() {
       {/* Today's Priorities and Pipeline/Forecast */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <TodaysPrioritiesPanel priorities={priorities} />
-        {forecast && <PipelineForecastPanel forecast={forecast} />}
+        <PipelineForecastPanel
+          dateRange={dateRange}
+          teamFilter={teamFilter}
+          customStartDate={customStartDate || undefined}
+          customEndDate={customEndDate || undefined}
+          minDealSize={minDealSize > 0 ? minDealSize : undefined}
+        />
       </div>
 
       {/* Top Summary Cards */}

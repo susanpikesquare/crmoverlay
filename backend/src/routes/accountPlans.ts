@@ -185,7 +185,7 @@ router.put('/:id', isAuthenticated, async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/account-plans/:id
- * Archive a plan (soft delete by setting status to 'archived')
+ * Permanently delete a plan
  */
 router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -204,12 +204,12 @@ router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Account plan not found' });
     }
 
-    await plan.update({ status: 'archived' });
+    await plan.destroy();
 
-    res.json({ success: true, message: 'Account plan archived' });
+    res.json({ success: true, message: 'Account plan deleted' });
   } catch (error: any) {
-    console.error('Error archiving account plan:', error);
-    res.status(500).json({ success: false, error: 'Failed to archive account plan', message: error.message });
+    console.error('Error deleting account plan:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete account plan', message: error.message });
   }
 });
 

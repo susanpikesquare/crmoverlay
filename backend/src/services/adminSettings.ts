@@ -27,6 +27,13 @@ export interface CustomLink {
   icon?: string;
 }
 
+export interface ForecastConfig {
+  commitProbability: number;      // default 90
+  bestCaseProbability: number;    // default 70
+  pipelineProbability: number;    // default 30
+  stageWeights: Record<string, number>;  // e.g., { "Discovery": 10, "Negotiation": 80 }
+}
+
 export interface HubSectionConfig {
   id: string;
   name: string;
@@ -263,6 +270,40 @@ export class AdminSettingsService {
        ON CONFLICT (setting_key)
        DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
       ['branding', JSON.stringify(config), userId]
+    );
+  }
+
+  async getForecastConfig(): Promise<ForecastConfig> {
+    const result = await this.pool.query(
+      'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
+      ['forecast_config']
+    );
+
+    if (result.rows.length === 0) {
+      return {
+        commitProbability: 90,
+        bestCaseProbability: 70,
+        pipelineProbability: 30,
+        stageWeights: {},
+      };
+    }
+
+    const config = result.rows[0].setting_value as ForecastConfig;
+    return {
+      commitProbability: config.commitProbability ?? 90,
+      bestCaseProbability: config.bestCaseProbability ?? 70,
+      pipelineProbability: config.pipelineProbability ?? 30,
+      stageWeights: config.stageWeights ?? {},
+    };
+  }
+
+  async setForecastConfig(config: ForecastConfig, userId: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
+      ['forecast_config', JSON.stringify(config), userId]
     );
   }
 

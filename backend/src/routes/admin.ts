@@ -26,12 +26,15 @@ router.get('/config', async (_req: Request, res: Response) => {
     const salesforceFields = await adminSettings.getSalesforceFieldConfig();
     const hubLayout = await adminSettings.getHubLayoutConfig();
 
+    const forecastConfig = await adminSettings.getForecastConfig();
+
     res.json({
       success: true,
       data: {
         ...config,
         salesforceFields,
         hubLayout,
+        forecastConfig,
       },
     });
   } catch (error: any) {
@@ -238,6 +241,41 @@ router.put('/config/salesforce-fields', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: 'Failed to update Salesforce field settings',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/forecast
+ * Update forecast configuration (probabilities and stage weights)
+ */
+router.put('/config/forecast', async (req: Request, res: Response) => {
+  try {
+    const { commitProbability, bestCaseProbability, pipelineProbability, stageWeights } = req.body;
+    const session = req.session as any;
+    const userId = session.userId || 'Unknown';
+
+    const adminSettings = new AdminSettingsService(pool);
+    const config = {
+      commitProbability: commitProbability ?? 90,
+      bestCaseProbability: bestCaseProbability ?? 70,
+      pipelineProbability: pipelineProbability ?? 30,
+      stageWeights: stageWeights ?? {},
+    };
+
+    await adminSettings.setForecastConfig(config, userId);
+
+    res.json({
+      success: true,
+      data: config,
+      message: 'Forecast configuration updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating forecast config:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update forecast configuration',
       message: error.message,
     });
   }

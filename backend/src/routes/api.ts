@@ -693,12 +693,17 @@ router.get('/hub/sales-leader/pipeline-forecast', isAuthenticated, async (req: R
       });
     }
 
+    const excludeStagesParam = req.query.excludeStages as string | undefined;
+    const opportunityTypesParam = req.query.opportunityTypes as string | undefined;
+
     const filters = {
       dateRange: req.query.dateRange as string | undefined,
       startDate: req.query.startDate as string | undefined,
       endDate: req.query.endDate as string | undefined,
       teamFilter: req.query.teamFilter as string | undefined,
       minDealSize: req.query.minDealSize ? Number(req.query.minDealSize) : undefined,
+      excludeStages: excludeStagesParam ? excludeStagesParam.split(',').filter(Boolean) : undefined,
+      opportunityTypes: opportunityTypesParam ? opportunityTypesParam.split(',').filter(Boolean) : undefined,
     };
 
     const forecast = await HubData.getTeamPipelineForecast(connection, userId, pool, filters);
@@ -1023,7 +1028,28 @@ router.get('/hub/ae/pipeline-forecast', isAuthenticated, async (req: Request, re
       });
     }
 
-    const forecast = await HubData.getPipelineForecast(connection, userId, pool);
+    // AE pipeline forecast also supports teamFilter='me' via the team route
+    const teamFilter = req.query.teamFilter as string | undefined;
+    const excludeStagesParam = req.query.excludeStages as string | undefined;
+    const opportunityTypesParam = req.query.opportunityTypes as string | undefined;
+    const commonFilters = {
+      dateRange: req.query.dateRange as string | undefined,
+      startDate: req.query.startDate as string | undefined,
+      endDate: req.query.endDate as string | undefined,
+      excludeStages: excludeStagesParam ? excludeStagesParam.split(',').filter(Boolean) : undefined,
+      opportunityTypes: opportunityTypesParam ? opportunityTypesParam.split(',').filter(Boolean) : undefined,
+    };
+
+    let forecast;
+    if (teamFilter && teamFilter !== 'me') {
+      // If a team filter is specified (other than 'me'), use team version
+      forecast = await HubData.getTeamPipelineForecast(connection, userId, pool, {
+        ...commonFilters,
+        teamFilter,
+      });
+    } else {
+      forecast = await HubData.getPipelineForecast(connection, userId, pool, commonFilters);
+    }
 
     res.json({
       success: true,

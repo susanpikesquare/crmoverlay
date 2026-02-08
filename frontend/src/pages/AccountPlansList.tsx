@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import apiClient from '../services/api';
@@ -19,6 +19,8 @@ interface PlanSummary {
 export default function AccountPlansList() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: plans, isLoading } = useQuery({
     queryKey: ['accountPlans'],
@@ -27,6 +29,28 @@ export default function AccountPlansList() {
       return response.data.data as PlanSummary[];
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      await apiClient.delete(`/api/account-plans/${planId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accountPlans'] });
+      setDeletingPlanId(null);
+    },
+  });
+
+  const handleDelete = (e: React.MouseEvent, planId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeletingPlanId(planId);
+  };
+
+  const confirmDelete = () => {
+    if (deletingPlanId) {
+      deleteMutation.mutate(deletingPlanId);
+    }
+  };
 
   const filteredPlans = (plans || []).filter(plan => {
     const matchesSearch = !search ||
@@ -120,13 +144,12 @@ export default function AccountPlansList() {
         ) : (
           <div className="space-y-3">
             {filteredPlans.map(plan => (
-              <Link
-                key={plan.id}
-                to={`/account-plan/${plan.id}`}
-                className="block bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md hover:border-purple-200 transition"
-              >
+              <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md hover:border-purple-200 transition">
                 <div className="flex items-center justify-between">
-                  <div className="flex-1">
+                  <Link
+                    to={`/account-plan/${plan.id}`}
+                    className="flex-1 min-w-0"
+                  >
                     <div className="flex items-center gap-3 mb-1">
                       <h3 className="text-lg font-semibold text-gray-900">{plan.planName}</h3>
                       <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${statusColors[plan.status]}`}>
@@ -145,16 +168,55 @@ export default function AccountPlansList() {
                         </>
                       )}
                     </div>
+                  </Link>
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={(e) => handleDelete(e, plan.id)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Delete plan"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </div>
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deletingPlanId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Account Plan</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Are you sure you want to permanently delete this account plan? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeletingPlanId(null)}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

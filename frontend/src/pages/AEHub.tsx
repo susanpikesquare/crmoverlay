@@ -102,25 +102,10 @@ export default function AEHub() {
     },
   });
 
-  // Fetch pipeline forecast
-  const { data: forecastData } = useQuery<{
-    success: boolean;
-    data: any;
-  }>({
-    queryKey: ['ae-pipeline-forecast'],
-    queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/hub/ae/pipeline-forecast`, {
-        withCredentials: true,
-      });
-      return response.data;
-    },
-  });
-
   const metrics = metricsData?.data;
   const priorityAccounts = accountsData?.data || [];
   const atRiskDeals = dealsData?.data || [];
   const priorities = prioritiesData?.data || [];
-  const forecast = forecastData?.data;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -324,7 +309,7 @@ export default function AEHub() {
           <TodaysPrioritiesPanel priorities={priorities} />
 
           {/* Pipeline & Forecast */}
-          {forecast && <PipelineForecastPanel forecast={forecast} />}
+          <PipelineForecastPanel dateRange="thisQuarter" teamFilter="me" />
         </div>
 
         {/* Two Column Layout for Priority Actions and At-Risk Deals */}
