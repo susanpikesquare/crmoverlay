@@ -612,6 +612,158 @@ export async function getOpportunitiesByAccountId(
 }
 
 /**
+ * Contact interface for Account Plan
+ */
+export interface Contact {
+  Id: string;
+  Name?: string;
+  FirstName?: string;
+  LastName?: string;
+  Title?: string;
+  Email?: string;
+  Phone?: string;
+  Department?: string;
+  Role__c?: string;
+  Executive_Sponsor__c?: boolean;
+  Platform_Owner__c?: boolean;
+}
+
+/**
+ * Account Plan data bundle — fetches account, renewal/expansion opps, and contacts in parallel
+ */
+export interface AccountPlanData {
+  account: Account | null;
+  renewalOpps: Opportunity[];
+  expansionOpps: Opportunity[];
+  contacts: Contact[];
+}
+
+export async function getAccountPlanData(
+  connection: Connection,
+  accountId: string
+): Promise<AccountPlanData> {
+  // Extended account query with all fields used in the account plan
+  const accountQuery = `
+    SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees, Type,
+           BillingCity, BillingState, BillingCountry,
+           ParentId, Parent.Name,
+           Owner.Name, Owner.Email,
+           accountBuyingStage6sense__c, accountIntentScore6sense__c,
+           accountProfileFit6sense__c, accountProfileScore6sense__c,
+           Clay_Employee_Count__c, Clay_Revenue__c, Clay_Industry__c,
+           Clay_Parent_Account__c,
+           Total_ARR__c, of_Axonify_Users__c, Customer_Stage__c, Risk__c,
+           Agreement_Expiry_Date__c, Launch_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
+           Current_Gainsight_Score__c, Customer_Success_Score__c,
+           Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
+           Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
+           Active_Users_Comms__c, Active_Users_Tasks__c,
+           License_Utilization_Max__c, License_Utilization_Learn__c,
+           License_Utilization_Comms__c, License_Utilization_Tasks__c,
+           Max_Usage_Trend__c,
+           Strategy_Notes__c, Risk_Notes__c, Contract_Notes__c,
+           Overall_Customer_Health_Notes__c, Sponsorship_Notes__c, Support_Notes__c,
+           CreatedDate, LastModifiedDate
+    FROM Account
+    WHERE Id = '${accountId}'
+    LIMIT 1
+  `;
+
+  const accountFallback = `
+    SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees, Type,
+           BillingCity, BillingState, BillingCountry,
+           Owner.Name, Owner.Email,
+           CreatedDate, LastModifiedDate
+    FROM Account
+    WHERE Id = '${accountId}'
+    LIMIT 1
+  `;
+
+  // Renewal opps: Type = 'Renewal', open
+  const renewalQuery = `
+    SELECT Id, Name, Amount, StageName, CloseDate, Probability, Type, OwnerId,
+           Owner.Name, NextStep, Description,
+           ARR__c, Duration__c, Total_Contract_Value__c, License_Seats__c,
+           COM_Metrics__c, MEDDPICCR_Economic_Buyer__c,
+           Economic_Buyer_Name__c, Economic_Buyer_Title__c,
+           MEDDPICCR_Decision_Criteria__c, MEDDPICCR_Decision_Process__c,
+           MEDDPICCR_Paper_Process__c, MEDDPICCR_Implicate_Pain__c,
+           MEDDPICCR_Champion__c, MEDDPICCR_Competition__c, MEDDPICCR_Risks__c,
+           Risk__c, Milestone__c, Use_Cases__c, Business_Objectives__c,
+           CreatedDate, LastModifiedDate
+    FROM Opportunity
+    WHERE AccountId = '${accountId}'
+      AND Type = 'Renewal'
+      AND IsClosed = false
+    ORDER BY CloseDate ASC
+    LIMIT 10
+  `;
+
+  const renewalFallback = `
+    SELECT Id, Name, Amount, StageName, CloseDate, Probability, Type, OwnerId,
+           Owner.Name, NextStep, Description,
+           CreatedDate, LastModifiedDate
+    FROM Opportunity
+    WHERE AccountId = '${accountId}'
+      AND IsClosed = false
+    ORDER BY CloseDate ASC
+    LIMIT 10
+  `;
+
+  // Expansion opps: Type includes 'Expansion'
+  const expansionQuery = `
+    SELECT Id, Name, Amount, StageName, CloseDate, Probability, Type, OwnerId,
+           Owner.Name, NextStep, Description,
+           ARR__c, Duration__c, Total_Contract_Value__c, License_Seats__c,
+           Use_Cases__c, Business_Objectives__c,
+           CreatedDate, LastModifiedDate
+    FROM Opportunity
+    WHERE AccountId = '${accountId}'
+      AND (Type = 'Customer Expansion' OR Type = 'Renewal + Expansion')
+      AND IsClosed = false
+    ORDER BY CloseDate ASC
+    LIMIT 5
+  `;
+
+  const expansionFallback = `
+    SELECT Id, Name, Amount, StageName, CloseDate, Probability, Type, OwnerId,
+           Owner.Name, NextStep, Description,
+           CreatedDate, LastModifiedDate
+    FROM Opportunity
+    WHERE AccountId = '${accountId}'
+      AND IsClosed = false
+    ORDER BY Amount DESC
+    LIMIT 5
+  `;
+
+  // Contacts for the account
+  const contactsQuery = `
+    SELECT Id, Name, FirstName, LastName, Title, Email, Phone, Department
+    FROM Contact
+    WHERE AccountId = '${accountId}'
+    ORDER BY LastModifiedDate DESC
+    LIMIT 50
+  `;
+
+  // Execute all queries in parallel
+  const [accountRecords, renewalOpps, expansionOpps, contacts] = await Promise.all([
+    safeQuery<Account>(connection, accountQuery, accountFallback),
+    safeQuery<Opportunity>(connection, renewalQuery, renewalFallback),
+    safeQuery<Opportunity>(connection, expansionQuery, expansionFallback),
+    safeQuery<Contact>(connection, contactsQuery),
+  ]);
+
+  const account = accountRecords.length > 0 ? accountRecords[0] : null;
+
+  return {
+    account,
+    renewalOpps,
+    expansionOpps,
+    contacts,
+  };
+}
+
+/**
  * Get dashboard statistics
  */
 export async function getDashboardStats(

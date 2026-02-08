@@ -14,6 +14,9 @@ import AccountsList from './pages/AccountsList';
 import OpportunitiesList from './pages/OpportunitiesList';
 import OpportunityDetail from './pages/OpportunityDetail';
 import AdminPanel from './pages/AdminPanel';
+import AccountPlansList from './pages/AccountPlansList';
+import AccountPlan from './pages/AccountPlan';
+import AccountPlanNew from './pages/AccountPlanNew';
 import Navigation from './components/Navigation';
 import ImpersonationBanner from './components/ImpersonationBanner';
 
@@ -69,6 +72,9 @@ function App() {
             <Route path="/account/:id" element={<Account360 />} />
             <Route path="/opportunities" element={<OpportunitiesList />} />
             <Route path="/opportunity/:id" element={<OpportunityDetail />} />
+            <Route path="/account-plans" element={<AccountPlansList />} />
+            <Route path="/account-plan/new/:accountId" element={<AccountPlanNew />} />
+            <Route path="/account-plan/:id" element={<AccountPlan />} />
             <Route path="/admin" element={<AdminPanel />} />
           </Routes>
         </Layout>

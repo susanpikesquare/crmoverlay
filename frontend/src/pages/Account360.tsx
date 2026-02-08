@@ -282,7 +282,13 @@ export default function Account360() {
 
             {/* Quick Actions */}
             <div className="flex flex-col gap-3">
-              <button className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-blue-700 transition shadow-md">
+              <Link
+                to={`/account-plan/new/${id}`}
+                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-blue-700 transition shadow-md text-center"
+              >
+                Create Account Plan
+              </Link>
+              <button className="px-6 py-3 bg-white border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 transition">
                 Create Opportunity
               </button>
               <button className="px-6 py-3 bg-white border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 transition">
