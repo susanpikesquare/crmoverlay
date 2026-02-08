@@ -1718,30 +1718,17 @@ export interface PriorityItem {
  * Pipeline Forecast Interface
  */
 export interface PipelineForecast {
-  currentQuarter: {
-    quarterName: string;
-    totalPipeline: number;
-    commitForecast: number;
-    bestCaseForecast: number;
-    coverageRatio: number;
-    opportunitiesByStage: {
-      stageName: string;
-      count: number;
-      value: number;
-    }[];
-  };
-  nextQuarter: {
-    quarterName: string;
-    totalPipeline: number;
-    commitForecast: number;
-    bestCaseForecast: number;
-    coverageRatio: number;
-    opportunitiesByStage: {
-      stageName: string;
-      count: number;
-      value: number;
-    }[];
-  };
+  periodName: string;
+  totalPipeline: number;
+  commitForecast: number;
+  bestCaseForecast: number;
+  closedWon: number;
+  coverageRatio: number;
+  opportunitiesByStage: {
+    stageName: string;
+    count: number;
+    value: number;
+  }[];
   forecastStatus: {
     isSubmitted: boolean;
     lastSubmittedDate?: string;
@@ -1945,7 +1932,7 @@ export async function getTodaysPriorities(
 }
 
 /**
- * Get Pipeline and Forecast for AE
+ * Get Pipeline and Forecast for AE (current quarter view)
  */
 export async function getPipelineForecast(
   connection: Connection,
@@ -1957,143 +1944,90 @@ export async function getPipelineForecast(
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
+    const currentQuarter = Math.floor(currentMonth / 3) + 1;
 
-    // Calculate current quarter
-    const currentQuarter = Math.floor(currentMonth / 3);
-    const currentQuarterStart = new Date(currentYear, currentQuarter * 3, 1);
-    const currentQuarterEnd = new Date(currentYear, currentQuarter * 3 + 3, 0);
+    // Use this quarter as the default period for AE view
+    const dateFilter = buildDateFilter('thisQuarter');
+    const periodName = `Q${currentQuarter} ${currentYear}`;
 
-    // Calculate next quarter
-    const nextQuarterStart = new Date(currentQuarterEnd);
-    nextQuarterStart.setDate(nextQuarterStart.getDate() + 1);
-    const nextQuarterEnd = new Date(nextQuarterStart.getFullYear(), nextQuarterStart.getMonth() + 3, 0);
-
-    // Query opportunities for current quarter
-    const currentQuarterQuery = `
+    // Query open pipeline
+    const openQuery = `
       SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsClosed = false
-        AND CloseDate >= ${currentQuarterStart.toISOString().split('T')[0]}
-        AND CloseDate <= ${currentQuarterEnd.toISOString().split('T')[0]}
+        AND ${dateFilter}
       ORDER BY CloseDate ASC
     `;
 
-    // Query opportunities for next quarter
-    const nextQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability
+    // Query closed-won for this quarter
+    const closedWonQuery = `
+      SELECT Id, ${amountField}
       FROM Opportunity
       WHERE OwnerId = '${userId}'
-        AND IsClosed = false
-        AND CloseDate >= ${nextQuarterStart.toISOString().split('T')[0]}
-        AND CloseDate <= ${nextQuarterEnd.toISOString().split('T')[0]}
-      ORDER BY CloseDate ASC
+        AND StageName = 'Closed Won'
+        AND ${dateFilter}
     `;
 
-    const [currentQtrResult, nextQtrResult] = await Promise.all([
-      connection.query(currentQuarterQuery),
-      connection.query(nextQuarterQuery),
+    const [openResult, closedWonResult] = await Promise.all([
+      connection.query(openQuery),
+      connection.query(closedWonQuery),
     ]);
 
-    const currentQtrOpps = currentQtrResult.records as any[];
-    const nextQtrOpps = nextQtrResult.records as any[];
+    const openOpps = openResult.records as any[];
+    const closedWonOpps = closedWonResult.records as any[];
 
-    // Helper function to calculate quarter metrics
-    const calculateQuarterMetrics = (opps: any[], quarterName: string) => {
-      const totalPipeline = opps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    const totalPipeline = openOpps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    const closedWon = closedWonOpps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-      // Group by stage
-      const stageMap = new Map<string, { count: number; value: number }>();
-      opps.forEach((opp) => {
-        const stage = opp.StageName || 'Unknown';
-        if (!stageMap.has(stage)) {
-          stageMap.set(stage, { count: 0, value: 0 });
-        }
-        const stageData = stageMap.get(stage)!;
-        stageData.count++;
-        stageData.value += opp[amountField] || 0;
-      });
+    // Group by stage
+    const stageMap = new Map<string, { count: number; value: number }>();
+    openOpps.forEach((opp) => {
+      const stage = opp.StageName || 'Unknown';
+      if (!stageMap.has(stage)) {
+        stageMap.set(stage, { count: 0, value: 0 });
+      }
+      const stageData = stageMap.get(stage)!;
+      stageData.count++;
+      stageData.value += opp[amountField] || 0;
+    });
 
-      const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
-        stageName,
-        count: data.count,
-        value: data.value,
-      }));
+    const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
+      stageName,
+      count: data.count,
+      value: data.value,
+    }));
 
-      // Calculate forecast categories based on Probability
-      // Commit: High probability opportunities (>= 70%)
-      const commitForecast = opps
-        .filter((opp) => (opp.Probability || 0) >= 70)
-        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    const commitForecast = openOpps
+      .filter((opp) => (opp.Probability || 0) >= 70)
+      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-      // Best Case: Medium+ probability opportunities (>= 50%)
-      const bestCaseForecast = opps
-        .filter((opp) => (opp.Probability || 0) >= 50)
-        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    const bestCaseForecast = openOpps
+      .filter((opp) => (opp.Probability || 0) >= 50)
+      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-      // Calculate coverage ratio (pipeline / expected quota)
-      // Assuming quarterly quota is total annual quota / 4
-      // This is a simplified calculation - adjust based on actual quota data
-      const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
+    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
 
-      return {
-        quarterName,
-        totalPipeline,
-        commitForecast,
-        bestCaseForecast,
-        coverageRatio,
-        opportunitiesByStage,
-      };
-    };
-
-    const currentQuarterData = calculateQuarterMetrics(
-      currentQtrOpps,
-      `Q${currentQuarter + 1} ${currentYear}`
-    );
-
-    const nextQuarterNum = (currentQuarter + 1) % 4 + 1;
-    const nextQuarterYear = currentQuarter === 3 ? currentYear + 1 : currentYear;
-    const nextQuarterData = calculateQuarterMetrics(
-      nextQtrOpps,
-      `Q${nextQuarterNum} ${nextQuarterYear}`
-    );
-
-    // Get Salesforce instance URL for forecast submission
+    // Get Salesforce instance URL
     const identity = await connection.identity();
     const instanceUrl = identity.urls?.enterprise?.replace('{version}', '60.0').split('/services')[0] || '';
 
     return {
-      currentQuarter: currentQuarterData,
-      nextQuarter: nextQuarterData,
+      periodName,
+      totalPipeline,
+      commitForecast,
+      bestCaseForecast,
+      closedWon,
+      coverageRatio,
+      opportunitiesByStage,
       forecastStatus: {
-        isSubmitted: false, // TODO: Check actual forecast submission status
+        isSubmitted: false,
         submissionUrl: `${instanceUrl}/lightning/o/Opportunity/list`,
       },
     };
   } catch (error) {
     console.error('Error fetching pipeline forecast:', error);
-    return {
-      currentQuarter: {
-        quarterName: 'Current Quarter',
-        totalPipeline: 0,
-        commitForecast: 0,
-        bestCaseForecast: 0,
-        coverageRatio: 0,
-        opportunitiesByStage: [],
-      },
-      nextQuarter: {
-        quarterName: 'Next Quarter',
-        totalPipeline: 0,
-        commitForecast: 0,
-        bestCaseForecast: 0,
-        coverageRatio: 0,
-        opportunitiesByStage: [],
-      },
-      forecastStatus: {
-        isSubmitted: false,
-        submissionUrl: '',
-      },
-    };
+    return getEmptyPipelineForecast();
   }
 }
 
@@ -2291,154 +2225,131 @@ function formatCurrency(value: number): string {
 export async function getTeamPipelineForecast(
   connection: Connection,
   managerId: string,
-  pool: Pool
+  pool: Pool,
+  filters: DashboardFilters = {}
 ): Promise<PipelineForecast> {
   try {
     const amountField = await getAmountFieldName(pool);
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    const teamFilter = filters.teamFilter || 'myTeam';
 
-    // Get team members
-    const teamQuery = `
-      SELECT Id, Name
-      FROM User
-      WHERE ManagerId = '${managerId}' AND IsActive = true
-    `;
-    const teamResult = await connection.query(teamQuery);
-    const teamMembers = teamResult.records as any[];
-    const teamMemberIds = teamMembers.map(u => u.Id);
+    // Determine which users to query (same pattern as getSalesLeaderDashboard)
+    let teamMemberIds: string[] = [];
 
-    if (teamMemberIds.length === 0) {
-      return {
-        currentQuarter: {
-          quarterName: 'Current Quarter',
-          totalPipeline: 0,
-          commitForecast: 0,
-          bestCaseForecast: 0,
-          coverageRatio: 0,
-          opportunitiesByStage: [],
-        },
-        nextQuarter: {
-          quarterName: 'Next Quarter',
-          totalPipeline: 0,
-          commitForecast: 0,
-          bestCaseForecast: 0,
-          coverageRatio: 0,
-          opportunitiesByStage: [],
-        },
-        forecastStatus: {
-          isSubmitted: false,
-          submissionUrl: '',
-        },
-      };
+    if (teamFilter === 'allUsers') {
+      const allUsersQuery = `SELECT Id FROM User WHERE IsActive = true LIMIT 200`;
+      const allUsersResult = await connection.query(allUsersQuery);
+      teamMemberIds = (allUsersResult.records as any[]).map(u => u.Id);
+    } else if (teamFilter === 'myTeam') {
+      // Get manager's direct reports
+      const teamQuery = `SELECT Id FROM User WHERE ManagerId = '${managerId}' AND IsActive = true`;
+      const teamResult = await connection.query(teamQuery);
+      teamMemberIds = (teamResult.records as any[]).map(u => u.Id);
+
+      // Include the manager themselves
+      if (!teamMemberIds.includes(managerId)) {
+        teamMemberIds.push(managerId);
+      }
+
+      // Fallback: if only the manager (no reports), get all active users
+      if (teamMemberIds.length <= 1) {
+        console.log('No direct reports found for pipeline forecast - falling back to all active users');
+        const allUsersQuery = `SELECT Id FROM User WHERE IsActive = true LIMIT 200`;
+        const allUsersResult = await connection.query(allUsersQuery);
+        teamMemberIds = (allUsersResult.records as any[]).map(u => u.Id);
+      }
+    } else {
+      // Specific user ID - that user + their reports
+      const reportsQuery = `SELECT Id FROM User WHERE (Id = '${teamFilter}' OR ManagerId = '${teamFilter}') AND IsActive = true`;
+      const reportsResult = await connection.query(reportsQuery);
+      teamMemberIds = (reportsResult.records as any[]).map(u => u.Id);
     }
 
-    // Calculate current quarter
-    const currentQuarter = Math.floor(currentMonth / 3);
-    const currentQuarterStart = new Date(currentYear, currentQuarter * 3, 1);
-    const currentQuarterEnd = new Date(currentYear, currentQuarter * 3 + 3, 0);
+    if (teamMemberIds.length === 0) {
+      return getEmptyPipelineForecast();
+    }
 
-    // Calculate next quarter
-    const nextQuarterStart = new Date(currentQuarterEnd);
-    nextQuarterStart.setDate(nextQuarterStart.getDate() + 1);
-    const nextQuarterEnd = new Date(nextQuarterStart.getFullYear(), nextQuarterStart.getMonth() + 3, 0);
+    // Build date filter
+    const dateFilter = buildDateFilter(filters.dateRange, filters.startDate, filters.endDate);
+    const ownerFilter = `OwnerId IN ('${teamMemberIds.join("','")}')`;
+    const minDealFilter = filters.minDealSize ? `AND ${amountField} >= ${filters.minDealSize}` : '';
 
-    // Query team's opportunities for current quarter
-    const currentQuarterQuery = `
+    // Build period name from filter
+    const periodName = getPeriodName(filters.dateRange, filters.startDate, filters.endDate);
+
+    // Query open pipeline opportunities for the period
+    const openPipelineQuery = `
       SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, OwnerId, Owner.Name
       FROM Opportunity
-      WHERE OwnerId IN ('${teamMemberIds.join("','")}')
+      WHERE ${ownerFilter}
         AND IsClosed = false
-        AND CloseDate >= ${currentQuarterStart.toISOString().split('T')[0]}
-        AND CloseDate <= ${currentQuarterEnd.toISOString().split('T')[0]}
+        AND ${dateFilter}
+        ${minDealFilter}
       ORDER BY CloseDate ASC
     `;
 
-    // Query team's opportunities for next quarter
-    const nextQuarterQuery = `
-      SELECT Id, Name, StageName, ${amountField}, CloseDate, Probability, OwnerId, Owner.Name
+    // Query closed-won opportunities for the period
+    const closedWonQuery = `
+      SELECT Id, ${amountField}
       FROM Opportunity
-      WHERE OwnerId IN ('${teamMemberIds.join("','")}')
-        AND IsClosed = false
-        AND CloseDate >= ${nextQuarterStart.toISOString().split('T')[0]}
-        AND CloseDate <= ${nextQuarterEnd.toISOString().split('T')[0]}
-      ORDER BY CloseDate ASC
+      WHERE ${ownerFilter}
+        AND StageName = 'Closed Won'
+        AND ${dateFilter}
+        ${minDealFilter}
     `;
 
-    const [currentQtrResult, nextQtrResult] = await Promise.all([
-      connection.query(currentQuarterQuery),
-      connection.query(nextQuarterQuery),
+    const [openResult, closedWonResult] = await Promise.all([
+      connection.query(openPipelineQuery),
+      connection.query(closedWonQuery),
     ]);
 
-    const currentQtrOpps = currentQtrResult.records as any[];
-    const nextQtrOpps = nextQtrResult.records as any[];
+    const openOpps = openResult.records as any[];
+    const closedWonOpps = closedWonResult.records as any[];
 
-    // Helper function to calculate quarter metrics
-    const calculateQuarterMetrics = (opps: any[], quarterName: string) => {
-      const totalPipeline = opps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    // Calculate open pipeline metrics
+    const totalPipeline = openOpps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    const closedWon = closedWonOpps.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-      // Group by stage
-      const stageMap = new Map<string, { count: number; value: number }>();
-      opps.forEach((opp) => {
-        const stage = opp.StageName || 'Unknown';
-        if (!stageMap.has(stage)) {
-          stageMap.set(stage, { count: 0, value: 0 });
-        }
-        const stageData = stageMap.get(stage)!;
-        stageData.count++;
-        stageData.value += opp[amountField] || 0;
-      });
+    // Group by stage
+    const stageMap = new Map<string, { count: number; value: number }>();
+    openOpps.forEach((opp) => {
+      const stage = opp.StageName || 'Unknown';
+      if (!stageMap.has(stage)) {
+        stageMap.set(stage, { count: 0, value: 0 });
+      }
+      const stageData = stageMap.get(stage)!;
+      stageData.count++;
+      stageData.value += opp[amountField] || 0;
+    });
 
-      const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
-        stageName,
-        count: data.count,
-        value: data.value,
-      }));
+    const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
+      stageName,
+      count: data.count,
+      value: data.value,
+    }));
 
-      // Calculate forecast categories based on Probability
-      // Commit: High probability opportunities (>= 70%)
-      const commitForecast = opps
-        .filter((opp) => (opp.Probability || 0) >= 70)
-        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    // Calculate forecast categories based on Probability
+    const commitForecast = openOpps
+      .filter((opp) => (opp.Probability || 0) >= 70)
+      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-      // Best Case: Medium+ probability opportunities (>= 50%)
-      const bestCaseForecast = opps
-        .filter((opp) => (opp.Probability || 0) >= 50)
-        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    const bestCaseForecast = openOpps
+      .filter((opp) => (opp.Probability || 0) >= 50)
+      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-      // Calculate coverage ratio
-      const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
-
-      return {
-        quarterName,
-        totalPipeline,
-        commitForecast,
-        bestCaseForecast,
-        coverageRatio,
-        opportunitiesByStage,
-      };
-    };
-
-    const currentQuarterData = calculateQuarterMetrics(
-      currentQtrOpps,
-      `Q${currentQuarter + 1} ${currentYear} (Team)`
-    );
-
-    const nextQuarterNum = (currentQuarter + 1) % 4 + 1;
-    const nextQuarterYear = currentQuarter === 3 ? currentYear + 1 : currentYear;
-    const nextQuarterData = calculateQuarterMetrics(
-      nextQtrOpps,
-      `Q${nextQuarterNum} ${nextQuarterYear} (Team)`
-    );
+    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitForecast, 1) : 0;
 
     // Get Salesforce instance URL
     const identity = await connection.identity();
     const instanceUrl = identity.urls?.enterprise?.replace('{version}', '60.0').split('/services')[0] || '';
 
     return {
-      currentQuarter: currentQuarterData,
-      nextQuarter: nextQuarterData,
+      periodName,
+      totalPipeline,
+      commitForecast,
+      bestCaseForecast,
+      closedWon,
+      coverageRatio,
+      opportunitiesByStage,
       forecastStatus: {
         isSubmitted: false,
         submissionUrl: `${instanceUrl}/lightning/o/Opportunity/list`,
@@ -2446,28 +2357,67 @@ export async function getTeamPipelineForecast(
     };
   } catch (error) {
     console.error('Error fetching team pipeline forecast:', error);
-    return {
-      currentQuarter: {
-        quarterName: 'Current Quarter',
-        totalPipeline: 0,
-        commitForecast: 0,
-        bestCaseForecast: 0,
-        coverageRatio: 0,
-        opportunitiesByStage: [],
-      },
-      nextQuarter: {
-        quarterName: 'Next Quarter',
-        totalPipeline: 0,
-        commitForecast: 0,
-        bestCaseForecast: 0,
-        coverageRatio: 0,
-        opportunitiesByStage: [],
-      },
-      forecastStatus: {
-        isSubmitted: false,
-        submissionUrl: '',
-      },
-    };
+    return getEmptyPipelineForecast();
+  }
+}
+
+function getEmptyPipelineForecast(): PipelineForecast {
+  return {
+    periodName: '',
+    totalPipeline: 0,
+    commitForecast: 0,
+    bestCaseForecast: 0,
+    closedWon: 0,
+    coverageRatio: 0,
+    opportunitiesByStage: [],
+    forecastStatus: {
+      isSubmitted: false,
+      submissionUrl: '',
+    },
+  };
+}
+
+function getPeriodName(dateRange?: string, startDate?: string, endDate?: string): string {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+
+  switch (dateRange) {
+    case 'today': return 'Today';
+    case 'yesterday': return 'Yesterday';
+    case 'thisWeek': return 'This Week';
+    case 'lastWeek': return 'Last Week';
+    case 'thisMonth': return 'This Month';
+    case 'lastMonth': return 'Last Month';
+    case 'thisQuarter': return `Q${currentQuarter} ${currentYear}`;
+    case 'lastQuarter': {
+      const lq = currentQuarter === 1 ? 4 : currentQuarter - 1;
+      const ly = currentQuarter === 1 ? currentYear - 1 : currentYear;
+      return `Q${lq} ${ly}`;
+    }
+    case 'nextQuarter': {
+      const nq = currentQuarter === 4 ? 1 : currentQuarter + 1;
+      const ny = currentQuarter === 4 ? currentYear + 1 : currentYear;
+      return `Q${nq} ${ny}`;
+    }
+    case 'thisFiscalQuarter': return 'This Fiscal Quarter';
+    case 'lastFiscalQuarter': return 'Last Fiscal Quarter';
+    case 'thisFiscalYear': return 'This Fiscal Year';
+    case 'lastFiscalYear': return 'Last Fiscal Year';
+    case 'thisYear': return `${currentYear}`;
+    case 'lastYear': return `${currentYear - 1}`;
+    case 'nextYear': return `${currentYear + 1}`;
+    case 'last7Days': return 'Last 7 Days';
+    case 'last30Days': return 'Last 30 Days';
+    case 'last90Days': return 'Last 90 Days';
+    case 'last120Days': return 'Last 120 Days';
+    case 'all': return 'All Time';
+    case 'custom':
+      if (startDate && endDate) return `${startDate} to ${endDate}`;
+      if (startDate) return `From ${startDate}`;
+      if (endDate) return `Through ${endDate}`;
+      return `${currentYear}`;
+    default: return `${currentYear}`;
   }
 }
 

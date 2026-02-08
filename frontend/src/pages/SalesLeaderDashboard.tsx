@@ -103,14 +103,26 @@ export default function SalesLeaderDashboard() {
     },
   });
 
-  // Fetch team pipeline forecast
+  // Fetch team pipeline forecast (responds to filters)
   const { data: forecastData } = useQuery<{
     success: boolean;
     data: any;
   }>({
-    queryKey: ['sales-leader-pipeline-forecast'],
+    queryKey: ['sales-leader-pipeline-forecast', dateRange, customStartDate, customEndDate, teamFilter, minDealSize],
     queryFn: async () => {
-      const response = await api.get('/api/hub/sales-leader/pipeline-forecast');
+      const params = new URLSearchParams();
+      if (dateRange === 'custom') {
+        params.append('dateRange', 'custom');
+        if (customStartDate) params.append('startDate', customStartDate);
+        if (customEndDate) params.append('endDate', customEndDate);
+      } else {
+        params.append('dateRange', dateRange);
+      }
+      params.append('teamFilter', teamFilter);
+      if (minDealSize > 0) {
+        params.append('minDealSize', minDealSize.toString());
+      }
+      const response = await api.get(`/api/hub/sales-leader/pipeline-forecast?${params.toString()}`);
       return response.data;
     },
   });

@@ -693,7 +693,15 @@ router.get('/hub/sales-leader/pipeline-forecast', isAuthenticated, async (req: R
       });
     }
 
-    const forecast = await HubData.getTeamPipelineForecast(connection, userId, pool);
+    const filters = {
+      dateRange: req.query.dateRange as string | undefined,
+      startDate: req.query.startDate as string | undefined,
+      endDate: req.query.endDate as string | undefined,
+      teamFilter: req.query.teamFilter as string | undefined,
+      minDealSize: req.query.minDealSize ? Number(req.query.minDealSize) : undefined,
+    };
+
+    const forecast = await HubData.getTeamPipelineForecast(connection, userId, pool, filters);
 
     res.json({
       success: true,

@@ -1,12 +1,25 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import apiClient from '../services/api';
 
 export default function Navigation() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showUserSelector, setShowUserSelector] = useState(false);
+  const [showAccountsMenu, setShowAccountsMenu] = useState(false);
+  const accountsMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close accounts dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (accountsMenuRef.current && !accountsMenuRef.current.contains(e.target as Node)) {
+        setShowAccountsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const { data: brandingData } = useQuery({
     queryKey: ['branding'],
@@ -139,15 +152,38 @@ export default function Navigation() {
               </svg>
               Hub
             </Link>
-            <Link
-              to="/accounts"
-              className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-              Accounts
-            </Link>
+            <div className="relative" ref={accountsMenuRef}>
+              <button
+                onClick={() => setShowAccountsMenu(!showAccountsMenu)}
+                className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                Accounts
+                <svg className={`w-3 h-3 transition-transform ${showAccountsMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showAccountsMenu && (
+                <div className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
+                  <Link
+                    to="/accounts"
+                    onClick={() => setShowAccountsMenu(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 font-medium"
+                  >
+                    All Accounts
+                  </Link>
+                  <Link
+                    to="/account-plans"
+                    onClick={() => setShowAccountsMenu(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 font-medium"
+                  >
+                    Account Plans
+                  </Link>
+                </div>
+              )}
+            </div>
             <Link
               to="/opportunities"
               className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
@@ -156,15 +192,6 @@ export default function Navigation() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Opportunities
-            </Link>
-            <Link
-              to="/account-plans"
-              className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Account Plans
             </Link>
             {/* Admin Link - Only show for admins */}
             {(authData?.user?.isAdmin || authData?.user?.role === 'admin') && (
