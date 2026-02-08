@@ -26,13 +26,16 @@ router.get('/config', async (_req: Request, res: Response) => {
     const adminSettings = new AdminSettingsService(pool);
     const salesforceFields = await adminSettings.getSalesforceFieldConfig();
     const hubLayout = await adminSettings.getHubLayoutConfig();
-
     const forecastConfig = await adminSettings.getForecastConfig();
+
+    // Load opportunity stages from database (overrides in-memory defaults)
+    const dbStages = await adminSettings.getOpportunityStages();
 
     res.json({
       success: true,
       data: {
         ...config,
+        ...(dbStages ? { opportunityStages: dbStages } : {}),
         salesforceFields,
         hubLayout,
         forecastConfig,
@@ -187,12 +190,17 @@ router.put('/config/display-settings', (req: Request, res: Response) => {
  * PUT /api/admin/config/opportunity-stages
  * Update opportunity stages configuration
  */
-router.put('/config/opportunity-stages', (req: Request, res: Response) => {
+router.put('/config/opportunity-stages', async (req: Request, res: Response) => {
   try {
     const { stages } = req.body;
     const session = req.session as any;
-    const modifiedBy = session.userInfo?.name || 'Unknown';
+    const modifiedBy = session.userInfo?.name || session.userInfo?.user_id || 'Unknown';
 
+    // Persist to database so stages survive server restarts
+    const adminSettings = new AdminSettingsService(pool);
+    await adminSettings.setOpportunityStages(stages, modifiedBy);
+
+    // Also update in-memory config for immediate use
     const updatedConfig = configService.updateOpportunityStages(stages, modifiedBy);
 
     res.json({
