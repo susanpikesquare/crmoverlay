@@ -8,7 +8,6 @@ import AIAssistant from '../components/AIAssistant';
 const API_URL = config.apiBaseUrl;
 
 interface AMMetrics {
-  nrrTarget: number;
   renewalsAtRiskCount: number;
   expansionPipeline: number;
   avgContractValue: number;
@@ -125,10 +124,6 @@ export default function AMHub() {
     }).format(value);
   };
 
-  const formatPercent = (value: number) => {
-    return `${Math.round(value)}%`;
-  };
-
   const getHealthScoreColor = (score: number) => {
     if (score >= 80) return 'text-green-600';
     if (score >= 60) return 'text-amber-600';
@@ -220,7 +215,7 @@ export default function AMHub() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
+    <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-6">
@@ -234,15 +229,7 @@ export default function AMHub() {
         </div>
 
         {/* Top Metrics Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
-            <div className="text-sm font-medium text-slate-600 mb-2">NRR Target</div>
-            <div className="text-3xl font-bold text-slate-900 mb-1">
-              {metrics ? formatPercent(metrics.nrrTarget) : '—'}
-            </div>
-            <div className="text-xs text-slate-500">net revenue retention</div>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-500">
             <div className="text-sm font-medium text-slate-600 mb-2">Renewals at Risk</div>
             <div className="text-3xl font-bold text-slate-900 mb-1">

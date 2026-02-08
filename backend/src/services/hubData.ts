@@ -25,7 +25,6 @@ export interface AEMetrics {
  * AM Hub Metrics
  */
 export interface AMMetrics {
-  nrrTarget: number; // Percentage
   renewalsAtRiskCount: number;
   expansionPipeline: number; // Dollar amount
   avgContractValue: number;
@@ -666,7 +665,8 @@ export async function getAMMetrics(
     FROM Opportunity
     WHERE OwnerId = '${userId}'
       AND IsClosed = false
-      AND (Type = 'Upsell' OR Type = 'Expansion' OR Type = 'Add-On')
+      AND (Type = 'Upsell' OR Type = 'Expansion' OR Type = 'Add-On'
+           OR Type = 'Customer Expansion' OR Type = 'Renewal + Expansion')
   `;
 
   const avgContractQuery = `
@@ -688,7 +688,6 @@ export async function getAMMetrics(
     const avgValue = (avgContract.records[0] as any)?.avgValue || 0;
 
     return {
-      nrrTarget: 110, // Mock value - should come from user goal
       renewalsAtRiskCount: atRiskCount,
       expansionPipeline: expansionTotal,
       avgContractValue: avgValue,
@@ -696,7 +695,6 @@ export async function getAMMetrics(
   } catch (error) {
     console.error('Error fetching AM metrics:', error);
     return {
-      nrrTarget: 0,
       renewalsAtRiskCount: 0,
       expansionPipeline: 0,
       avgContractValue: 0,
@@ -744,7 +742,7 @@ export async function getRenewalAccounts(
         const risk = account.Risk__c || 'Green';
 
         let renewalRisk: 'At Risk' | 'On Track' | 'Expansion Opportunity';
-        if (risk === 'Red' || healthScore < 50 || daysToRenewal < 30) {
+        if (risk === 'Red' || risk === 'At Risk') {
           renewalRisk = 'At Risk';
         } else if (healthScore > 80 && (account.of_Axonify_Users__c || 0) > 500) {
           renewalRisk = 'Expansion Opportunity';
