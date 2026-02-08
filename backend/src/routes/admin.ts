@@ -9,10 +9,21 @@ import AIApiKey, { AIProvider } from '../models/AIApiKey';
 import { aiService } from '../services/aiService';
 
 const router = Router();
+const adminSettings = new AdminSettingsService(pool);
 
 // All admin routes require authentication and admin privileges
 router.use(isAuthenticated);
 router.use(isAdmin);
+
+// Helper: persist the current in-memory AppConfig to the database
+async function persistAppConfig(userId: string): Promise<void> {
+  try {
+    const config = configService.getConfig();
+    await adminSettings.saveAppConfig(config, userId);
+  } catch (err) {
+    console.error('Failed to persist app config to database:', err);
+  }
+}
 
 /**
  * GET /api/admin/config
@@ -20,22 +31,26 @@ router.use(isAdmin);
  */
 router.get('/config', async (_req: Request, res: Response) => {
   try {
-    const config = configService.getConfig();
+    // Load persisted app config from database (survives server restarts)
+    const dbAppConfig = await adminSettings.getAppConfig();
 
-    // Add Salesforce field settings and hub layout from database
-    const adminSettings = new AdminSettingsService(pool);
+    // Get in-memory defaults, then override with DB values if they exist
+    let config = configService.getConfig();
+    if (dbAppConfig) {
+      // Restore DB config into memory so subsequent in-process reads are current
+      configService.updateConfig(dbAppConfig, dbAppConfig.lastModified?.by || 'system');
+      config = configService.getConfig();
+    }
+
+    // Add database-backed settings (these are already persisted separately)
     const salesforceFields = await adminSettings.getSalesforceFieldConfig();
     const hubLayout = await adminSettings.getHubLayoutConfig();
     const forecastConfig = await adminSettings.getForecastConfig();
-
-    // Load opportunity stages from database (overrides in-memory defaults)
-    const dbStages = await adminSettings.getOpportunityStages();
 
     res.json({
       success: true,
       data: {
         ...config,
-        ...(dbStages ? { opportunityStages: dbStages } : {}),
         salesforceFields,
         hubLayout,
         forecastConfig,
@@ -55,13 +70,14 @@ router.get('/config', async (_req: Request, res: Response) => {
  * PUT /api/admin/config/risk-rules
  * Update risk rules configuration
  */
-router.put('/config/risk-rules', (req: Request, res: Response) => {
+router.put('/config/risk-rules', async (req: Request, res: Response) => {
   try {
     const { rules } = req.body;
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
     const updatedConfig = configService.updateRiskRules(rules, modifiedBy);
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,
@@ -82,13 +98,14 @@ router.put('/config/risk-rules', (req: Request, res: Response) => {
  * PUT /api/admin/config/priority-scoring
  * Update priority scoring configuration
  */
-router.put('/config/priority-scoring', (req: Request, res: Response) => {
+router.put('/config/priority-scoring', async (req: Request, res: Response) => {
   try {
     const { priorityScoring } = req.body;
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
     const updatedConfig = configService.updatePriorityScoring(priorityScoring, modifiedBy);
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,
@@ -109,13 +126,14 @@ router.put('/config/priority-scoring', (req: Request, res: Response) => {
  * PUT /api/admin/config/field-mappings
  * Update field mappings configuration
  */
-router.put('/config/field-mappings', (req: Request, res: Response) => {
+router.put('/config/field-mappings', async (req: Request, res: Response) => {
   try {
     const { mappings } = req.body;
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
     const updatedConfig = configService.updateFieldMappings(mappings, modifiedBy);
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,
@@ -136,13 +154,14 @@ router.put('/config/field-mappings', (req: Request, res: Response) => {
  * PUT /api/admin/config/role-mappings
  * Update role mappings configuration
  */
-router.put('/config/role-mappings', (req: Request, res: Response) => {
+router.put('/config/role-mappings', async (req: Request, res: Response) => {
   try {
     const { mappings } = req.body;
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
     const updatedConfig = configService.updateConfig({ roleMapping: mappings }, modifiedBy);
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,
@@ -163,13 +182,14 @@ router.put('/config/role-mappings', (req: Request, res: Response) => {
  * PUT /api/admin/config/display-settings
  * Update display settings configuration
  */
-router.put('/config/display-settings', (req: Request, res: Response) => {
+router.put('/config/display-settings', async (req: Request, res: Response) => {
   try {
     const { displaySettings } = req.body;
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
     const updatedConfig = configService.updateConfig({ displaySettings }, modifiedBy);
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,
@@ -196,12 +216,8 @@ router.put('/config/opportunity-stages', async (req: Request, res: Response) => 
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || session.userInfo?.user_id || 'Unknown';
 
-    // Persist to database so stages survive server restarts
-    const adminSettings = new AdminSettingsService(pool);
-    await adminSettings.setOpportunityStages(stages, modifiedBy);
-
-    // Also update in-memory config for immediate use
     const updatedConfig = configService.updateOpportunityStages(stages, modifiedBy);
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,
@@ -228,7 +244,6 @@ router.put('/config/salesforce-fields', async (req: Request, res: Response) => {
     const session = req.session as any;
     const userId = session.userId || 'Unknown';
 
-    const adminSettings = new AdminSettingsService(pool);
     await adminSettings.setSalesforceFieldConfig(
       {
         opportunityAmountField: opportunityAmountField || 'Amount',
@@ -264,7 +279,6 @@ router.put('/config/forecast', async (req: Request, res: Response) => {
     const session = req.session as any;
     const userId = session.userId || 'Unknown';
 
-    const adminSettings = new AdminSettingsService(pool);
     // Merge incoming fields with current config to support partial updates
     const current = await adminSettings.getForecastConfig();
     const config: ForecastConfig = {
@@ -309,7 +323,6 @@ router.put('/config/hub-layout', async (req: Request, res: Response) => {
     const session = req.session as any;
     const userId = session.userId || 'Unknown';
 
-    const adminSettings = new AdminSettingsService(pool);
     await adminSettings.setHubLayoutConfig(hubLayout, userId);
 
     res.json({
@@ -333,7 +346,6 @@ router.put('/config/hub-layout', async (req: Request, res: Response) => {
  */
 router.get('/config/branding', async (_req: Request, res: Response) => {
   try {
-    const adminSettings = new AdminSettingsService(pool);
     const branding = await adminSettings.getBrandingConfig();
 
     res.json({
@@ -360,7 +372,6 @@ router.put('/config/branding', json({ limit: '2mb' }), async (req: Request, res:
     const session = req.session as any;
     const userId = session.userId || 'Unknown';
 
-    const adminSettings = new AdminSettingsService(pool);
 
     // If no branding data provided, remove branding (revert to default)
     if (!brandName && !logoBase64) {
@@ -488,13 +499,14 @@ router.get('/config/export', (_req: Request, res: Response) => {
  * POST /api/admin/config/import
  * Import configuration from JSON
  */
-router.post('/config/import', (req: Request, res: Response) => {
+router.post('/config/import', async (req: Request, res: Response) => {
   try {
     const { configJson } = req.body;
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
     const updatedConfig = configService.importConfig(configJson, modifiedBy);
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,
@@ -515,9 +527,13 @@ router.post('/config/import', (req: Request, res: Response) => {
  * POST /api/admin/config/reset
  * Reset configuration to defaults
  */
-router.post('/config/reset', (_req: Request, res: Response) => {
+router.post('/config/reset', async (req: Request, res: Response) => {
   try {
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
     const config = configService.resetToDefaults();
+    await persistAppConfig(modifiedBy);
 
     res.json({
       success: true,

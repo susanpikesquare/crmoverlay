@@ -333,22 +333,22 @@ export class AdminSettingsService {
     );
   }
 
-  async getOpportunityStages(): Promise<string[] | null> {
+  async getAppConfig(): Promise<Record<string, any> | null> {
     const result = await this.pool.query(
       'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
-      ['opportunity_stages']
+      ['app_config']
     );
     if (result.rows.length === 0) return null;
-    return result.rows[0].setting_value as string[];
+    return result.rows[0].setting_value as Record<string, any>;
   }
 
-  async setOpportunityStages(stages: string[], userId: string): Promise<void> {
+  async saveAppConfig(config: Record<string, any>, userId: string): Promise<void> {
     await this.pool.query(
       `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (setting_key)
        DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
-      ['opportunity_stages', JSON.stringify(stages), userId]
+      ['app_config', JSON.stringify(config), userId]
     );
   }
 
