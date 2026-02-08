@@ -55,9 +55,9 @@ const TABS: TabConfig[] = [
   },
   {
     id: 'display-settings',
-    label: 'Display Settings',
+    label: 'Display & Branding',
     icon: '⚙️',
-    description: 'Configure default display preferences and pagination',
+    description: 'Display preferences, pagination, and logo/branding',
   },
   {
     id: 'hub-layout',

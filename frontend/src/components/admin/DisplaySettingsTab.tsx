@@ -212,9 +212,9 @@ export default function DisplaySettingsTab({ config, onSave }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Display Settings</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Display & Branding</h3>
           <p className="text-sm text-gray-600 mt-1">
-            Configure default display preferences and pagination
+            Configure display preferences, pagination, and logo/branding
           </p>
         </div>
         <button
