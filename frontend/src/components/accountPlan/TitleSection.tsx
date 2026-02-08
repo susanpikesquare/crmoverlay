@@ -5,13 +5,25 @@ interface TitleSectionProps {
   status: string;
   onPlanNameChange: (name: string) => void;
   onStatusChange: (status: string) => void;
+  onDelete?: () => void;
 }
 
-export default function TitleSection({ account, planName, planDate, status, onPlanNameChange, onStatusChange }: TitleSectionProps) {
+export default function TitleSection({ account, planName, planDate, status, onPlanNameChange, onStatusChange, onDelete }: TitleSectionProps) {
   const statusColors: Record<string, string> = {
     draft: 'bg-yellow-100 text-yellow-800 border-yellow-300',
     active: 'bg-green-100 text-green-800 border-green-300',
     archived: 'bg-gray-100 text-gray-800 border-gray-300',
+  };
+
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    if (value === 'delete') {
+      // Reset dropdown to current status before triggering delete
+      e.target.value = status;
+      onDelete?.();
+    } else {
+      onStatusChange(value);
+    }
   };
 
   return (
@@ -29,12 +41,15 @@ export default function TitleSection({ account, planName, planDate, status, onPl
         </div>
         <select
           value={status}
-          onChange={(e) => onStatusChange(e.target.value)}
+          onChange={handleStatusChange}
           className={`px-4 py-2 rounded-full text-sm font-semibold border cursor-pointer ${statusColors[status] || statusColors.draft}`}
         >
           <option value="draft">Draft</option>
           <option value="active">Active</option>
           <option value="archived">Archived</option>
+          {onDelete && (
+            <option value="delete" className="text-red-600">Delete</option>
+          )}
         </select>
       </div>
 

@@ -82,12 +82,13 @@ export default function AccountPlan() {
     },
   });
 
-  // Archive mutation
-  const archiveMutation = useMutation({
+  // Delete mutation
+  const deleteMutation = useMutation({
     mutationFn: async () => {
       await apiClient.delete(`/api/account-plans/${id}`);
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accountPlans'] });
       navigate('/account-plans');
     },
   });
@@ -209,13 +210,14 @@ export default function AccountPlan() {
 
             <button
               onClick={() => {
-                if (window.confirm('Are you sure you want to archive this plan?')) {
-                  archiveMutation.mutate();
+                if (window.confirm('Are you sure you want to permanently delete this plan? This cannot be undone.')) {
+                  deleteMutation.mutate();
                 }
               }}
-              className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition"
+              disabled={deleteMutation.isPending}
+              className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50"
             >
-              Archive
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>
@@ -229,6 +231,11 @@ export default function AccountPlan() {
             status={plan.status}
             onPlanNameChange={handlePlanNameChange}
             onStatusChange={handleStatusChange}
+            onDelete={() => {
+              if (window.confirm('Are you sure you want to permanently delete this plan? This cannot be undone.')) {
+                deleteMutation.mutate();
+              }
+            }}
           />
         </div>
 
