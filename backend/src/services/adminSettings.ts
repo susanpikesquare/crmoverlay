@@ -35,8 +35,8 @@ export interface ForecastConfig {
   bestCaseProbability: number;    // Weighted forecast % for Best Case (default 70)
   pipelineProbability: number;    // Weighted forecast % for Pipeline (default 30)
   stageWeights: Record<string, number>;  // e.g., { "Discovery": 10, "Negotiation": 80 }
-  quotaSource: 'salesforce' | 'manual' | 'none'; // Where to get quota/target data
-  salesforceQuotaField: string;   // SF field name for quota (default 'Quarterly_Quota__c')
+  quotaSource: 'salesforce' | 'forecastingQuota' | 'manual' | 'none'; // Where to get quota/target data
+  salesforceQuotaField: string;   // SF field name for quota on User object (default 'Quarterly_Quota__c')
   quotaPeriod: 'quarterly' | 'annual'; // Quota period for SF-sourced quotas
   manualQuotas: Record<string, number>; // userId -> quota amount for manual entry
   defaultQuota: number;           // Fallback quota if user not in manualQuotas (0 = no target)

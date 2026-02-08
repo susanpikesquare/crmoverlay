@@ -26,7 +26,7 @@ export default function ForecastSettingsTab({ config, onSave }: Props) {
   );
 
   // Quota settings
-  const [quotaSource, setQuotaSource] = useState<'salesforce' | 'manual' | 'none'>(
+  const [quotaSource, setQuotaSource] = useState<'salesforce' | 'forecastingQuota' | 'manual' | 'none'>(
     forecastConfig.quotaSource ?? 'none'
   );
   const [salesforceQuotaField, setSalesforceQuotaField] = useState<string>(
@@ -43,18 +43,14 @@ export default function ForecastSettingsTab({ config, onSave }: Props) {
   );
 
   // Fetch team members for manual quota entry
-  const { data: teamData } = useQuery<{ success: boolean; data: any[] }>({
+  const { data: teamData } = useQuery<{ success: boolean; data: { id: string; name: string }[] }>({
     queryKey: ['team-members-for-quotas'],
     queryFn: async () => {
-      try {
-        const response = await api.get('/api/hub/sales-leader/dashboard?dateRange=thisYear&teamFilter=allUsers');
-        const repPerformance = response.data?.data?.teamPerformance?.repPerformance || [];
-        return { success: true, data: repPerformance };
-      } catch {
-        return { success: true, data: [] };
-      }
+      const response = await api.get('/api/users');
+      return response.data;
     },
     staleTime: 5 * 60 * 1000,
+    enabled: quotaSource === 'manual',
   });
 
   const teamMembers = teamData?.data || [];
@@ -200,7 +196,8 @@ export default function ForecastSettingsTab({ config, onSave }: Props) {
           <div className="flex flex-wrap gap-3">
             {[
               { value: 'none', label: 'No Target', desc: 'Hide quota attainment' },
-              { value: 'salesforce', label: 'Salesforce Field', desc: 'Pull from a User field in Salesforce' },
+              { value: 'forecastingQuota', label: 'Forecasting Quotas', desc: 'Pull from Salesforce Collaborative Forecasting' },
+              { value: 'salesforce', label: 'User Field', desc: 'Pull from a custom field on the User object' },
               { value: 'manual', label: 'Manual Entry', desc: 'Enter quotas per user here' },
             ].map(option => (
               <button
@@ -218,7 +215,21 @@ export default function ForecastSettingsTab({ config, onSave }: Props) {
             ))}
           </div>
 
-          {/* Salesforce Quota Field */}
+          {/* Forecasting Quotas info */}
+          {quotaSource === 'forecastingQuota' && (
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <p className="text-sm text-blue-800 font-medium mb-1">Salesforce Collaborative Forecasting</p>
+              <p className="text-xs text-blue-700">
+                Quotas will be pulled from the ForecastingQuota object based on the selected date range.
+                Each user's quota for the matching period will be summed automatically.
+              </p>
+              <p className="text-xs text-blue-600 mt-2">
+                Requires Collaborative Forecasting to be enabled in your Salesforce org with quotas assigned to users.
+              </p>
+            </div>
+          )}
+
+          {/* Salesforce User Field */}
           {quotaSource === 'salesforce' && (
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 space-y-3">
               <div>
@@ -268,16 +279,16 @@ export default function ForecastSettingsTab({ config, onSave }: Props) {
                 <div>
                   <label className="block text-sm font-medium text-green-800 mb-2">Individual Quotas</label>
                   <div className="bg-white rounded-lg border border-green-200 divide-y divide-green-100">
-                    {teamMembers.map((member: any) => (
-                      <div key={member.userId || member.repName} className="px-3 py-2 flex items-center justify-between">
-                        <span className="text-sm text-gray-900">{member.repName}</span>
+                    {teamMembers.map((member) => (
+                      <div key={member.id} className="px-3 py-2 flex items-center justify-between">
+                        <span className="text-sm text-gray-900">{member.name}</span>
                         <div className="flex items-center gap-1">
                           <span className="text-sm text-gray-400">$</span>
                           <input
                             type="number"
                             min={0}
-                            value={manualQuotas[member.userId] ?? ''}
-                            onChange={(e) => handleManualQuotaChange(member.userId, Number(e.target.value))}
+                            value={manualQuotas[member.id] ?? ''}
+                            onChange={(e) => handleManualQuotaChange(member.id, Number(e.target.value))}
                             placeholder={defaultQuota > 0 ? defaultQuota.toLocaleString() : '0'}
                             className="w-28 px-2 py-1 border border-gray-300 rounded text-sm text-right"
                           />

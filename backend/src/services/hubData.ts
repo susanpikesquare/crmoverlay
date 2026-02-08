@@ -1746,7 +1746,7 @@ export interface PipelineForecast {
   bestCaseLabel: string; // e.g., "Best Case" or ">=50%"
   quotaTarget: number;
   quotaAttainment: number; // percentage
-  quotaSource: 'salesforce' | 'manual' | 'none';
+  quotaSource: 'salesforce' | 'forecastingQuota' | 'manual' | 'none';
   opportunitiesByStage: {
     stageName: string;
     count: number;
@@ -2089,6 +2089,8 @@ export async function getPipelineForecast(
       } catch (quotaError) {
         console.log('Could not fetch user quota from Salesforce:', quotaError);
       }
+    } else if (quotaSource === 'forecastingQuota') {
+      quotaTarget = await fetchForecastingQuota(connection, [userId], filters.dateRange, filters.startDate, filters.endDate);
     } else if (quotaSource === 'manual') {
       const manualQuotas = forecastConfig.manualQuotas || {};
       quotaTarget = manualQuotas[userId] ?? (forecastConfig.defaultQuota || 0);
@@ -2495,6 +2497,8 @@ export async function getTeamPipelineForecast(
       } catch (quotaError) {
         console.log('Could not fetch team quota from Salesforce:', quotaError);
       }
+    } else if (quotaSource === 'forecastingQuota') {
+      quotaTarget = await fetchForecastingQuota(connection, teamMemberIds, filters.dateRange, filters.startDate, filters.endDate);
     } else if (quotaSource === 'manual') {
       const manualQuotas = forecastConfig.manualQuotas || {};
       const defaultQuota = forecastConfig.defaultQuota || 0;
@@ -2599,6 +2603,118 @@ function getPeriodName(dateRange?: string, startDate?: string, endDate?: string)
   }
 }
 
+
+/**
+ * Get the start and end dates for a given date range (used for ForecastingQuota queries).
+ * Returns ISO date strings (YYYY-MM-DD).
+ */
+function getPeriodDates(dateRange?: string, startDate?: string, endDate?: string): { start: string; end: string } {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed
+  const currentQuarter = Math.floor(currentMonth / 3) + 1;
+
+  const FISCAL_YEAR_START_MONTH = 1; // February (0-indexed)
+  const fiscalYear = currentMonth >= FISCAL_YEAR_START_MONTH ? currentYear : currentYear - 1;
+  const fiscalMonth = currentMonth >= FISCAL_YEAR_START_MONTH
+    ? currentMonth - FISCAL_YEAR_START_MONTH
+    : currentMonth + (12 - FISCAL_YEAR_START_MONTH);
+  const fiscalQuarter = Math.floor(fiscalMonth / 3) + 1;
+
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+
+  switch (dateRange) {
+    case 'thisQuarter': {
+      const qStart = new Date(currentYear, (currentQuarter - 1) * 3, 1);
+      const qEnd = new Date(currentYear, currentQuarter * 3, 0);
+      return { start: fmt(qStart), end: fmt(qEnd) };
+    }
+    case 'lastQuarter': {
+      const lq = currentQuarter === 1 ? 4 : currentQuarter - 1;
+      const ly = currentQuarter === 1 ? currentYear - 1 : currentYear;
+      const qStart = new Date(ly, (lq - 1) * 3, 1);
+      const qEnd = new Date(ly, lq * 3, 0);
+      return { start: fmt(qStart), end: fmt(qEnd) };
+    }
+    case 'nextQuarter': {
+      const nq = currentQuarter === 4 ? 1 : currentQuarter + 1;
+      const ny = currentQuarter === 4 ? currentYear + 1 : currentYear;
+      const qStart = new Date(ny, (nq - 1) * 3, 1);
+      const qEnd = new Date(ny, nq * 3, 0);
+      return { start: fmt(qStart), end: fmt(qEnd) };
+    }
+    case 'thisFiscalQuarter': {
+      const fqStartMonth = FISCAL_YEAR_START_MONTH + ((fiscalQuarter - 1) * 3);
+      const fqStartYear = fqStartMonth > 11 ? fiscalYear + 1 : fiscalYear;
+      const actualStartMonth = fqStartMonth % 12;
+      const fqEndMonth = actualStartMonth + 2;
+      const fqEndYear = fqEndMonth > 11 ? fqStartYear + 1 : fqStartYear;
+      const qStart = new Date(fqStartYear, actualStartMonth, 1);
+      const qEnd = new Date(fqEndYear, (fqEndMonth % 12) + 1, 0);
+      return { start: fmt(qStart), end: fmt(qEnd) };
+    }
+    case 'thisYear': {
+      return { start: `${currentYear}-01-01`, end: `${currentYear}-12-31` };
+    }
+    case 'lastYear': {
+      return { start: `${currentYear - 1}-01-01`, end: `${currentYear - 1}-12-31` };
+    }
+    case 'thisFiscalYear': {
+      const fyStart = new Date(fiscalYear, FISCAL_YEAR_START_MONTH, 1);
+      const fyEnd = new Date(fiscalYear + 1, FISCAL_YEAR_START_MONTH, 0);
+      return { start: fmt(fyStart), end: fmt(fyEnd) };
+    }
+    case 'custom': {
+      if (startDate && endDate) return { start: startDate, end: endDate };
+      if (startDate) return { start: startDate, end: fmt(now) };
+      if (endDate) return { start: `${currentYear}-01-01`, end: endDate };
+      const cqStart = new Date(currentYear, (currentQuarter - 1) * 3, 1);
+      const cqEnd = new Date(currentYear, currentQuarter * 3, 0);
+      return { start: fmt(cqStart), end: fmt(cqEnd) };
+    }
+    default: {
+      // Default to current quarter
+      const qStart = new Date(currentYear, (currentQuarter - 1) * 3, 1);
+      const qEnd = new Date(currentYear, currentQuarter * 3, 0);
+      return { start: fmt(qStart), end: fmt(qEnd) };
+    }
+  }
+}
+
+/**
+ * Fetch quota from Salesforce ForecastingQuota object for one or more users.
+ * Sums QuotaAmount for all matching records in the given period.
+ */
+async function fetchForecastingQuota(
+  connection: Connection,
+  userIds: string[],
+  dateRange?: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<number> {
+  try {
+    const period = getPeriodDates(dateRange, startDate, endDate);
+    const userFilter = userIds.length === 1
+      ? `QuotaOwnerId = '${userIds[0]}'`
+      : `QuotaOwnerId IN ('${userIds.join("','")}')`;
+
+    const query = `
+      SELECT QuotaOwnerId, QuotaAmount, StartDate
+      FROM ForecastingQuota
+      WHERE ${userFilter}
+        AND StartDate >= ${period.start}
+        AND StartDate <= ${period.end}
+        AND IsQuantity = false
+      ORDER BY StartDate
+    `;
+
+    const result = await connection.query(query);
+    return (result.records as any[]).reduce((sum, rec) => sum + (rec.QuotaAmount || 0), 0);
+  } catch (err) {
+    console.log('Could not fetch ForecastingQuota from Salesforce:', err);
+    return 0;
+  }
+}
 
 // Activity Timeline for Deal Workspace
 export interface TimelineActivity {

@@ -14,7 +14,7 @@ interface PipelineForecast {
   bestCaseLabel: string;
   quotaTarget: number;
   quotaAttainment: number;
-  quotaSource: 'salesforce' | 'manual' | 'none';
+  quotaSource: 'salesforce' | 'forecastingQuota' | 'manual' | 'none';
   opportunitiesByStage: {
     stageName: string;
     count: number;
