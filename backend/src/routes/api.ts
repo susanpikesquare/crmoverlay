@@ -629,7 +629,7 @@ router.get('/dashboard/sales-leader', isAuthenticated, async (req: Request, res:
       filters.includeAll = true;
     }
 
-    const data = await HubData.getSalesLeaderDashboard(connection, userId, filters);
+    const data = await HubData.getSalesLeaderDashboard(connection, userId, filters, pool);
 
     res.json({
       success: true,
@@ -662,7 +662,7 @@ router.get('/hub/sales-leader/priorities', isAuthenticated, async (req: Request,
       });
     }
 
-    const priorities = await HubData.getTeamPriorities(connection, userId);
+    const priorities = await HubData.getTeamPriorities(connection, userId, pool);
 
     res.json({
       success: true,
