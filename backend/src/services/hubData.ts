@@ -1996,12 +1996,12 @@ export async function getPipelineForecast(
       ORDER BY CloseDate ASC
     `;
 
-    // Query closed-won for the period
+    // Query closed-won for the period (use IsWon for reliability across orgs)
     const closedWonQuery = `
       SELECT Id, ${amountField}, ${forecastCategoryField}
       FROM Opportunity
       WHERE OwnerId = '${userId}'
-        AND StageName = 'Closed Won'
+        AND IsWon = true
         AND ${dateFilter}
         ${typeFilter}
     `;
@@ -2370,12 +2370,12 @@ export async function getTeamPipelineForecast(
       ORDER BY CloseDate ASC
     `;
 
-    // Query closed-won opportunities for the period
+    // Query closed-won opportunities for the period (use IsWon for reliability across orgs)
     const closedWonQuery = `
       SELECT Id, ${amountField}, ${forecastCategoryField}
       FROM Opportunity
       WHERE ${ownerFilter}
-        AND StageName = 'Closed Won'
+        AND IsWon = true
         AND ${dateFilter}
         ${minDealFilter}
         ${typeFilter}
