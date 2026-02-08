@@ -295,16 +295,16 @@ export async function getHighPriorityAccounts(
   return accounts.map(account => ({
     ...account,
     // Map 6sense Intent Score to Priority Score
-    Priority_Score__c: account.accountIntentScore6sense__c || account.Priority_Score__c || 90,
+    Priority_Score__c: account.accountIntentScore6sense__c || account.Priority_Score__c,
     // Map Buying Stage to Priority Tier
-    Priority_Tier__c: account.accountBuyingStage6sense__c || account.Priority_Tier__c || '🔥 Hot',
+    Priority_Tier__c: account.accountBuyingStage6sense__c || account.Priority_Tier__c,
     // Map 6sense fields for display
     SixSense_Intent_Score__c: account.accountIntentScore6sense__c,
     SixSense_Buying_Stage__c: account.accountBuyingStage6sense__c,
-    Clay_Employee_Count__c: account.Clay_Employee_Count__c || 1000,
-    Clay_Employee_Growth_Pct__c: account.Clay_Employee_Growth_Pct__c || 15,
-    Clay_Current_LMS__c: account.Clay_Current_LMS__c || 'Unknown',
-    Clay_Active_Signals__c: account.Clay_Active_Signals__c || '',
+    Clay_Employee_Count__c: account.Clay_Employee_Count__c || account.NumberOfEmployees,
+    Clay_Employee_Growth_Pct__c: account.Clay_Employee_Growth_Pct__c,
+    Clay_Current_LMS__c: account.Clay_Current_LMS__c,
+    Clay_Active_Signals__c: account.Clay_Active_Signals__c,
   }));
 }
 
@@ -316,7 +316,7 @@ export async function getAllAccounts(
   userId: string
 ): Promise<Account[]> {
   const primaryQuery = `
-    SELECT Id, Name, Industry, OwnerId,
+    SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
            ParentId, Parent.Name,
            accountBuyingStage6sense__c, accountIntentScore6sense__c,
            accountProfileFit6sense__c, accountProfileScore6sense__c,
@@ -329,7 +329,7 @@ export async function getAllAccounts(
   `;
 
   const fallbackQuery = `
-    SELECT Id, Name, Industry, OwnerId, ParentId, CreatedDate, LastModifiedDate
+    SELECT Id, Name, Industry, OwnerId, NumberOfEmployees, ParentId, CreatedDate, LastModifiedDate
     FROM Account
     WHERE OwnerId = '${userId}'
     ORDER BY LastModifiedDate DESC
@@ -341,12 +341,12 @@ export async function getAllAccounts(
   // Map 6sense fields to frontend-expected field names
   return accounts.map(account => ({
     ...account,
-    Priority_Score__c: account.accountIntentScore6sense__c || Math.floor(Math.random() * 40) + 60,
-    Priority_Tier__c: account.accountBuyingStage6sense__c || '🔶 Warm',
+    Priority_Score__c: account.accountIntentScore6sense__c,
+    Priority_Tier__c: account.accountBuyingStage6sense__c,
     SixSense_Intent_Score__c: account.accountIntentScore6sense__c,
     SixSense_Buying_Stage__c: account.accountBuyingStage6sense__c,
-    Clay_Employee_Count__c: account.Clay_Employee_Count__c || 500,
-    Clay_Employee_Growth_Pct__c: account.Clay_Employee_Growth_Pct__c || 10,
+    Clay_Employee_Count__c: account.Clay_Employee_Count__c || account.NumberOfEmployees,
+    Clay_Employee_Growth_Pct__c: account.Clay_Employee_Growth_Pct__c,
   }));
 }
 
@@ -404,8 +404,8 @@ export async function getAccountById(
   // Map 6sense fields to frontend-expected field names
   return {
     ...account,
-    Priority_Score__c: account.accountIntentScore6sense__c || 85,
-    Priority_Tier__c: account.accountBuyingStage6sense__c || '🔥 Hot',
+    Priority_Score__c: account.accountIntentScore6sense__c,
+    Priority_Tier__c: account.accountBuyingStage6sense__c,
     SixSense_Intent_Score__c: account.accountIntentScore6sense__c,
     SixSense_Buying_Stage__c: account.accountBuyingStage6sense__c,
     Clay_Employee_Count__c: account.Clay_Employee_Count__c || account.NumberOfEmployees,
@@ -452,15 +452,11 @@ export async function getAtRiskOpportunities(
 
   const opportunities = await safeQuery<Opportunity>(connection, primaryQuery, fallbackQuery);
 
-  // Add mock values for missing custom fields
   return opportunities.map(opp => ({
     ...opp,
     Account: {
       Name: opp.Account?.Name || 'Unknown Account',
     },
-    DaysInStage__c: opp.DaysInStage__c || 30,
-    IsAtRisk__c: opp.IsAtRisk__c !== undefined ? opp.IsAtRisk__c : true,
-    MEDDPICC_Overall_Score__c: opp.MEDDPICC_Overall_Score__c || 45,
   }));
 }
 
@@ -495,15 +491,11 @@ export async function getAllOpportunities(
 
   const opportunities = await safeQuery<Opportunity>(connection, primaryQuery, fallbackQuery);
 
-  // Add mock values for missing custom fields
   return opportunities.map(opp => ({
     ...opp,
     Account: {
       Name: opp.Account?.Name || 'Unknown Account',
     },
-    DaysInStage__c: opp.DaysInStage__c || Math.floor(Math.random() * 60),
-    IsAtRisk__c: opp.IsAtRisk__c !== undefined ? opp.IsAtRisk__c : false,
-    MEDDPICC_Overall_Score__c: opp.MEDDPICC_Overall_Score__c || Math.floor(Math.random() * 40) + 50,
   }));
 }
 
@@ -553,7 +545,6 @@ export async function getOpportunityById(
 
   const opp = opportunities[0];
 
-  // Add mock values for missing custom fields
   return {
     ...opp,
     Account: {
@@ -564,17 +555,6 @@ export async function getOpportunityById(
       Name: opp.Owner?.Name || 'Unknown Owner',
       Email: opp.Owner?.Email,
     },
-    DaysInStage__c: opp.DaysInStage__c || 20,
-    IsAtRisk__c: opp.IsAtRisk__c !== undefined ? opp.IsAtRisk__c : false,
-    MEDDPICC_Metrics__c: opp.MEDDPICC_Metrics__c || 70,
-    MEDDPICC_Economic_Buyer__c: opp.MEDDPICC_Economic_Buyer__c || 65,
-    MEDDPICC_Decision_Criteria__c: opp.MEDDPICC_Decision_Criteria__c || 75,
-    MEDDPICC_Decision_Process__c: opp.MEDDPICC_Decision_Process__c || 60,
-    MEDDPICC_Paper_Process__c: opp.MEDDPICC_Paper_Process__c || 55,
-    MEDDPICC_Identify_Pain__c: opp.MEDDPICC_Identify_Pain__c || 80,
-    MEDDPICC_Champion__c: opp.MEDDPICC_Champion__c || 70,
-    MEDDPICC_Competition__c: opp.MEDDPICC_Competition__c || 50,
-    MEDDPICC_Overall_Score__c: opp.MEDDPICC_Overall_Score__c || 66,
   };
 }
 
@@ -606,11 +586,8 @@ export async function getOpportunitiesByAccountId(
 
   const opportunities = await safeQuery<Opportunity>(connection, primaryQuery, fallbackQuery);
 
-  // Add mock values for missing custom fields
   return opportunities.map(opp => ({
     ...opp,
-    IsAtRisk__c: opp.IsAtRisk__c !== undefined ? opp.IsAtRisk__c : false,
-    MEDDPICC_Overall_Score__c: opp.MEDDPICC_Overall_Score__c || Math.floor(Math.random() * 40) + 50,
   }));
 }
 

@@ -738,7 +738,7 @@ export async function getRenewalAccounts(
           : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000); // Default to 90 days out
 
         const daysToRenewal = Math.ceil((renewalDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        const healthScore = account.Current_Gainsight_Score__c || 70;
+        const healthScore = account.Current_Gainsight_Score__c || 0;
         const risk = account.Risk__c || 'Green';
 
         let renewalRisk: 'At Risk' | 'On Track' | 'Expansion Opportunity';
@@ -791,8 +791,8 @@ export async function getRenewalAccounts(
               recordId: account.Id,
               data: {
                 healthScore,
-                usagePercent: 85, // Mock - would come from actual usage data
-                employeeGrowth: 20, // Mock - would calculate from historical data
+                usagePercent: account.License_Utilization_Max__c || 0,
+                employeeGrowth: 0,
                 currentValue: account.Total_ARR__c || 0,
               },
               promptType: 'am_expansion',
@@ -876,7 +876,7 @@ export async function getCSMMetrics(
       accountsAtRisk: (atRisk.records[0] as any)?.total || 0,
       avgHealthScore: (avgHealth.records[0] as any)?.avg || 0,
       upcomingRenewals: (upcomingRenewals.records[0] as any)?.total || 0,
-      adoptionTrend: 5, // Mock - would calculate from historical usage data
+      adoptionTrend: 0,
     };
   } catch (error) {
     console.error('Error fetching CSM metrics:', error);
@@ -1483,14 +1483,14 @@ export async function getSalesLeaderDashboard(
     const atRiskValue = atRiskDeals.reduce((sum, opp) => sum + (opp.Amount || 0), 0);
 
     // Calculate average deal cycle (from created to closed for won deals this year)
-    const avgDealCycleDays = 45; // Mock - would calculate from actual closed deals
-    const avgDealCycleTrend = -5; // Mock - would compare to previous period
+    const avgDealCycleDays = 0;
+    const avgDealCycleTrend = 0;
 
     // Build rep performance leaderboard
     const repPerformance = teamMembers.map(rep => {
       const repClosedWon = closedWonByRep.find(r => r.OwnerId === rep.Id);
       const closedWonAmount = repClosedWon?.total || 0;
-      const repQuota = 1000000; // $1M - should come from user quota field
+      const repQuota = 0;
       const quotaAttainment = repQuota > 0 ? (closedWonAmount / repQuota) * 100 : 0;
 
       const repPipeline = allPipeline.filter(opp => opp.OwnerId === rep.Id);
@@ -1614,8 +1614,7 @@ export async function getSalesLeaderDashboard(
       lossReason: opp.Loss_Reason__c || 'Unknown',
     }));
 
-    // Mock trend calculation (would compare to last month)
-    const quotaTrend = 5; // +5% vs last month
+    const quotaTrend = 0;
 
     return {
       teamMetrics: {
