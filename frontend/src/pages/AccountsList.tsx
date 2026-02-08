@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import apiClient from '../services/api';
@@ -14,12 +14,21 @@ interface Account {
   Clay_Employee_Growth_Pct__c: number;
   SixSense_Intent_Score__c: number;
   SixSense_Buying_Stage__c: string;
+  ParentId?: string;
+  Parent?: { Name: string };
+}
+
+interface AccountGroup {
+  parent: Account;
+  children: Account[];
+  isStandalone: boolean;
 }
 
 export default function AccountsList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [sortBy, setSortBy] = useState<'priority' | 'intent' | 'name'>('priority');
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
     queryKey: ['allAccounts'],
@@ -48,8 +57,51 @@ export default function AccountsList() {
     }
   };
 
-  const filteredAndSortedAccounts = () => {
-    if (!data) return [];
+  const toggleParentExpand = (parentId: string) => {
+    setExpandedParents(prev => {
+      const next = new Set(prev);
+      if (next.has(parentId)) {
+        next.delete(parentId);
+      } else {
+        next.add(parentId);
+      }
+      return next;
+    });
+  };
+
+  const buildAccountGroups = (accounts: Account[]): AccountGroup[] => {
+    const accountIds = new Set(accounts.map(a => a.Id));
+    const childrenByParent = new Map<string, Account[]>();
+    const standaloneOrParent: Account[] = [];
+    const childIds = new Set<string>();
+
+    // First pass: identify children whose parent is in the dataset
+    for (const acc of accounts) {
+      if (acc.ParentId && accountIds.has(acc.ParentId)) {
+        const siblings = childrenByParent.get(acc.ParentId) || [];
+        siblings.push(acc);
+        childrenByParent.set(acc.ParentId, siblings);
+        childIds.add(acc.Id);
+      }
+    }
+
+    // Second pass: collect parents and standalone accounts
+    for (const acc of accounts) {
+      if (!childIds.has(acc.Id)) {
+        standaloneOrParent.push(acc);
+      }
+    }
+
+    // Build groups
+    return standaloneOrParent.map(acc => ({
+      parent: acc,
+      children: childrenByParent.get(acc.Id) || [],
+      isStandalone: !childrenByParent.has(acc.Id),
+    }));
+  };
+
+  const { groups, totalAccounts } = useMemo(() => {
+    if (!data) return { groups: [] as AccountGroup[], totalAccounts: 0 };
 
     let filtered = [...data];
 
@@ -59,22 +111,22 @@ export default function AccountsList() {
       filtered = filtered.filter(
         (acc) =>
           acc.Name.toLowerCase().includes(search) ||
-          acc.Industry.toLowerCase().includes(search)
+          (acc.Industry && acc.Industry.toLowerCase().includes(search))
       );
     }
 
     // Apply priority filter
     if (priorityFilter !== 'all') {
-      filtered = filtered.filter((acc) => acc.Priority_Tier__c.includes(priorityFilter));
+      filtered = filtered.filter((acc) => acc.Priority_Tier__c?.includes(priorityFilter));
     }
 
     // Apply sorting
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'priority':
-          return b.Priority_Score__c - a.Priority_Score__c;
+          return (b.Priority_Score__c || 0) - (a.Priority_Score__c || 0);
         case 'intent':
-          return b.SixSense_Intent_Score__c - a.SixSense_Intent_Score__c;
+          return (b.SixSense_Intent_Score__c || 0) - (a.SixSense_Intent_Score__c || 0);
         case 'name':
           return a.Name.localeCompare(b.Name);
         default:
@@ -82,8 +134,85 @@ export default function AccountsList() {
       }
     });
 
-    return filtered;
-  };
+    return {
+      groups: buildAccountGroups(filtered),
+      totalAccounts: filtered.length,
+    };
+  }, [data, searchTerm, priorityFilter, sortBy]);
+
+  const renderAccountRow = (account: Account, isChild: boolean = false) => (
+    <tr
+      key={account.Id}
+      className={`hover:bg-gray-50 transition-colors cursor-pointer ${isChild ? 'bg-gray-50/50' : ''}`}
+      onClick={() => window.location.href = `/account/${account.Id}`}
+    >
+      {/* Chevron column */}
+      <td className="w-8 px-2 py-4">
+        {/* Placeholder — only parent rows use this */}
+      </td>
+      <td className="px-6 py-4">
+        <div className={isChild ? 'pl-6' : ''}>
+          {isChild && (
+            <span className="text-gray-400 mr-2 text-xs">└</span>
+          )}
+          <Link
+            to={`/account/${account.Id}`}
+            className={`text-blue-600 hover:text-blue-800 font-medium ${isChild ? 'text-sm' : ''}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {account.Name}
+          </Link>
+        </div>
+      </td>
+      <td className={`px-6 py-4 text-gray-900 ${isChild ? 'text-sm' : ''}`}>{account.Industry}</td>
+      <td className="px-6 py-4">
+        <div className="flex items-center gap-2">
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
+              account.Priority_Tier__c || ''
+            )}`}
+          >
+            {account.Priority_Tier__c}
+          </span>
+          <span className="text-sm text-gray-600">
+            {account.Priority_Score__c}
+          </span>
+        </div>
+      </td>
+      <td className="px-6 py-4">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
+            <div
+              className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
+              style={{ width: `${account.SixSense_Intent_Score__c || 0}%` }}
+            ></div>
+          </div>
+          <span className="text-sm font-medium text-gray-900">
+            {account.SixSense_Intent_Score__c}
+          </span>
+        </div>
+      </td>
+      <td className="px-6 py-4">
+        <span
+          className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(
+            account.SixSense_Buying_Stage__c || ''
+          )}`}
+        >
+          {account.SixSense_Buying_Stage__c}
+        </span>
+      </td>
+      <td className="px-6 py-4">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-900">
+            {(account.Clay_Employee_Count__c || 0).toLocaleString()}
+          </span>
+          <span className="text-xs text-green-600 font-medium">
+            +{account.Clay_Employee_Growth_Pct__c || 0}%
+          </span>
+        </div>
+      </td>
+    </tr>
+  );
 
   if (isLoading) {
     return (
@@ -98,7 +227,7 @@ export default function AccountsList() {
     );
   }
 
-  const accounts = filteredAndSortedAccounts();
+  const groupCount = groups.filter(g => !g.isStandalone).length;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -107,7 +236,8 @@ export default function AccountsList() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">All Accounts</h1>
           <p className="text-gray-600">
-            {accounts.length} account{accounts.length !== 1 ? 's' : ''} found
+            {totalAccounts} account{totalAccounts !== 1 ? 's' : ''} found
+            {groupCount > 0 && ` (${groupCount} parent group${groupCount !== 1 ? 's' : ''})`}
           </p>
         </div>
 
@@ -169,6 +299,7 @@ export default function AccountsList() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="w-8 px-2 py-4"></th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                     Account Name
                   </th>
@@ -190,73 +321,172 @@ export default function AccountsList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {accounts.map((account) => (
-                  <tr
-                    key={account.Id}
-                    className="hover:bg-gray-50 transition-colors cursor-pointer"
-                    onClick={() => window.location.href = `/account/${account.Id}`}
-                  >
-                    <td className="px-6 py-4">
-                      <Link
-                        to={`/account/${account.Id}`}
-                        className="text-blue-600 hover:text-blue-800 font-medium"
+                {groups.map((group) => {
+                  const isExpanded = expandedParents.has(group.parent.Id);
+                  const hasChildren = group.children.length > 0;
+
+                  return (
+                    <React.Fragment key={group.parent.Id}>
+                      {/* Parent / standalone row */}
+                      <tr
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => window.location.href = `/account/${group.parent.Id}`}
                       >
-                        {account.Name}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-4 text-gray-900">{account.Industry}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
-                            account.Priority_Tier__c
-                          )}`}
+                        {/* Chevron column */}
+                        <td className="w-8 px-2 py-4 text-center">
+                          {hasChildren && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleParentExpand(group.parent.Id);
+                              }}
+                              className="text-gray-400 hover:text-gray-700 text-sm focus:outline-none"
+                            >
+                              {isExpanded ? '▼' : '▶'}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <Link
+                              to={`/account/${group.parent.Id}`}
+                              className="text-blue-600 hover:text-blue-800 font-medium"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {group.parent.Name}
+                            </Link>
+                            {hasChildren && (
+                              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                                {group.children.length}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-900">{group.parent.Industry}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
+                                group.parent.Priority_Tier__c || ''
+                              )}`}
+                            >
+                              {group.parent.Priority_Tier__c}
+                            </span>
+                            <span className="text-sm text-gray-600">
+                              {group.parent.Priority_Score__c}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
+                              <div
+                                className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
+                                style={{ width: `${group.parent.SixSense_Intent_Score__c || 0}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-sm font-medium text-gray-900">
+                              {group.parent.SixSense_Intent_Score__c}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(
+                              group.parent.SixSense_Buying_Stage__c || ''
+                            )}`}
+                          >
+                            {group.parent.SixSense_Buying_Stage__c}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-900">
+                              {(group.parent.Clay_Employee_Count__c || 0).toLocaleString()}
+                            </span>
+                            <span className="text-xs text-green-600 font-medium">
+                              +{group.parent.Clay_Employee_Growth_Pct__c || 0}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Child rows (visible when expanded) */}
+                      {hasChildren && isExpanded && group.children.map((child) => (
+                        <tr
+                          key={child.Id}
+                          className="hover:bg-blue-50/50 transition-colors cursor-pointer bg-gray-50/60"
+                          onClick={() => window.location.href = `/account/${child.Id}`}
                         >
-                          {account.Priority_Tier__c}
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          {account.Priority_Score__c}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
-                          <div
-                            className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
-                            style={{ width: `${account.SixSense_Intent_Score__c}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-sm font-medium text-gray-900">
-                          {account.SixSense_Intent_Score__c}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(
-                          account.SixSense_Buying_Stage__c
-                        )}`}
-                      >
-                        {account.SixSense_Buying_Stage__c}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-900">
-                          {account.Clay_Employee_Count__c.toLocaleString()}
-                        </span>
-                        <span className="text-xs text-green-600 font-medium">
-                          +{account.Clay_Employee_Growth_Pct__c}%
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <td className="w-8 px-2 py-3"></td>
+                          <td className="px-6 py-3">
+                            <div className="pl-6 flex items-center">
+                              <span className="text-gray-400 mr-2 text-xs">└</span>
+                              <Link
+                                to={`/account/${child.Id}`}
+                                className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {child.Name}
+                              </Link>
+                            </div>
+                          </td>
+                          <td className="px-6 py-3 text-gray-900 text-sm">{child.Industry}</td>
+                          <td className="px-6 py-3">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
+                                  child.Priority_Tier__c || ''
+                                )}`}
+                              >
+                                {child.Priority_Tier__c}
+                              </span>
+                              <span className="text-sm text-gray-600">
+                                {child.Priority_Score__c}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
+                                <div
+                                  className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
+                                  style={{ width: `${child.SixSense_Intent_Score__c || 0}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">
+                                {child.SixSense_Intent_Score__c}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-3">
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(
+                                child.SixSense_Buying_Stage__c || ''
+                              )}`}
+                            >
+                              {child.SixSense_Buying_Stage__c}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-900 text-sm">
+                                {(child.Clay_Employee_Count__c || 0).toLocaleString()}
+                              </span>
+                              <span className="text-xs text-green-600 font-medium">
+                                +{child.Clay_Employee_Growth_Pct__c || 0}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
 
-            {accounts.length === 0 && (
+            {groups.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-gray-600">No accounts found matching your criteria.</p>
               </div>

@@ -16,10 +16,14 @@ interface Opportunity {
   Probability: number;
 }
 
+const HIDDEN_STAGES = ['closed lost', 'abandoned'];
+const CLOSED_STAGE_OPTIONS = ['Closed Won', 'Closed Lost', 'Abandoned'];
+
 export default function OpportunitiesList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
   const [atRiskOnly, setAtRiskOnly] = useState(false);
+  const [hideClosedLost, setHideClosedLost] = useState(true);
   const [sortBy, setSortBy] = useState<'closeDate' | 'amount' | 'name'>('closeDate');
 
   const { data, isLoading } = useQuery({
@@ -40,6 +44,14 @@ export default function OpportunitiesList() {
   });
 
   const opportunityStages = configData?.opportunityStages || ['Discovery', 'Value Confirmation', 'Negotiation'];
+
+  // Build combined stage list: admin stages + closed stage options (deduped)
+  const allStageOptions = [...opportunityStages];
+  for (const stage of CLOSED_STAGE_OPTIONS) {
+    if (!allStageOptions.includes(stage)) {
+      allStageOptions.push(stage);
+    }
+  }
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -70,6 +82,8 @@ export default function OpportunitiesList() {
         return 'bg-emerald-100 text-emerald-800';
       case 'Closed Lost':
         return 'bg-red-100 text-red-800';
+      case 'Abandoned':
+        return 'bg-gray-200 text-gray-700';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -81,10 +95,25 @@ export default function OpportunitiesList() {
     return 'text-red-600';
   };
 
+  const handleStageFilterChange = (value: string) => {
+    setStageFilter(value);
+    // If user explicitly selects a closed/abandoned stage, auto-disable the hide toggle
+    if (HIDDEN_STAGES.includes(value.toLowerCase())) {
+      setHideClosedLost(false);
+    }
+  };
+
   const filteredAndSortedOpportunities = () => {
     if (!data) return [];
 
     let filtered = [...data];
+
+    // Apply hide closed/lost filter
+    if (hideClosedLost) {
+      filtered = filtered.filter(
+        (opp) => !HIDDEN_STAGES.includes(opp.StageName?.toLowerCase())
+      );
+    }
 
     // Apply search filter
     if (searchTerm) {
@@ -151,7 +180,7 @@ export default function OpportunitiesList() {
 
         {/* Filters */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {/* Search */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -173,11 +202,11 @@ export default function OpportunitiesList() {
               </label>
               <select
                 value={stageFilter}
-                onChange={(e) => setStageFilter(e.target.value)}
+                onChange={(e) => handleStageFilterChange(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Stages</option>
-                {opportunityStages.map((stage: string) => (
+                {allStageOptions.map((stage: string) => (
                   <option key={stage} value={stage}>
                     {stage}
                   </option>
@@ -199,6 +228,23 @@ export default function OpportunitiesList() {
                 }`}
               >
                 {atRiskOnly ? 'At-Risk Only' : 'Show All'}
+              </button>
+            </div>
+
+            {/* Closed/Lost Toggle */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Closed/Lost
+              </label>
+              <button
+                onClick={() => setHideClosedLost(!hideClosedLost)}
+                className={`w-full px-4 py-2 rounded-lg font-medium transition ${
+                  hideClosedLost
+                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-orange-600 text-white'
+                }`}
+              >
+                {hideClosedLost ? 'Hidden' : 'Showing'}
               </button>
             </div>
 

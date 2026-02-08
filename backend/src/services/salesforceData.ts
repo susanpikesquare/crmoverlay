@@ -13,6 +13,8 @@ export interface Account {
   Name: string;
   Industry?: string;
   OwnerId?: string;
+  ParentId?: string;
+  Parent?: { Name: string };
 
   // Standard Salesforce Account fields
   NumberOfEmployees?: number;
@@ -315,6 +317,7 @@ export async function getAllAccounts(
 ): Promise<Account[]> {
   const primaryQuery = `
     SELECT Id, Name, Industry, OwnerId,
+           ParentId, Parent.Name,
            accountBuyingStage6sense__c, accountIntentScore6sense__c,
            accountProfileFit6sense__c, accountProfileScore6sense__c,
            accountReachScore6sense__c, X6Sense_Segments__c,
@@ -326,7 +329,7 @@ export async function getAllAccounts(
   `;
 
   const fallbackQuery = `
-    SELECT Id, Name, Industry, OwnerId, CreatedDate, LastModifiedDate
+    SELECT Id, Name, Industry, OwnerId, ParentId, CreatedDate, LastModifiedDate
     FROM Account
     WHERE OwnerId = '${userId}'
     ORDER BY LastModifiedDate DESC
