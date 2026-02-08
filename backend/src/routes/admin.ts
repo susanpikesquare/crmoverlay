@@ -6,6 +6,7 @@ import { createConnection } from '../config/salesforce';
 import { pool } from '../config/database';
 import { AdminSettingsService } from '../services/adminSettings';
 import AIApiKey, { AIProvider } from '../models/AIApiKey';
+import { aiService } from '../services/aiService';
 
 const router = Router();
 
@@ -393,8 +394,15 @@ router.get('/salesforce/fields', async (req: Request, res: Response) => {
 
     // Describe Account object
     const accountDescribe = await connection.sobject('Account').describe();
+    const standardAccountFields = [
+      'Name', 'Industry', 'Type', 'AnnualRevenue', 'NumberOfEmployees',
+      'OwnerId', 'Owner.Name', 'Website', 'Phone', 'BillingState',
+      'BillingCountry', 'Rating', 'AccountSource', 'Description',
+      'LastActivityDate', 'LastModifiedDate', 'CreatedDate',
+      'ParentId', 'Sic', 'TickerSymbol',
+    ];
     const accountFields = accountDescribe.fields
-      .filter((field: any) => field.custom || ['Name', 'Industry', 'Type'].includes(field.name))
+      .filter((field: any) => field.custom || standardAccountFields.includes(field.name))
       .map((field: any) => ({
         name: field.name,
         label: field.label,
@@ -403,9 +411,17 @@ router.get('/salesforce/fields', async (req: Request, res: Response) => {
       }));
 
     // Describe Opportunity object
+    const standardOppFields = [
+      'Name', 'StageName', 'Amount', 'CloseDate', 'Probability',
+      'ForecastCategory', 'Type', 'LeadSource', 'NextStep',
+      'OwnerId', 'Owner.Name', 'IsClosed', 'IsWon',
+      'LastActivityDate', 'LastModifiedDate', 'CreatedDate',
+      'ExpectedRevenue', 'TotalOpportunityQuantity', 'Description',
+      'AccountId', 'CampaignId', 'Pricebook2Id',
+    ];
     const opportunityDescribe = await connection.sobject('Opportunity').describe();
     const opportunityFields = opportunityDescribe.fields
-      .filter((field: any) => field.custom || ['Name', 'StageName', 'Amount', 'CloseDate'].includes(field.name))
+      .filter((field: any) => field.custom || standardOppFields.includes(field.name))
       .map((field: any) => ({
         name: field.name,
         label: field.label,
@@ -573,6 +589,9 @@ router.post('/ai-api-keys', async (req: Request, res: Response) => {
       existingKey.isActive = true;
       await existingKey.save();
 
+      // Reinitialize AI service to pick up the new key
+      await aiService.reinitialize();
+
       res.json({
         success: true,
         data: {
@@ -591,6 +610,9 @@ router.post('/ai-api-keys', async (req: Request, res: Response) => {
         isActive: true,
         lastUsedAt: null,
       });
+
+      // Reinitialize AI service to pick up the new key
+      await aiService.reinitialize();
 
       res.json({
         success: true,
@@ -638,6 +660,9 @@ router.delete('/ai-api-keys/:provider', async (req: Request, res: Response) => {
     });
 
     if (deleted) {
+      // Reinitialize AI service to reflect the removed key
+      await aiService.reinitialize();
+
       res.json({
         success: true,
         message: `${provider} API key deleted successfully`,

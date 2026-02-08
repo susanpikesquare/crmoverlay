@@ -36,14 +36,22 @@ export interface PriorityComponent {
   }>;
 }
 
+export interface TierThresholds {
+  hot: { min: number; max: number };
+  warm: { min: number; max: number };
+  cool: { min: number; max: number };
+  cold: { min: number; max: number };
+}
+
+export interface RoleConfig {
+  componentWeights: Record<string, number>; // component.id -> weight override
+  thresholds: TierThresholds;
+}
+
 export interface PriorityConfig {
   components: PriorityComponent[];
-  thresholds: {
-    hot: { min: number; max: number };
-    warm: { min: number; max: number };
-    cool: { min: number; max: number };
-    cold: { min: number; max: number };
-  };
+  thresholds: TierThresholds;
+  roleConfigs?: Record<string, RoleConfig>; // 'ae' | 'am' | 'csm' -> role-specific config
 }
 
 export interface FieldMapping {
@@ -242,10 +250,23 @@ export function updateRiskRules(rules: RiskRule[], modifiedBy: string): AppConfi
  * Update priority scoring configuration
  */
 export function updatePriorityScoring(config: PriorityConfig, modifiedBy: string): AppConfig {
-  // Validate weights sum to 100
+  // Validate default weights sum to 100
   const totalWeight = config.components.reduce((sum, comp) => sum + comp.weight, 0);
   if (Math.abs(totalWeight - 100) > 0.01) {
-    throw new Error(`Priority component weights must sum to 100%. Current total: ${totalWeight}%`);
+    throw new Error(`Default component weights must sum to 100%. Current total: ${totalWeight}%`);
+  }
+
+  // Validate role-specific weights sum to 100 for each role
+  if (config.roleConfigs) {
+    for (const [role, roleConfig] of Object.entries(config.roleConfigs)) {
+      const roleWeights = Object.values(roleConfig.componentWeights);
+      if (roleWeights.length > 0) {
+        const roleTotal = roleWeights.reduce((sum, w) => sum + w, 0);
+        if (Math.abs(roleTotal - 100) > 0.01) {
+          throw new Error(`${role.toUpperCase()} component weights must sum to 100%. Current total: ${roleTotal}%`);
+        }
+      }
+    }
   }
 
   currentConfig.priorityScoring = config;

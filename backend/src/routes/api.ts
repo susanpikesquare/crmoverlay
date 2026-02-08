@@ -493,6 +493,9 @@ router.get('/opportunities/:id/ai-summary', isAuthenticated, async (req: Request
     // Fetch activity timeline
     const activities = await HubData.getOpportunityTimeline(connection, id);
 
+    // Set Salesforce connection for Agentforce provider
+    aiService.setSalesforceConnection(connection);
+
     // Generate AI summary
     const summary = await aiService.generateDealSummary(opportunity, activities);
 
@@ -1589,6 +1592,9 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
         status: task.Status,
       })),
     };
+
+    // Set Salesforce connection for Agentforce provider
+    aiService.setSalesforceConnection(connection);
 
     const answer = await aiService.askQuestion(question, userData);
 

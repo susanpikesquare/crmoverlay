@@ -649,6 +649,27 @@ Provide ONLY the JSON response, no additional text.`;
     return contextInfo;
   }
 
+  /**
+   * Reinitialize the AI service from database config.
+   * Called when admin saves/deletes an API key so the running
+   * singleton picks up the new configuration without a restart.
+   */
+  public async reinitialize(): Promise<void> {
+    // Reset all clients
+    this.anthropicClient = null;
+    this.openaiClient = null;
+    this.geminiClient = null;
+    this.agentforceConfig = null;
+    this.provider = 'none' as AIProvider;
+    this.secondaryProvider = 'none';
+    this.model = '';
+    this.isInitialized = false;
+
+    this.initPromise = this.initializeAsync();
+    await this.initPromise;
+    console.log(`AI Service reinitialized. Provider: ${this.provider}`);
+  }
+
   // Get current provider configuration status
   public async getProviderStatus(): Promise<{
     primaryProvider: AIProvider;

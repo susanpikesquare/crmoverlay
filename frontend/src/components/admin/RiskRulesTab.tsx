@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useRef, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 
 interface RiskRule {
@@ -21,6 +21,13 @@ interface Props {
   onSave: (status: 'idle' | 'saving' | 'saved' | 'error') => void;
 }
 
+interface SalesforceField {
+  name: string;
+  label: string;
+  type: string;
+  custom: boolean;
+}
+
 const OPERATORS = [
   { value: '=', label: 'equals' },
   { value: '!=', label: 'not equals' },
@@ -39,11 +46,120 @@ const FLAG_OPTIONS = [
   { value: 'warning', label: 'Warning', color: 'bg-orange-100 text-orange-800 border-orange-300' },
 ];
 
+function FieldSelect({ value, onChange, fields, placeholder = "Select a field..." }: {
+  value: string;
+  onChange: (value: string) => void;
+  fields: SalesforceField[];
+  placeholder?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      setTimeout(() => searchInputRef.current?.focus(), 0);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const sortedFields = [...fields].sort((a, b) => a.label.localeCompare(b.label));
+  const filtered = sortedFields.filter(f => {
+    const s = searchTerm.toLowerCase();
+    return f.label.toLowerCase().includes(s) || f.name.toLowerCase().includes(s);
+  });
+  const selectedField = fields.find(f => f.name === value);
+
+  return (
+    <div className="relative flex-1" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-3 py-2 text-sm text-left border border-gray-300 rounded bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 flex items-center justify-between"
+      >
+        <span className={selectedField ? 'text-gray-900 truncate' : 'text-gray-400 truncate'}>
+          {selectedField ? `${selectedField.label} (${selectedField.name})` : value || placeholder}
+        </span>
+        <span className="text-gray-400 ml-1 flex-shrink-0">▼</span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-72 overflow-hidden">
+          <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search fields..."
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="overflow-y-auto max-h-56">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-gray-500 text-center">
+                No fields found matching "{searchTerm}"
+              </div>
+            ) : (
+              filtered.map(field => (
+                <button
+                  key={field.name}
+                  type="button"
+                  onClick={() => {
+                    onChange(field.name);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                  className={`w-full px-3 py-2 text-sm text-left hover:bg-blue-50 ${
+                    value === field.name ? 'bg-blue-100 font-medium' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>{field.label}</span>
+                    {field.custom && (
+                      <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Custom</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500 font-mono">{field.name}</div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RiskRulesTab({ config, onSave }: Props) {
   const queryClient = useQueryClient();
   const [rules, setRules] = useState<RiskRule[]>(config.riskRules || []);
   const [editingRule, setEditingRule] = useState<RiskRule | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Fetch available Salesforce fields
+  const { data: sfFieldsData } = useQuery({
+    queryKey: ['salesforceFields'],
+    queryFn: async () => {
+      const response = await api.get('/api/admin/salesforce/fields');
+      return response.data.data as { accountFields: SalesforceField[]; opportunityFields: SalesforceField[] };
+    },
+    retry: 1,
+  });
+
+  // Get fields for current object type
+  const getFieldsForObjectType = (objectType: 'Account' | 'Opportunity'): SalesforceField[] => {
+    if (!sfFieldsData) return [];
+    return objectType === 'Account' ? sfFieldsData.accountFields : sfFieldsData.opportunityFields;
+  };
 
   const updateRulesMutation = useMutation({
     mutationFn: async (updatedRules: RiskRule[]) => {
@@ -140,6 +256,12 @@ export default function RiskRulesTab({ config, onSave }: Props) {
     return FLAG_OPTIONS.find(f => f.value === flag)?.color || 'bg-gray-100 text-gray-800';
   };
 
+  const getFieldLabel = (fieldName: string, objectType: 'Account' | 'Opportunity') => {
+    const fields = getFieldsForObjectType(objectType);
+    const field = fields.find(f => f.name === fieldName);
+    return field ? field.label : fieldName;
+  };
+
   return (
     <div>
       {/* Header */}
@@ -166,6 +288,13 @@ export default function RiskRulesTab({ config, onSave }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Salesforce Fields Status */}
+      {!sfFieldsData && (
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+          Loading Salesforce fields... Field names can still be typed manually.
+        </div>
+      )}
 
       {/* Rules List */}
       <div className="space-y-4">
@@ -198,8 +327,8 @@ export default function RiskRulesTab({ config, onSave }: Props) {
                       {idx > 0 && (
                         <span className="font-medium text-blue-600 mr-2">{rule.logic}</span>
                       )}
-                      <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">
-                        {condition.field}
+                      <span className="font-mono bg-gray-100 px-2 py-0.5 rounded" title={condition.field}>
+                        {getFieldLabel(condition.field, rule.objectType)}
                       </span>
                       {' '}
                       <span className="text-gray-500">
@@ -286,7 +415,15 @@ export default function RiskRulesTab({ config, onSave }: Props) {
               </label>
               <select
                 value={editingRule.objectType}
-                onChange={(e) => setEditingRule({ ...editingRule, objectType: e.target.value as 'Account' | 'Opportunity' })}
+                onChange={(e) => {
+                  const newObjectType = e.target.value as 'Account' | 'Opportunity';
+                  // Clear condition fields when object type changes since available fields differ
+                  setEditingRule({
+                    ...editingRule,
+                    objectType: newObjectType,
+                    conditions: editingRule.conditions.map(c => ({ ...c, field: '' })),
+                  });
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="Account">Account</option>
@@ -339,38 +476,51 @@ export default function RiskRulesTab({ config, onSave }: Props) {
                 </button>
               </div>
 
+              {sfFieldsData && (
+                <p className="text-xs text-gray-500 mb-2">
+                  {editingRule.objectType === 'Account'
+                    ? `${sfFieldsData.accountFields.length} Account fields available`
+                    : `${sfFieldsData.opportunityFields.length} Opportunity fields available`
+                  }
+                </p>
+              )}
+
               <div className="space-y-3">
                 {editingRule.conditions.map((condition, idx) => (
-                  <div key={idx} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                    <input
-                      type="text"
-                      value={condition.field}
-                      onChange={(e) => handleUpdateCondition(idx, 'field', e.target.value)}
-                      placeholder="Field name (e.g., Current_Gainsight_Score__c)"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm"
-                    />
-                    <select
-                      value={condition.operator}
-                      onChange={(e) => handleUpdateCondition(idx, 'operator', e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded text-sm"
-                    >
-                      {OPERATORS.map(op => (
-                        <option key={op.value} value={op.value}>{op.label}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={condition.value}
-                      onChange={(e) => handleUpdateCondition(idx, 'value', e.target.value)}
-                      placeholder="Value"
-                      className="w-32 px-3 py-2 border border-gray-300 rounded text-sm"
-                    />
-                    <button
-                      onClick={() => handleRemoveCondition(idx)}
-                      className="px-2 py-1 text-red-600 hover:bg-red-50 rounded"
-                    >
-                      ✕
-                    </button>
+                  <div key={idx} className="p-3 bg-gray-50 rounded-lg">
+                    {idx > 0 && (
+                      <div className="text-xs font-medium text-blue-600 mb-2">{editingRule.logic}</div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <FieldSelect
+                        value={condition.field}
+                        onChange={(val) => handleUpdateCondition(idx, 'field', val)}
+                        fields={getFieldsForObjectType(editingRule.objectType)}
+                        placeholder="Select a field..."
+                      />
+                      <select
+                        value={condition.operator}
+                        onChange={(e) => handleUpdateCondition(idx, 'operator', e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded text-sm flex-shrink-0"
+                      >
+                        {OPERATORS.map(op => (
+                          <option key={op.value} value={op.value}>{op.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={condition.value}
+                        onChange={(e) => handleUpdateCondition(idx, 'value', e.target.value)}
+                        placeholder="Value"
+                        className="w-32 px-3 py-2 border border-gray-300 rounded text-sm flex-shrink-0"
+                      />
+                      <button
+                        onClick={() => handleRemoveCondition(idx)}
+                        className="px-2 py-1 text-red-600 hover:bg-red-50 rounded flex-shrink-0"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
