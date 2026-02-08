@@ -28,10 +28,18 @@ export interface CustomLink {
 }
 
 export interface ForecastConfig {
-  commitProbability: number;      // default 90
-  bestCaseProbability: number;    // default 70
-  pipelineProbability: number;    // default 30
+  forecastMethod: 'forecastCategory' | 'probability'; // How to group Commit/BestCase/Pipeline
+  commitProbabilityThreshold: number;   // For probability method: >= this = Commit (default 70)
+  bestCaseProbabilityThreshold: number; // For probability method: >= this = Best Case (default 50)
+  commitProbability: number;      // Weighted forecast % for Commit (default 90)
+  bestCaseProbability: number;    // Weighted forecast % for Best Case (default 70)
+  pipelineProbability: number;    // Weighted forecast % for Pipeline (default 30)
   stageWeights: Record<string, number>;  // e.g., { "Discovery": 10, "Negotiation": 80 }
+  quotaSource: 'salesforce' | 'manual' | 'none'; // Where to get quota/target data
+  salesforceQuotaField: string;   // SF field name for quota (default 'Quarterly_Quota__c')
+  quotaPeriod: 'quarterly' | 'annual'; // Quota period for SF-sourced quotas
+  manualQuotas: Record<string, number>; // userId -> quota amount for manual entry
+  defaultQuota: number;           // Fallback quota if user not in manualQuotas (0 = no target)
 }
 
 export interface HubSectionConfig {
@@ -279,21 +287,39 @@ export class AdminSettingsService {
       ['forecast_config']
     );
 
+    const defaults: ForecastConfig = {
+      forecastMethod: 'probability',
+      commitProbabilityThreshold: 70,
+      bestCaseProbabilityThreshold: 50,
+      commitProbability: 90,
+      bestCaseProbability: 70,
+      pipelineProbability: 30,
+      stageWeights: {},
+      quotaSource: 'none',
+      salesforceQuotaField: 'Quarterly_Quota__c',
+      quotaPeriod: 'quarterly',
+      manualQuotas: {},
+      defaultQuota: 0,
+    };
+
     if (result.rows.length === 0) {
-      return {
-        commitProbability: 90,
-        bestCaseProbability: 70,
-        pipelineProbability: 30,
-        stageWeights: {},
-      };
+      return defaults;
     }
 
-    const config = result.rows[0].setting_value as ForecastConfig;
+    const config = result.rows[0].setting_value as Partial<ForecastConfig>;
     return {
-      commitProbability: config.commitProbability ?? 90,
-      bestCaseProbability: config.bestCaseProbability ?? 70,
-      pipelineProbability: config.pipelineProbability ?? 30,
-      stageWeights: config.stageWeights ?? {},
+      forecastMethod: config.forecastMethod ?? defaults.forecastMethod,
+      commitProbabilityThreshold: config.commitProbabilityThreshold ?? defaults.commitProbabilityThreshold,
+      bestCaseProbabilityThreshold: config.bestCaseProbabilityThreshold ?? defaults.bestCaseProbabilityThreshold,
+      commitProbability: config.commitProbability ?? defaults.commitProbability,
+      bestCaseProbability: config.bestCaseProbability ?? defaults.bestCaseProbability,
+      pipelineProbability: config.pipelineProbability ?? defaults.pipelineProbability,
+      stageWeights: config.stageWeights ?? defaults.stageWeights,
+      quotaSource: config.quotaSource ?? defaults.quotaSource,
+      salesforceQuotaField: config.salesforceQuotaField ?? defaults.salesforceQuotaField,
+      quotaPeriod: config.quotaPeriod ?? defaults.quotaPeriod,
+      manualQuotas: config.manualQuotas ?? defaults.manualQuotas,
+      defaultQuota: config.defaultQuota ?? defaults.defaultQuota,
     };
   }
 

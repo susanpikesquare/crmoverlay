@@ -1741,20 +1741,18 @@ export interface PipelineForecast {
   bestCaseAmount: number;
   pipelineAmount: number;
   closedWon: number;
-  weightedCommit: number;
-  weightedBestCase: number;
-  weightedPipeline: number;
-  weightedTotal: number;
-  stageWeightedPipeline: number;
-  commitProbability: number;
-  bestCaseProbability: number;
-  pipelineProbability: number;
-  coverageRatio: number;
+  forecastMethod: 'forecastCategory' | 'probability';
+  commitLabel: string;   // e.g., "Commit" or ">=70%"
+  bestCaseLabel: string; // e.g., "Best Case" or ">=50%"
+  quotaTarget: number;
+  quotaAttainment: number; // percentage
+  quotaSource: 'salesforce' | 'manual' | 'none';
   opportunitiesByStage: {
     stageName: string;
     count: number;
     value: number;
   }[];
+  distinctOpportunityTypes: string[];
   forecastStatus: {
     isSubmitted: boolean;
     lastSubmittedDate?: string;
@@ -1998,7 +1996,7 @@ export async function getPipelineForecast(
 
     // Query closed-won for the period (use IsWon for reliability across orgs)
     const closedWonQuery = `
-      SELECT Id, ${amountField}, ${forecastCategoryField}
+      SELECT Id, ${amountField}, ${forecastCategoryField}, Type
       FROM Opportunity
       WHERE OwnerId = '${userId}'
         AND IsWon = true
@@ -2035,35 +2033,67 @@ export async function getPipelineForecast(
       value: data.value,
     }));
 
-    // Group by ForecastCategory
-    const commitAmount = openOpps
-      .filter((opp) => opp[forecastCategoryField] === 'Commit')
-      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    // Group by ForecastCategory or Probability based on config
+    let commitAmount: number;
+    let bestCaseAmount: number;
+    let pipelineAmount: number;
+    let commitLabel: string;
+    let bestCaseLabel: string;
+    const { forecastMethod, commitProbabilityThreshold, bestCaseProbabilityThreshold } = forecastConfig;
 
-    const bestCaseAmount = openOpps
-      .filter((opp) => opp[forecastCategoryField] === 'Best Case')
-      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    if (forecastMethod === 'forecastCategory') {
+      commitAmount = openOpps
+        .filter((opp) => opp[forecastCategoryField] === 'Commit')
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      bestCaseAmount = openOpps
+        .filter((opp) => opp[forecastCategoryField] === 'Best Case')
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      pipelineAmount = openOpps
+        .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      commitLabel = 'Commit';
+      bestCaseLabel = 'Best Case';
+    } else {
+      const commitThreshold = commitProbabilityThreshold ?? 70;
+      const bestCaseThreshold = bestCaseProbabilityThreshold ?? 50;
+      commitAmount = openOpps
+        .filter((opp) => (opp.Probability || 0) >= commitThreshold)
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      bestCaseAmount = openOpps
+        .filter((opp) => (opp.Probability || 0) >= bestCaseThreshold && (opp.Probability || 0) < commitThreshold)
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      pipelineAmount = openOpps
+        .filter((opp) => (opp.Probability || 0) < bestCaseThreshold)
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      commitLabel = `>=${commitThreshold}%`;
+      bestCaseLabel = `>=${bestCaseThreshold}%`;
+    }
 
-    const pipelineAmount = openOpps
-      .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
-      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    // Collect distinct Opportunity Types from the data
+    const typeSet = new Set<string>();
+    openOpps.forEach(opp => { if (opp.Type) typeSet.add(opp.Type); });
+    closedWonOpps.forEach(opp => { if (opp.Type) typeSet.add(opp.Type); });
+    const distinctOpportunityTypes = Array.from(typeSet).sort();
 
-    // Weighted amounts
-    const { commitProbability, bestCaseProbability, pipelineProbability } = forecastConfig;
-    const weightedCommit = commitAmount * (commitProbability / 100);
-    const weightedBestCase = bestCaseAmount * (bestCaseProbability / 100);
-    const weightedPipeline = pipelineAmount * (pipelineProbability / 100);
-    const weightedTotal = weightedCommit + weightedBestCase + weightedPipeline;
-
-    // Stage Weighted Pipeline
-    const stageWeights = forecastConfig.stageWeights || {};
-    const stageWeightedPipeline = openOpps.reduce((sum, opp) => {
-      const stage = opp.StageName || '';
-      const weight = stageWeights[stage] ?? 0;
-      return sum + ((opp[amountField] || 0) * (weight / 100));
-    }, 0);
-
-    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitAmount, 1) : 0;
+    // Resolve quota/target
+    let quotaTarget = 0;
+    const { quotaSource } = forecastConfig;
+    if (quotaSource === 'salesforce') {
+      try {
+        const quotaField = forecastConfig.salesforceQuotaField || 'Quarterly_Quota__c';
+        const quotaQuery = `SELECT Id, ${quotaField} FROM User WHERE Id = '${userId}'`;
+        const quotaResult = await connection.query(quotaQuery);
+        if (quotaResult.records.length > 0) {
+          quotaTarget = (quotaResult.records[0] as any)[quotaField] || 0;
+        }
+      } catch (quotaError) {
+        console.log('Could not fetch user quota from Salesforce:', quotaError);
+      }
+    } else if (quotaSource === 'manual') {
+      const manualQuotas = forecastConfig.manualQuotas || {};
+      quotaTarget = manualQuotas[userId] ?? (forecastConfig.defaultQuota || 0);
+    }
+    const quotaAttainment = quotaTarget > 0 ? (closedWon / quotaTarget) * 100 : 0;
 
     // Get Salesforce instance URL
     const identity = await connection.identity();
@@ -2076,16 +2106,14 @@ export async function getPipelineForecast(
       bestCaseAmount,
       pipelineAmount,
       closedWon,
-      weightedCommit,
-      weightedBestCase,
-      weightedPipeline,
-      weightedTotal,
-      stageWeightedPipeline,
-      commitProbability,
-      bestCaseProbability,
-      pipelineProbability,
-      coverageRatio,
+      forecastMethod,
+      commitLabel,
+      bestCaseLabel,
+      quotaTarget,
+      quotaAttainment,
+      quotaSource,
       opportunitiesByStage,
+      distinctOpportunityTypes,
       forecastStatus: {
         isSubmitted: false,
         submissionUrl: `${instanceUrl}/lightning/o/Opportunity/list`,
@@ -2372,7 +2400,7 @@ export async function getTeamPipelineForecast(
 
     // Query closed-won opportunities for the period (use IsWon for reliability across orgs)
     const closedWonQuery = `
-      SELECT Id, ${amountField}, ${forecastCategoryField}
+      SELECT Id, ${amountField}, ${forecastCategoryField}, Type
       FROM Opportunity
       WHERE ${ownerFilter}
         AND IsWon = true
@@ -2411,35 +2439,68 @@ export async function getTeamPipelineForecast(
       value: data.value,
     }));
 
-    // Group by ForecastCategory
-    const commitAmount = openOpps
-      .filter((opp) => opp[forecastCategoryField] === 'Commit')
-      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    // Group by ForecastCategory or Probability based on config
+    let commitAmount: number;
+    let bestCaseAmount: number;
+    let pipelineAmount: number;
+    let commitLabel: string;
+    let bestCaseLabel: string;
+    const { forecastMethod, commitProbabilityThreshold, bestCaseProbabilityThreshold } = forecastConfig;
 
-    const bestCaseAmount = openOpps
-      .filter((opp) => opp[forecastCategoryField] === 'Best Case')
-      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    if (forecastMethod === 'forecastCategory') {
+      commitAmount = openOpps
+        .filter((opp) => opp[forecastCategoryField] === 'Commit')
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      bestCaseAmount = openOpps
+        .filter((opp) => opp[forecastCategoryField] === 'Best Case')
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      pipelineAmount = openOpps
+        .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      commitLabel = 'Commit';
+      bestCaseLabel = 'Best Case';
+    } else {
+      // Probability-based grouping
+      const commitThreshold = commitProbabilityThreshold ?? 70;
+      const bestCaseThreshold = bestCaseProbabilityThreshold ?? 50;
+      commitAmount = openOpps
+        .filter((opp) => (opp.Probability || 0) >= commitThreshold)
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      bestCaseAmount = openOpps
+        .filter((opp) => (opp.Probability || 0) >= bestCaseThreshold && (opp.Probability || 0) < commitThreshold)
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      pipelineAmount = openOpps
+        .filter((opp) => (opp.Probability || 0) < bestCaseThreshold)
+        .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+      commitLabel = `>=${commitThreshold}%`;
+      bestCaseLabel = `>=${bestCaseThreshold}%`;
+    }
 
-    const pipelineAmount = openOpps
-      .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
-      .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    // Collect distinct Opportunity Types from the data
+    const typeSet = new Set<string>();
+    openOpps.forEach(opp => { if (opp.Type) typeSet.add(opp.Type); });
+    closedWonOpps.forEach(opp => { if (opp.Type) typeSet.add(opp.Type); });
+    const distinctOpportunityTypes = Array.from(typeSet).sort();
 
-    // Weighted amounts
-    const { commitProbability, bestCaseProbability, pipelineProbability } = forecastConfig;
-    const weightedCommit = commitAmount * (commitProbability / 100);
-    const weightedBestCase = bestCaseAmount * (bestCaseProbability / 100);
-    const weightedPipeline = pipelineAmount * (pipelineProbability / 100);
-    const weightedTotal = weightedCommit + weightedBestCase + weightedPipeline;
-
-    // Stage Weighted Pipeline
-    const stageWeights = forecastConfig.stageWeights || {};
-    const stageWeightedPipeline = openOpps.reduce((sum, opp) => {
-      const stage = opp.StageName || '';
-      const weight = stageWeights[stage] ?? 0;
-      return sum + ((opp[amountField] || 0) * (weight / 100));
-    }, 0);
-
-    const coverageRatio = totalPipeline > 0 ? totalPipeline / Math.max(commitAmount, 1) : 0;
+    // Resolve quota/target
+    let quotaTarget = 0;
+    const { quotaSource } = forecastConfig;
+    if (quotaSource === 'salesforce') {
+      try {
+        const quotaField = forecastConfig.salesforceQuotaField || 'Quarterly_Quota__c';
+        // Sum quotas for all team members
+        const quotaQuery = `SELECT Id, ${quotaField} FROM User WHERE Id IN ('${teamMemberIds.join("','")}')`;
+        const quotaResult = await connection.query(quotaQuery);
+        quotaTarget = (quotaResult.records as any[]).reduce((sum, user) => sum + (user[quotaField] || 0), 0);
+      } catch (quotaError) {
+        console.log('Could not fetch team quota from Salesforce:', quotaError);
+      }
+    } else if (quotaSource === 'manual') {
+      const manualQuotas = forecastConfig.manualQuotas || {};
+      const defaultQuota = forecastConfig.defaultQuota || 0;
+      quotaTarget = teamMemberIds.reduce((sum, uid) => sum + (manualQuotas[uid] ?? defaultQuota), 0);
+    }
+    const quotaAttainment = quotaTarget > 0 ? (closedWon / quotaTarget) * 100 : 0;
 
     // Get Salesforce instance URL
     const identity = await connection.identity();
@@ -2452,16 +2513,14 @@ export async function getTeamPipelineForecast(
       bestCaseAmount,
       pipelineAmount,
       closedWon,
-      weightedCommit,
-      weightedBestCase,
-      weightedPipeline,
-      weightedTotal,
-      stageWeightedPipeline,
-      commitProbability,
-      bestCaseProbability,
-      pipelineProbability,
-      coverageRatio,
+      forecastMethod,
+      commitLabel,
+      bestCaseLabel,
+      quotaTarget,
+      quotaAttainment,
+      quotaSource,
       opportunitiesByStage,
+      distinctOpportunityTypes,
       forecastStatus: {
         isSubmitted: false,
         submissionUrl: `${instanceUrl}/lightning/o/Opportunity/list`,
@@ -2481,16 +2540,14 @@ function getEmptyPipelineForecast(): PipelineForecast {
     bestCaseAmount: 0,
     pipelineAmount: 0,
     closedWon: 0,
-    weightedCommit: 0,
-    weightedBestCase: 0,
-    weightedPipeline: 0,
-    weightedTotal: 0,
-    stageWeightedPipeline: 0,
-    commitProbability: 90,
-    bestCaseProbability: 70,
-    pipelineProbability: 30,
-    coverageRatio: 0,
+    forecastMethod: 'probability',
+    commitLabel: '>=70%',
+    bestCaseLabel: '>=50%',
+    quotaTarget: 0,
+    quotaAttainment: 0,
+    quotaSource: 'none',
     opportunitiesByStage: [],
+    distinctOpportunityTypes: [],
     forecastStatus: {
       isSubmitted: false,
       submissionUrl: '',

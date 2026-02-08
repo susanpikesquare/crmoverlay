@@ -4,7 +4,7 @@ import { isAdmin } from '../middleware/adminAuth';
 import * as configService from '../services/configService';
 import { createConnection } from '../config/salesforce';
 import { pool } from '../config/database';
-import { AdminSettingsService } from '../services/adminSettings';
+import { AdminSettingsService, ForecastConfig } from '../services/adminSettings';
 import AIApiKey, { AIProvider } from '../models/AIApiKey';
 import { aiService } from '../services/aiService';
 
@@ -253,16 +253,25 @@ router.put('/config/salesforce-fields', async (req: Request, res: Response) => {
  */
 router.put('/config/forecast', async (req: Request, res: Response) => {
   try {
-    const { commitProbability, bestCaseProbability, pipelineProbability, stageWeights } = req.body;
     const session = req.session as any;
     const userId = session.userId || 'Unknown';
 
     const adminSettings = new AdminSettingsService(pool);
-    const config = {
-      commitProbability: commitProbability ?? 90,
-      bestCaseProbability: bestCaseProbability ?? 70,
-      pipelineProbability: pipelineProbability ?? 30,
-      stageWeights: stageWeights ?? {},
+    // Merge incoming fields with current config to support partial updates
+    const current = await adminSettings.getForecastConfig();
+    const config: ForecastConfig = {
+      forecastMethod: req.body.forecastMethod ?? current.forecastMethod,
+      commitProbabilityThreshold: req.body.commitProbabilityThreshold ?? current.commitProbabilityThreshold,
+      bestCaseProbabilityThreshold: req.body.bestCaseProbabilityThreshold ?? current.bestCaseProbabilityThreshold,
+      commitProbability: req.body.commitProbability ?? current.commitProbability,
+      bestCaseProbability: req.body.bestCaseProbability ?? current.bestCaseProbability,
+      pipelineProbability: req.body.pipelineProbability ?? current.pipelineProbability,
+      stageWeights: req.body.stageWeights ?? current.stageWeights,
+      quotaSource: req.body.quotaSource ?? current.quotaSource,
+      salesforceQuotaField: req.body.salesforceQuotaField ?? current.salesforceQuotaField,
+      quotaPeriod: req.body.quotaPeriod ?? current.quotaPeriod,
+      manualQuotas: req.body.manualQuotas ?? current.manualQuotas,
+      defaultQuota: req.body.defaultQuota ?? current.defaultQuota,
     };
 
     await adminSettings.setForecastConfig(config, userId);

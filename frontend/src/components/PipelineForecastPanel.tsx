@@ -9,20 +9,18 @@ interface PipelineForecast {
   bestCaseAmount: number;
   pipelineAmount: number;
   closedWon: number;
-  weightedCommit: number;
-  weightedBestCase: number;
-  weightedPipeline: number;
-  weightedTotal: number;
-  stageWeightedPipeline: number;
-  commitProbability: number;
-  bestCaseProbability: number;
-  pipelineProbability: number;
-  coverageRatio: number;
+  forecastMethod: 'forecastCategory' | 'probability';
+  commitLabel: string;
+  bestCaseLabel: string;
+  quotaTarget: number;
+  quotaAttainment: number;
+  quotaSource: 'salesforce' | 'manual' | 'none';
   opportunitiesByStage: {
     stageName: string;
     count: number;
     value: number;
   }[];
+  distinctOpportunityTypes: string[];
   forecastStatus: {
     isSubmitted: boolean;
     lastSubmittedDate?: string;
@@ -53,7 +51,8 @@ const TEAM_OPTIONS = [
   { value: 'allUsers', label: 'All Users' },
 ] as const;
 
-const OPPORTUNITY_TYPES = ['New Business', 'Renewal', 'Customer Expansion', 'Upsell', 'Expansion', 'Add-On'];
+type StageSortField = 'order' | 'value' | 'count';
+type SortDirection = 'asc' | 'desc';
 
 export default function PipelineForecastPanel({
   dateRange: parentDateRange,
@@ -65,6 +64,8 @@ export default function PipelineForecastPanel({
   const [showFilters, setShowFilters] = useState(false);
   const [excludedStages, setExcludedStages] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [stageSortField, setStageSortField] = useState<StageSortField>('order');
+  const [stageSortDir, setStageSortDir] = useState<SortDirection>('asc');
 
   // Panel-local overrides (null = use parent/default value)
   const [localDateRange, setLocalDateRange] = useState<string | null>(null);
@@ -72,8 +73,9 @@ export default function PipelineForecastPanel({
   const [localCustomStartDate, setLocalCustomStartDate] = useState('');
   const [localCustomEndDate, setLocalCustomEndDate] = useState('');
 
-  // Track all stages we've seen so excluded stages remain toggleable
+  // Track all stages and types we've seen
   const knownStagesRef = useRef<Set<string>>(new Set());
+  const knownTypesRef = useRef<Set<string>>(new Set());
 
   // Effective values: local override wins
   const dateRange = localDateRange ?? parentDateRange;
@@ -115,10 +117,13 @@ export default function PipelineForecastPanel({
 
   const forecast = forecastResponse?.data;
 
-  // Accumulate known stages from every response so the toggle list stays complete
+  // Accumulate known stages and types from every response
   useEffect(() => {
     if (forecast?.opportunitiesByStage) {
       forecast.opportunitiesByStage.forEach(s => knownStagesRef.current.add(s.stageName));
+    }
+    if (forecast?.distinctOpportunityTypes) {
+      forecast.distinctOpportunityTypes.forEach(t => knownTypesRef.current.add(t));
     }
   }, [forecast]);
 
@@ -130,12 +135,6 @@ export default function PipelineForecastPanel({
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(safeValue);
-  };
-
-  const getCoverageColor = (ratio: number) => {
-    if (ratio >= 3) return 'text-green-600';
-    if (ratio >= 2) return 'text-yellow-600';
-    return 'text-red-600';
   };
 
   const toggleStageExclusion = (stageName: string) => {
@@ -163,6 +162,20 @@ export default function PipelineForecastPanel({
     setLocalCustomEndDate('');
   };
 
+  const handleStageSort = (field: StageSortField) => {
+    if (stageSortField === field) {
+      setStageSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setStageSortField(field);
+      setStageSortDir(field === 'value' ? 'desc' : 'asc');
+    }
+  };
+
+  const getSortIndicator = (field: StageSortField) => {
+    if (stageSortField !== field) return '';
+    return stageSortDir === 'asc' ? ' \u25B2' : ' \u25BC';
+  };
+
   if (isLoading || !forecast) {
     return (
       <div className="bg-white rounded-xl shadow-md p-6">
@@ -180,19 +193,38 @@ export default function PipelineForecastPanel({
     );
   }
 
-  const maxStageValue = Math.max(...(forecast.opportunitiesByStage || []).map(s => s.value), 1);
   const hasData = (forecast.totalPipeline || 0) > 0 || (forecast.closedWon || 0) > 0
     || (forecast.commitAmount || 0) > 0 || (forecast.bestCaseAmount || 0) > 0;
-  const hasWeightedData = (forecast.weightedTotal || 0) > 0 || (forecast.stageWeightedPipeline || 0) > 0;
   const activeFilterCount = excludedStages.length + selectedTypes.length
     + (localDateRange !== null ? 1 : 0)
     + (localTeamFilter !== null ? 1 : 0);
 
-  // Build complete stage list: union of current response stages + any we've excluded
+  // Build complete stage list for filter toggles
   const responseStageNames = new Set(forecast.opportunitiesByStage.map(s => s.stageName));
   const allStageNames = Array.from(
     new Set([...responseStageNames, ...excludedStages, ...knownStagesRef.current])
   ).sort();
+
+  // Build opportunity types list from Salesforce data
+  const availableTypes = Array.from(
+    new Set([...(forecast.distinctOpportunityTypes || []), ...knownTypesRef.current])
+  ).sort();
+
+  // Sort stages for display
+  const sortedStages = [...(forecast.opportunitiesByStage || [])].sort((a, b) => {
+    if (stageSortField === 'value') {
+      return stageSortDir === 'asc' ? a.value - b.value : b.value - a.value;
+    }
+    if (stageSortField === 'count') {
+      return stageSortDir === 'asc' ? a.count - b.count : b.count - a.count;
+    }
+    // 'order' — use the natural order from the API response (stage progression)
+    const aIdx = forecast.opportunitiesByStage.indexOf(a);
+    const bIdx = forecast.opportunitiesByStage.indexOf(b);
+    return stageSortDir === 'asc' ? aIdx - bIdx : bIdx - aIdx;
+  });
+
+  const maxStageValue = Math.max(...sortedStages.map(s => s.value), 1);
 
   // Build active filter summary chips
   const filterChips: string[] = [];
@@ -210,6 +242,9 @@ export default function PipelineForecastPanel({
   if (selectedTypes.length > 0) {
     filterChips.push(selectedTypes.join(', '));
   }
+
+  const quotaTarget = forecast.quotaTarget || 0;
+  const quotaAttainment = forecast.quotaAttainment || 0;
 
   return (
     <div className="bg-white rounded-xl shadow-md p-6">
@@ -373,25 +408,27 @@ export default function PipelineForecastPanel({
             </div>
           )}
 
-          {/* Opportunity Types */}
-          <div>
-            <div className="text-xs font-medium text-gray-700 mb-1.5">Opportunity Type:</div>
-            <div className="flex flex-wrap gap-1.5">
-              {OPPORTUNITY_TYPES.map(type => (
-                <button
-                  key={type}
-                  onClick={() => toggleType(type)}
-                  className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                    selectedTypes.includes(type)
-                      ? 'bg-purple-100 border-purple-300 text-purple-700'
-                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {type}
-                </button>
-              ))}
+          {/* Opportunity Types — from Salesforce */}
+          {availableTypes.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-gray-700 mb-1.5">Opportunity Type:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {availableTypes.map(type => (
+                  <button
+                    key={type}
+                    onClick={() => toggleType(type)}
+                    className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                      selectedTypes.includes(type)
+                        ? 'bg-purple-100 border-purple-300 text-purple-700'
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {activeFilterCount > 0 && (
             <button
@@ -421,80 +458,97 @@ export default function PipelineForecastPanel({
               </div>
             </div>
             <div className="bg-blue-50 rounded-lg p-3">
-              <div className="text-xs text-gray-600 mb-1">Commit ({forecast.commitProbability ?? 90}%)</div>
+              <div className="text-xs text-gray-600 mb-1">
+                {forecast.commitLabel || 'Commit'}
+              </div>
               <div className="text-lg font-bold text-blue-900">
                 {formatCurrency(forecast.commitAmount)}
               </div>
             </div>
             <div className="bg-purple-50 rounded-lg p-3">
-              <div className="text-xs text-gray-600 mb-1">Best Case ({forecast.bestCaseProbability ?? 70}%)</div>
+              <div className="text-xs text-gray-600 mb-1">
+                {forecast.bestCaseLabel || 'Best Case'}
+              </div>
               <div className="text-lg font-bold text-purple-900">
                 {formatCurrency(forecast.bestCaseAmount)}
               </div>
             </div>
           </div>
 
-          {/* Weighted Forecast */}
-          {hasWeightedData && (
+          {/* Quota Attainment — only shown when quota is configured */}
+          {quotaTarget > 0 && (
             <div className="mb-4">
-              <div className="text-xs font-medium text-gray-600 mb-2">Weighted Forecast</div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-blue-50/50 rounded p-2">
-                  <div className="text-[10px] text-gray-500">Wtd. Commit</div>
-                  <div className="text-sm font-semibold text-blue-800">{formatCurrency(forecast.weightedCommit)}</div>
-                </div>
-                <div className="bg-purple-50/50 rounded p-2">
-                  <div className="text-[10px] text-gray-500">Wtd. Best Case</div>
-                  <div className="text-sm font-semibold text-purple-800">{formatCurrency(forecast.weightedBestCase)}</div>
-                </div>
-                <div className="bg-gray-50 rounded p-2">
-                  <div className="text-[10px] text-gray-500">Wtd. Pipeline</div>
-                  <div className="text-sm font-semibold text-gray-800">{formatCurrency(forecast.weightedPipeline)}</div>
-                </div>
-                <div className="bg-emerald-50 rounded p-2">
-                  <div className="text-[10px] text-gray-500">Weighted Total</div>
-                  <div className="text-sm font-semibold text-emerald-800">{formatCurrency(forecast.weightedTotal)}</div>
-                </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-gray-600">
+                  Quota Attainment
+                  <span className="text-gray-400 ml-1">
+                    ({formatCurrency(forecast.closedWon)} / {formatCurrency(quotaTarget)})
+                  </span>
+                </span>
+                <span className={`text-sm font-bold ${
+                  quotaAttainment >= 100 ? 'text-green-600' : quotaAttainment >= 75 ? 'text-yellow-600' : 'text-red-600'
+                }`}>
+                  {quotaAttainment.toFixed(0)}%
+                </span>
               </div>
-              {forecast.stageWeightedPipeline > 0 && (
-                <div className="mt-2 bg-amber-50 rounded p-2">
-                  <div className="text-[10px] text-gray-500">Stage Weighted Pipeline</div>
-                  <div className="text-sm font-semibold text-amber-800">{formatCurrency(forecast.stageWeightedPipeline)}</div>
-                </div>
-              )}
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  className={`h-2.5 rounded-full transition-all ${
+                    quotaAttainment >= 100
+                      ? 'bg-green-500'
+                      : quotaAttainment >= 75
+                      ? 'bg-yellow-500'
+                      : 'bg-red-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(100, quotaAttainment)}%`,
+                  }}
+                ></div>
+              </div>
             </div>
           )}
 
-          {/* Coverage Ratio */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-gray-600">Coverage Ratio</span>
-              <span className={`text-sm font-bold ${getCoverageColor(forecast.coverageRatio || 0)}`}>
-                {(forecast.coverageRatio || 0).toFixed(1)}x
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all ${
-                  forecast.coverageRatio >= 3
-                    ? 'bg-green-500'
-                    : forecast.coverageRatio >= 2
-                    ? 'bg-yellow-500'
-                    : 'bg-red-500'
-                }`}
-                style={{
-                  width: `${Math.min(100, (forecast.coverageRatio / 4) * 100)}%`,
-                }}
-              ></div>
-            </div>
-          </div>
-
           {/* Pipeline by Stage */}
-          {forecast.opportunitiesByStage.length > 0 && (
+          {sortedStages.length > 0 && (
             <div>
-              <div className="text-xs font-medium text-gray-600 mb-2">Open Pipeline by Stage</div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="text-xs font-medium text-gray-600">Open Pipeline by Stage</div>
+                <div className="flex items-center gap-1 ml-auto">
+                  <span className="text-[10px] text-gray-400">Sort:</span>
+                  <button
+                    onClick={() => handleStageSort('order')}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                      stageSortField === 'order'
+                        ? 'bg-blue-100 border-blue-300 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    Stage{getSortIndicator('order')}
+                  </button>
+                  <button
+                    onClick={() => handleStageSort('value')}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                      stageSortField === 'value'
+                        ? 'bg-blue-100 border-blue-300 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    Value{getSortIndicator('value')}
+                  </button>
+                  <button
+                    onClick={() => handleStageSort('count')}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                      stageSortField === 'count'
+                        ? 'bg-blue-100 border-blue-300 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    Count{getSortIndicator('count')}
+                  </button>
+                </div>
+              </div>
               <div className="space-y-2">
-                {forecast.opportunitiesByStage.map((stage) => (
+                {sortedStages.map((stage) => (
                   <div key={stage.stageName} className="flex items-center gap-2">
                     <div className="w-24 text-xs text-gray-700 truncate" title={stage.stageName}>
                       {stage.stageName}
