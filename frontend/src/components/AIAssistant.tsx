@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import apiClient from '../services/api';
 
 interface AIAssistantProps {
@@ -18,6 +18,19 @@ export default function AIAssistant({ userRole, userName, compact = true }: AIAs
   const [isExpanded, setIsExpanded] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<AIMessage[]>([]);
+
+  // Check AI configuration status
+  const { data: aiStatus } = useQuery({
+    queryKey: ['ai-status'],
+    queryFn: async () => {
+      const response = await apiClient.get('/api/ai/status');
+      return response.data?.data;
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const isAIConfigured = aiStatus?.isConfigured ?? true; // default true to avoid flash
 
   const askAIMutation = useMutation({
     mutationFn: async (question: string) => {
@@ -86,7 +99,9 @@ export default function AIAssistant({ userRole, userName, compact = true }: AIAs
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold">AI Assistant</h3>
-                <span className="text-xs text-white/70 hidden sm:inline">Ask me anything about your work</span>
+                <span className="text-xs text-white/70 hidden sm:inline">
+                  {isAIConfigured ? 'Ask me anything about your work' : 'Not configured \u2014 click to set up'}
+                </span>
               </div>
             </div>
           </div>
@@ -144,10 +159,27 @@ export default function AIAssistant({ userRole, userName, compact = true }: AIAs
 
       {/* Messages */}
       <div className="p-4 space-y-3 max-h-72 overflow-y-auto">
-        {messages.length === 0 ? (
+        {!isAIConfigured && messages.length === 0 ? (
           <div className="text-center py-4">
-            <p className="text-gray-500 text-sm mb-3">Ask me anything about your work!</p>
-            <div className="flex flex-wrap gap-2 justify-center">
+            <div className="w-12 h-12 mx-auto mb-3 bg-yellow-100 rounded-full flex items-center justify-center">
+              <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <p className="text-gray-700 font-medium text-sm mb-1">AI Assistant Not Configured</p>
+            <p className="text-gray-500 text-xs mb-2">
+              {aiStatus?.message || 'No AI provider is set up yet.'}
+            </p>
+            <p className="text-gray-500 text-xs">
+              Go to <strong>Admin &gt; AI Configuration</strong> to add an API key for Anthropic (Claude), OpenAI, or Google Gemini.
+            </p>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="text-center py-4">
+            <p className="text-gray-500 text-sm mb-1">
+              {aiStatus?.primaryProvider ? `Powered by ${aiStatus.primaryProvider}` : 'Ask me anything about your work!'}
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center mt-2">
               {suggestedQuestions.map((question, idx) => (
                 <button
                   key={idx}

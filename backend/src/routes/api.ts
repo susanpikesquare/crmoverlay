@@ -1616,4 +1616,33 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/ai/status
+ * Diagnostic endpoint to check AI service configuration
+ */
+router.get('/ai/status', isAuthenticated, async (_req: Request, res: Response) => {
+  try {
+    const status = await aiService.getProviderStatus();
+    res.json({
+      success: true,
+      data: {
+        ...status,
+        isConfigured: status.primaryProvider !== 'none',
+        message: status.primaryProvider !== 'none'
+          ? `AI is configured with ${status.primaryProvider}`
+          : 'No AI provider configured. Go to Admin > AI Configuration to add an API key.',
+      },
+    });
+  } catch (error: any) {
+    res.json({
+      success: false,
+      data: {
+        primaryProvider: 'none',
+        isConfigured: false,
+        message: `AI service error: ${error.message}`,
+      },
+    });
+  }
+});
+
 export default router;
