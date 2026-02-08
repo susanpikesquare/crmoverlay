@@ -95,11 +95,11 @@ export class AIService {
     try {
       const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
 
-      // Try to find active API keys in priority order: Agentforce > Anthropic > OpenAI > Gemini
-      // Agentforce doesn't need an API key, it uses the Salesforce connection
-      const providers = [AIApiKeyProvider.AGENTFORCE, AIApiKeyProvider.ANTHROPIC, AIApiKeyProvider.OPENAI, AIApiKeyProvider.GOOGLE];
+      // Prefer external API providers first (they have real API keys and work for chat).
+      // Agentforce is checked last — it's only useful if SF Einstein is configured.
+      const externalProviders = [AIApiKeyProvider.ANTHROPIC, AIApiKeyProvider.OPENAI, AIApiKeyProvider.GOOGLE];
 
-      for (const provider of providers) {
+      for (const provider of externalProviders) {
         const apiKey = await AIApiKey.findOne({
           where: {
             customerId: DEMO_CUSTOMER_ID,
@@ -109,22 +109,36 @@ export class AIService {
         });
 
         if (apiKey) {
-          // Map database provider names to service provider names
-          let mappedProvider: 'anthropic' | 'openai' | 'gemini' | 'agentforce';
+          let mappedProvider: 'anthropic' | 'openai' | 'gemini';
           if (provider === AIApiKeyProvider.GOOGLE) {
             mappedProvider = 'gemini';
-          } else if (provider === AIApiKeyProvider.AGENTFORCE) {
-            mappedProvider = 'agentforce';
           } else {
             mappedProvider = provider as 'anthropic' | 'openai';
           }
 
           return {
             provider: mappedProvider,
-            apiKey: provider === AIApiKeyProvider.AGENTFORCE ? undefined : apiKey.getDecryptedApiKey(),
+            apiKey: apiKey.getDecryptedApiKey(),
             enabled: true,
           };
         }
+      }
+
+      // Only fall back to Agentforce if no external provider is configured
+      const agentforceKey = await AIApiKey.findOne({
+        where: {
+          customerId: DEMO_CUSTOMER_ID,
+          provider: AIApiKeyProvider.AGENTFORCE,
+          isActive: true,
+        },
+      });
+
+      if (agentforceKey) {
+        return {
+          provider: 'agentforce',
+          apiKey: undefined,
+          enabled: true,
+        };
       }
 
       return null;
