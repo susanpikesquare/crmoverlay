@@ -696,7 +696,7 @@ router.get('/hub/sales-leader/pipeline-forecast', isAuthenticated, async (req: R
       });
     }
 
-    const excludeStagesParam = req.query.excludeStages as string | undefined;
+    const includeStagesParam = req.query.includeStages as string | undefined;
     const opportunityTypesParam = req.query.opportunityTypes as string | undefined;
 
     const filters = {
@@ -705,7 +705,7 @@ router.get('/hub/sales-leader/pipeline-forecast', isAuthenticated, async (req: R
       endDate: req.query.endDate as string | undefined,
       teamFilter: req.query.teamFilter as string | undefined,
       minDealSize: req.query.minDealSize ? Number(req.query.minDealSize) : undefined,
-      excludeStages: excludeStagesParam ? excludeStagesParam.split(',').filter(Boolean) : undefined,
+      includeStages: includeStagesParam ? includeStagesParam.split(',').filter(Boolean) : undefined,
       opportunityTypes: opportunityTypesParam ? opportunityTypesParam.split(',').filter(Boolean) : undefined,
     };
 
@@ -1033,13 +1033,13 @@ router.get('/hub/ae/pipeline-forecast', isAuthenticated, async (req: Request, re
 
     // AE pipeline forecast also supports teamFilter='me' via the team route
     const teamFilter = req.query.teamFilter as string | undefined;
-    const excludeStagesParam = req.query.excludeStages as string | undefined;
+    const includeStagesParam = req.query.includeStages as string | undefined;
     const opportunityTypesParam = req.query.opportunityTypes as string | undefined;
     const commonFilters = {
       dateRange: req.query.dateRange as string | undefined,
       startDate: req.query.startDate as string | undefined,
       endDate: req.query.endDate as string | undefined,
-      excludeStages: excludeStagesParam ? excludeStagesParam.split(',').filter(Boolean) : undefined,
+      includeStages: includeStagesParam ? includeStagesParam.split(',').filter(Boolean) : undefined,
       opportunityTypes: opportunityTypesParam ? opportunityTypesParam.split(',').filter(Boolean) : undefined,
     };
 

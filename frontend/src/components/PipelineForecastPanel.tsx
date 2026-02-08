@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 interface PipelineForecast {
@@ -61,8 +62,9 @@ export default function PipelineForecastPanel({
   customEndDate: parentCustomEndDate,
   minDealSize,
 }: PipelineForecastPanelProps) {
+  const navigate = useNavigate();
   const [showFilters, setShowFilters] = useState(false);
-  const [excludedStages, setExcludedStages] = useState<string[]>([]);
+  const [includedStages, setIncludedStages] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [stageSortField, setStageSortField] = useState<StageSortField>('order');
   const [stageSortDir, setStageSortDir] = useState<SortDirection>('asc');
@@ -90,7 +92,7 @@ export default function PipelineForecastPanel({
     : '/api/hub/sales-leader/pipeline-forecast';
 
   const { data: forecastResponse, isLoading } = useQuery<{ success: boolean; data: PipelineForecast }>({
-    queryKey: ['pipeline-forecast', dateRange, customStartDate, customEndDate, teamFilter, minDealSize, excludedStages, selectedTypes],
+    queryKey: ['pipeline-forecast', dateRange, customStartDate, customEndDate, teamFilter, minDealSize, includedStages, selectedTypes],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (dateRange === 'custom') {
@@ -104,8 +106,8 @@ export default function PipelineForecastPanel({
       if (minDealSize && minDealSize > 0) {
         params.append('minDealSize', minDealSize.toString());
       }
-      if (excludedStages.length > 0) {
-        params.append('excludeStages', excludedStages.join(','));
+      if (includedStages.length > 0) {
+        params.append('includeStages', includedStages.join(','));
       }
       if (selectedTypes.length > 0) {
         params.append('opportunityTypes', selectedTypes.join(','));
@@ -137,8 +139,8 @@ export default function PipelineForecastPanel({
     }).format(safeValue);
   };
 
-  const toggleStageExclusion = (stageName: string) => {
-    setExcludedStages(prev =>
+  const toggleStageInclusion = (stageName: string) => {
+    setIncludedStages(prev =>
       prev.includes(stageName)
         ? prev.filter(s => s !== stageName)
         : [...prev, stageName]
@@ -154,7 +156,7 @@ export default function PipelineForecastPanel({
   };
 
   const clearAllFilters = () => {
-    setExcludedStages([]);
+    setIncludedStages([]);
     setSelectedTypes([]);
     setLocalDateRange(null);
     setLocalTeamFilter(null);
@@ -195,14 +197,14 @@ export default function PipelineForecastPanel({
 
   const hasData = (forecast.totalPipeline || 0) > 0 || (forecast.closedWon || 0) > 0
     || (forecast.commitAmount || 0) > 0 || (forecast.bestCaseAmount || 0) > 0;
-  const activeFilterCount = excludedStages.length + selectedTypes.length
+  const activeFilterCount = includedStages.length + selectedTypes.length
     + (localDateRange !== null ? 1 : 0)
     + (localTeamFilter !== null ? 1 : 0);
 
   // Build complete stage list for filter toggles
   const responseStageNames = new Set(forecast.opportunitiesByStage.map(s => s.stageName));
   const allStageNames = Array.from(
-    new Set([...responseStageNames, ...excludedStages, ...knownStagesRef.current])
+    new Set([...responseStageNames, ...includedStages, ...knownStagesRef.current])
   ).sort();
 
   // Build opportunity types list from Salesforce data
@@ -236,8 +238,8 @@ export default function PipelineForecastPanel({
     const label = TEAM_OPTIONS.find(o => o.value === localTeamFilter)?.label ?? localTeamFilter;
     filterChips.push(label);
   }
-  if (excludedStages.length > 0) {
-    filterChips.push(`${excludedStages.length} stage${excludedStages.length > 1 ? 's' : ''} excluded`);
+  if (includedStages.length > 0) {
+    filterChips.push(`${includedStages.length} stage${includedStages.length > 1 ? 's' : ''} selected`);
   }
   if (selectedTypes.length > 0) {
     filterChips.push(selectedTypes.join(', '));
@@ -386,18 +388,25 @@ export default function PipelineForecastPanel({
             </div>
           </div>
 
-          {/* Exclude Stages */}
+          {/* Include Stages */}
           {allStageNames.length > 0 && (
             <div>
-              <div className="text-xs font-medium text-gray-700 mb-1.5">Exclude Stages:</div>
+              <div className="text-xs font-medium text-gray-700 mb-1.5">
+                Include Stages:
+                <span className="text-gray-400 font-normal ml-1">
+                  {includedStages.length === 0 ? '(all)' : `(${includedStages.length} selected)`}
+                </span>
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {allStageNames.map(stageName => (
                   <button
                     key={stageName}
-                    onClick={() => toggleStageExclusion(stageName)}
+                    onClick={() => toggleStageInclusion(stageName)}
                     className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                      excludedStages.includes(stageName)
-                        ? 'bg-red-100 border-red-300 text-red-700 line-through'
+                      includedStages.includes(stageName)
+                        ? 'bg-blue-100 border-blue-300 text-blue-700 font-medium'
+                        : includedStages.length > 0
+                        ? 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
                         : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
                     }`}
                   >
@@ -549,8 +558,13 @@ export default function PipelineForecastPanel({
               </div>
               <div className="space-y-2">
                 {sortedStages.map((stage) => (
-                  <div key={stage.stageName} className="flex items-center gap-2">
-                    <div className="w-24 text-xs text-gray-700 truncate" title={stage.stageName}>
+                  <div
+                    key={stage.stageName}
+                    className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded-lg px-1 py-0.5 -mx-1 transition-colors"
+                    onClick={() => navigate(`/opportunities?stage=${encodeURIComponent(stage.stageName)}`)}
+                    title={`View ${stage.count} opportunities in ${stage.stageName}`}
+                  >
+                    <div className="w-24 text-xs text-blue-700 truncate font-medium" title={stage.stageName}>
                       {stage.stageName}
                     </div>
                     <div className="flex-1">

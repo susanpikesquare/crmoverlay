@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import apiClient from '../services/api';
 import AIAssistant from '../components/AIAssistant';
 
@@ -20,10 +20,12 @@ const HIDDEN_STAGES = ['closed lost', 'abandoned'];
 const CLOSED_STAGE_OPTIONS = ['Closed Won', 'Closed Lost', 'Abandoned'];
 
 export default function OpportunitiesList() {
+  const [searchParams] = useSearchParams();
+  const initialStage = searchParams.get('stage') || 'all';
   const [searchTerm, setSearchTerm] = useState('');
-  const [stageFilter, setStageFilter] = useState('all');
+  const [stageFilter, setStageFilter] = useState(initialStage);
   const [atRiskOnly, setAtRiskOnly] = useState(false);
-  const [hideClosedLost, setHideClosedLost] = useState(true);
+  const [hideClosedLost, setHideClosedLost] = useState(initialStage === 'all');
   const [sortBy, setSortBy] = useState<'closeDate' | 'amount' | 'name'>('closeDate');
 
   const { data, isLoading } = useQuery({

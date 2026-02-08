@@ -1962,7 +1962,7 @@ export async function getPipelineForecast(
   connection: Connection,
   userId: string,
   pool: Pool,
-  filters: { dateRange?: string; startDate?: string; endDate?: string; excludeStages?: string[]; opportunityTypes?: string[] } = {}
+  filters: { dateRange?: string; startDate?: string; endDate?: string; includeStages?: string[]; opportunityTypes?: string[] } = {}
 ): Promise<PipelineForecast> {
   try {
     const amountField = await getAmountFieldName(pool);
@@ -1975,8 +1975,8 @@ export async function getPipelineForecast(
     const periodName = getPeriodName(filters.dateRange || 'thisQuarter', filters.startDate, filters.endDate);
 
     // Build optional filters
-    const excludeStagesFilter = filters.excludeStages && filters.excludeStages.length > 0
-      ? `AND StageName NOT IN ('${filters.excludeStages.join("','")}')`
+    const includeStagesFilter = filters.includeStages && filters.includeStages.length > 0
+      ? `AND StageName IN ('${filters.includeStages.join("','")}')`
       : '';
     const typeFilter = filters.opportunityTypes && filters.opportunityTypes.length > 0
       ? `AND Type IN ('${filters.opportunityTypes.join("','")}')`
@@ -1989,7 +1989,7 @@ export async function getPipelineForecast(
       WHERE OwnerId = '${userId}'
         AND IsClosed = false
         AND ${dateFilter}
-        ${excludeStagesFilter}
+        ${includeStagesFilter}
         ${typeFilter}
       ORDER BY CloseDate ASC
     `;
@@ -2027,11 +2027,23 @@ export async function getPipelineForecast(
       stageData.value += opp[amountField] || 0;
     });
 
-    const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
-      stageName,
-      count: data.count,
-      value: data.value,
-    }));
+    // Sort stages by configured order (admin-configured stage progression)
+    const appConfig = await adminSettings.getAppConfig();
+    const configuredStages: string[] = appConfig?.opportunityStages || [];
+    const opportunitiesByStage = Array.from(stageMap.entries())
+      .map(([stageName, data]) => ({
+        stageName,
+        count: data.count,
+        value: data.value,
+      }))
+      .sort((a, b) => {
+        const aIdx = configuredStages.indexOf(a.stageName);
+        const bIdx = configuredStages.indexOf(b.stageName);
+        if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
+        if (aIdx >= 0) return -1;
+        if (bIdx >= 0) return 1;
+        return a.stageName.localeCompare(b.stageName);
+      });
 
     // Group by ForecastCategory or Probability based on config
     let commitAmount: number;
@@ -2324,7 +2336,7 @@ export async function getTeamPipelineForecast(
   connection: Connection,
   managerId: string,
   pool: Pool,
-  filters: DashboardFilters & { excludeStages?: string[]; opportunityTypes?: string[] } = {}
+  filters: DashboardFilters & { includeStages?: string[]; opportunityTypes?: string[] } = {}
 ): Promise<PipelineForecast> {
   try {
     const amountField = await getAmountFieldName(pool);
@@ -2374,9 +2386,9 @@ export async function getTeamPipelineForecast(
     const ownerFilter = `OwnerId IN ('${teamMemberIds.join("','")}')`;
     const minDealFilter = filters.minDealSize ? `AND ${amountField} >= ${filters.minDealSize}` : '';
 
-    // Build stage exclusion filter
-    const excludeStagesFilter = filters.excludeStages && filters.excludeStages.length > 0
-      ? `AND StageName NOT IN ('${filters.excludeStages.join("','")}')`
+    // Build stage inclusion filter
+    const includeStagesFilter = filters.includeStages && filters.includeStages.length > 0
+      ? `AND StageName IN ('${filters.includeStages.join("','")}')`
       : '';
 
     // Build opportunity type filter
@@ -2395,7 +2407,7 @@ export async function getTeamPipelineForecast(
         AND IsClosed = false
         AND ${dateFilter}
         ${minDealFilter}
-        ${excludeStagesFilter}
+        ${includeStagesFilter}
         ${typeFilter}
       ORDER BY CloseDate ASC
     `;
@@ -2435,11 +2447,24 @@ export async function getTeamPipelineForecast(
       stageData.value += opp[amountField] || 0;
     });
 
-    const opportunitiesByStage = Array.from(stageMap.entries()).map(([stageName, data]) => ({
-      stageName,
-      count: data.count,
-      value: data.value,
-    }));
+    // Sort stages by configured order (admin-configured stage progression)
+    const appConfig = await adminSettings.getAppConfig();
+    const configuredStages: string[] = appConfig?.opportunityStages || [];
+    const opportunitiesByStage = Array.from(stageMap.entries())
+      .map(([stageName, data]) => ({
+        stageName,
+        count: data.count,
+        value: data.value,
+      }))
+      .sort((a, b) => {
+        const aIdx = configuredStages.indexOf(a.stageName);
+        const bIdx = configuredStages.indexOf(b.stageName);
+        // Configured stages first in order, unconfigured stages at the end alphabetically
+        if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
+        if (aIdx >= 0) return -1;
+        if (bIdx >= 0) return 1;
+        return a.stageName.localeCompare(b.stageName);
+      });
 
     // Group by ForecastCategory or Probability based on config
     let commitAmount: number;
@@ -2484,25 +2509,25 @@ export async function getTeamPipelineForecast(
     closedWonOpps.forEach(opp => { if (opp.Type) typeSet.add(opp.Type); });
     const distinctOpportunityTypes = Array.from(typeSet).sort();
 
-    // Resolve quota/target
+    // Resolve quota/target — use the manager's own quota, not the team total
     let quotaTarget = 0;
     const { quotaSource } = forecastConfig;
     if (quotaSource === 'salesforce') {
       try {
         const quotaField = forecastConfig.salesforceQuotaField || 'Quarterly_Quota__c';
-        // Sum quotas for all team members
-        const quotaQuery = `SELECT Id, ${quotaField} FROM User WHERE Id IN ('${teamMemberIds.join("','")}')`;
+        const quotaQuery = `SELECT Id, ${quotaField} FROM User WHERE Id = '${managerId}'`;
         const quotaResult = await connection.query(quotaQuery);
-        quotaTarget = (quotaResult.records as any[]).reduce((sum, user) => sum + (user[quotaField] || 0), 0);
+        if (quotaResult.records.length > 0) {
+          quotaTarget = (quotaResult.records[0] as any)[quotaField] || 0;
+        }
       } catch (quotaError) {
-        console.log('Could not fetch team quota from Salesforce:', quotaError);
+        console.log('Could not fetch manager quota from Salesforce:', quotaError);
       }
     } else if (quotaSource === 'forecastingQuota') {
-      quotaTarget = await fetchForecastingQuota(connection, teamMemberIds, filters.dateRange, filters.startDate, filters.endDate);
+      quotaTarget = await fetchForecastingQuota(connection, [managerId], filters.dateRange, filters.startDate, filters.endDate);
     } else if (quotaSource === 'manual') {
       const manualQuotas = forecastConfig.manualQuotas || {};
-      const defaultQuota = forecastConfig.defaultQuota || 0;
-      quotaTarget = teamMemberIds.reduce((sum, uid) => sum + (manualQuotas[uid] ?? defaultQuota), 0);
+      quotaTarget = manualQuotas[managerId] ?? (forecastConfig.defaultQuota || 0);
     }
     const quotaAttainment = quotaTarget > 0 ? (closedWon / quotaTarget) * 100 : 0;
 
