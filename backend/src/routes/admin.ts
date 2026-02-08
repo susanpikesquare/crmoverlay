@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, json } from 'express';
 import { isAuthenticated } from '../middleware/auth';
 import { isAdmin } from '../middleware/adminAuth';
 import * as configService from '../services/configService';
@@ -266,6 +266,75 @@ router.put('/config/hub-layout', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: 'Failed to update Hub layout configuration',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/admin/config/branding
+ * Get current branding configuration
+ */
+router.get('/config/branding', async (_req: Request, res: Response) => {
+  try {
+    const adminSettings = new AdminSettingsService(pool);
+    const branding = await adminSettings.getBrandingConfig();
+
+    res.json({
+      success: true,
+      data: branding,
+    });
+  } catch (error: any) {
+    console.error('Error fetching branding config:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch branding configuration',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/branding
+ * Save branding configuration (with increased body size for base64 images)
+ */
+router.put('/config/branding', json({ limit: '2mb' }), async (req: Request, res: Response) => {
+  try {
+    const { brandName, logoBase64, logoHeight } = req.body;
+    const session = req.session as any;
+    const userId = session.userId || 'Unknown';
+
+    const adminSettings = new AdminSettingsService(pool);
+
+    // If no branding data provided, remove branding (revert to default)
+    if (!brandName && !logoBase64) {
+      await adminSettings.setBrandingConfig(null, userId);
+      res.json({
+        success: true,
+        data: null,
+        message: 'Branding removed, reverted to default',
+      });
+      return;
+    }
+
+    const config = {
+      brandName: brandName || '',
+      logoBase64: logoBase64 || '',
+      logoHeight: logoHeight || 32,
+    };
+
+    await adminSettings.setBrandingConfig(config, userId);
+
+    res.json({
+      success: true,
+      data: config,
+      message: 'Branding configuration updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating branding config:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update branding configuration',
       message: error.message,
     });
   }

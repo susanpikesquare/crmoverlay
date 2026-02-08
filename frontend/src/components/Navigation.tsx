@@ -8,6 +8,15 @@ export default function Navigation() {
   const queryClient = useQueryClient();
   const [showUserSelector, setShowUserSelector] = useState(false);
 
+  const { data: brandingData } = useQuery({
+    queryKey: ['branding'],
+    queryFn: async () => {
+      const response = await apiClient.get('/api/branding');
+      return response.data.data;
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
   const { data: authData } = useQuery({
     queryKey: ['auth'],
     queryFn: async () => {
@@ -101,9 +110,22 @@ export default function Navigation() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/dashboard" className="flex items-center">
-            <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-              FormationIQ
-            </span>
+            {brandingData?.logoBase64 ? (
+              <img
+                src={brandingData.logoBase64}
+                alt={brandingData.brandName || 'Logo'}
+                style={{ height: `${brandingData.logoHeight || 32}px` }}
+                className="object-contain"
+              />
+            ) : brandingData?.brandName ? (
+              <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                {brandingData.brandName}
+              </span>
+            ) : (
+              <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                FormationIQ
+              </span>
+            )}
           </Link>
 
           {/* Navigation Links */}

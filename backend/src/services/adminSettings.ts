@@ -13,6 +13,12 @@ export interface SalesforceFieldConfig {
   forecastCategoryField?: string; // Field to use for forecast categories (default: 'ForecastCategory')
 }
 
+export interface BrandingConfig {
+  brandName: string;
+  logoBase64: string;
+  logoHeight: number;
+}
+
 export interface CustomLink {
   id: string;
   title: string;
@@ -225,6 +231,38 @@ export class AdminSettingsService {
        ON CONFLICT (setting_key)
        DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
       ['hub_layout', JSON.stringify(config), userId]
+    );
+  }
+
+  async getBrandingConfig(): Promise<BrandingConfig | null> {
+    const result = await this.pool.query(
+      'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
+      ['branding']
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return result.rows[0].setting_value as BrandingConfig;
+  }
+
+  async setBrandingConfig(config: BrandingConfig | null, userId: string): Promise<void> {
+    if (config === null) {
+      // Remove branding to revert to default
+      await this.pool.query(
+        'DELETE FROM admin_settings WHERE setting_key = $1',
+        ['branding']
+      );
+      return;
+    }
+
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
+      ['branding', JSON.stringify(config), userId]
     );
   }
 

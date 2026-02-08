@@ -4,6 +4,7 @@ import * as SFData from '../services/salesforceData';
 import * as HubData from '../services/hubData';
 import { aiService } from '../services/aiService';
 import { pool } from '../config/database';
+import { AdminSettingsService } from '../services/adminSettings';
 
 const router = Router();
 
@@ -42,6 +43,30 @@ function mapProfileToRole(profileName: string): 'sales-leader' | 'ae' | 'am' | '
 
   return 'unknown';
 }
+
+/**
+ * GET /api/branding
+ * Returns current branding configuration for navigation display
+ * Accessible by all authenticated users (not admin-only)
+ */
+router.get('/branding', isAuthenticated, async (_req: Request, res: Response) => {
+  try {
+    const adminSettings = new AdminSettingsService(pool);
+    const branding = await adminSettings.getBrandingConfig();
+
+    res.json({
+      success: true,
+      data: branding,
+    });
+  } catch (error: any) {
+    console.error('Error fetching branding config:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch branding configuration',
+      message: error.message,
+    });
+  }
+});
 
 /**
  * GET /api/users

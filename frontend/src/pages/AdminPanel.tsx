@@ -13,8 +13,9 @@ import HubLayoutTab from '../components/admin/HubLayoutTab';
 import ConfigManagementTab from '../components/admin/ConfigManagementTab';
 import AIConfigTab from '../components/admin/AIConfigTab';
 import OpportunityStagesTab from '../components/admin/OpportunityStagesTab';
+import BrandingTab from '../components/admin/BrandingTab';
 
-type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
+type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'branding' | 'ai-config' | 'config-management';
 
 interface TabConfig {
   id: TabType;
@@ -65,6 +66,12 @@ const TABS: TabConfig[] = [
     label: 'Hub Layout',
     icon: '🏠',
     description: 'Customize hub page sections and add custom links',
+  },
+  {
+    id: 'branding',
+    label: 'Branding',
+    icon: '🎨',
+    description: 'Customize logo and brand name in the navigation bar',
   },
   {
     id: 'ai-config',
@@ -301,6 +308,12 @@ export default function AdminPanel() {
             )}
             {activeTab === 'hub-layout' && (
               <HubLayoutTab
+                config={configData}
+                onSave={(status) => setSaveStatus(status)}
+              />
+            )}
+            {activeTab === 'branding' && (
+              <BrandingTab
                 config={configData}
                 onSave={(status) => setSaveStatus(status)}
               />
