@@ -1,4 +1,6 @@
 import { Connection } from 'jsforce';
+import { Pool } from 'pg';
+import { AdminSettingsService, OpportunityDetailConfig } from './adminSettings';
 
 /**
  * Salesforce Data Service
@@ -500,38 +502,70 @@ export async function getAllOpportunities(
 }
 
 /**
+ * Build list of custom SF fields from opportunity detail config
+ */
+function getCustomFieldsFromConfig(config: OpportunityDetailConfig): string[] {
+  const fields = new Set<string>();
+  for (const section of config.sections) {
+    if (!section.enabled) continue;
+    for (const field of section.fields) {
+      if (field.salesforceField) {
+        fields.add(field.salesforceField);
+      }
+    }
+  }
+  return Array.from(fields);
+}
+
+/**
  * Get a single opportunity by ID with full details
+ * Dynamically selects fields based on OpportunityDetailConfig from admin settings
  */
 export async function getOpportunityById(
   connection: Connection,
-  opportunityId: string
+  opportunityId: string,
+  dbPool?: Pool
 ): Promise<Opportunity | null> {
+  // Standard fields always queried
+  const standardFields = [
+    'Id', 'Name', 'AccountId', 'Account.Name', 'Amount', 'StageName',
+    'Probability', 'CloseDate', 'OwnerId', 'Owner.Name', 'Owner.Email',
+    'NextStep', 'Description',
+    'CreatedDate', 'LastModifiedDate',
+  ];
+
+  // Common custom fields (always attempted)
+  const commonCustomFields = ['DaysInStage__c', 'IsAtRisk__c', 'MEDDPICC_Overall_Score__c'];
+
+  // Get admin-configured custom fields
+  let configuredCustomFields: string[] = [];
+  if (dbPool) {
+    try {
+      const adminSettingsService = new AdminSettingsService(dbPool);
+      const detailConfig = await adminSettingsService.getOpportunityDetailConfig();
+      configuredCustomFields = getCustomFieldsFromConfig(detailConfig);
+    } catch (err) {
+      console.error('Error loading opportunity detail config:', err);
+    }
+  }
+
+  // Merge all custom fields, dedup, and exclude standard fields (they have dots)
+  const allCustomFields = new Set([...commonCustomFields, ...configuredCustomFields]);
+  // Remove any standard fields that might be in config (e.g., Description, NextStep)
+  const standardFieldNames = new Set(standardFields.map(f => f.split('.')[0]));
+  const customFieldList = Array.from(allCustomFields).filter(f => !standardFieldNames.has(f));
+
+  const allFields = [...standardFields, ...customFieldList];
+
   const primaryQuery = `
-    SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
-           Probability, CloseDate, OwnerId, Owner.Name, Owner.Email,
-           NextStep, Description,
-           DaysInStage__c, IsAtRisk__c,
-           MEDDPICC_Metrics__c, MEDDPICC_Economic_Buyer__c,
-           MEDDPICC_Decision_Criteria__c, MEDDPICC_Decision_Process__c,
-           MEDDPICC_Paper_Process__c, MEDDPICC_Identify_Pain__c,
-           MEDDPICC_Champion__c, MEDDPICC_Competition__c,
-           MEDDPICC_Overall_Score__c,
-           Command_Why_Do_Anything__c, Command_Why_Now__c,
-           Command_Why_Us__c, Command_Why_Trust__c, Command_Why_Pay_That__c,
-           Command_Overall_Score__c, Command_Last_Updated__c, Command_Confidence_Level__c,
-           Gong_Call_Count__c, Gong_Last_Call_Date__c, Gong_Sentiment__c,
-           Gong_Competitor_Mentions__c, Gong_Call_Recording_URL__c,
-           CreatedDate, LastModifiedDate
+    SELECT ${allFields.join(', ')}
     FROM Opportunity
     WHERE Id = '${opportunityId}'
     LIMIT 1
   `;
 
   const fallbackQuery = `
-    SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
-           Probability, CloseDate, OwnerId, Owner.Name, Owner.Email,
-           NextStep, Description,
-           CreatedDate, LastModifiedDate
+    SELECT ${standardFields.join(', ')}
     FROM Opportunity
     WHERE Id = '${opportunityId}'
     LIMIT 1

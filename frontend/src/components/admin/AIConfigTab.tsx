@@ -71,6 +71,13 @@ export default function AIConfigTab() {
   const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({});
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Gong state
+  const [gongAccessKey, setGongAccessKey] = useState('');
+  const [gongSecretKey, setGongSecretKey] = useState('');
+  const [gongConfigured, setGongConfigured] = useState(false);
+  const [gongSaving, setGongSaving] = useState(false);
+  const [gongTesting, setGongTesting] = useState(false);
+
   // Fetch configured keys
   useEffect(() => {
     fetchConfiguredKeys();
@@ -79,11 +86,71 @@ export default function AIConfigTab() {
   const fetchConfiguredKeys = async () => {
     try {
       const response = await api.get('/api/admin/ai-api-keys');
-      setConfiguredKeys(response.data.data || []);
+      const keys = response.data.data || [];
+      setConfiguredKeys(keys);
+      // Check if Gong is configured
+      setGongConfigured(keys.some((k: AIApiKey) => (k.provider as string) === 'gong' && k.isActive));
     } catch (error) {
       console.error('Error fetching AI API keys:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveGong = async () => {
+    if (!gongAccessKey || !gongSecretKey) {
+      setMessage({ type: 'error', text: 'Both Gong access key and secret key are required' });
+      return;
+    }
+    setGongSaving(true);
+    try {
+      await api.put('/api/admin/config/gong', {
+        accessKey: gongAccessKey,
+        secretKey: gongSecretKey,
+      });
+      setGongConfigured(true);
+      setGongAccessKey('');
+      setGongSecretKey('');
+      setMessage({ type: 'success', text: 'Gong credentials saved successfully' });
+      fetchConfiguredKeys();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.response?.data?.error || 'Failed to save Gong credentials' });
+    } finally {
+      setGongSaving(false);
+    }
+  };
+
+  const handleTestGong = async () => {
+    if (!gongAccessKey || !gongSecretKey) {
+      setMessage({ type: 'error', text: 'Enter Gong credentials to test' });
+      return;
+    }
+    setGongTesting(true);
+    try {
+      const response = await api.post('/api/admin/config/gong/test', {
+        accessKey: gongAccessKey,
+        secretKey: gongSecretKey,
+      });
+      setMessage({
+        type: response.data.success ? 'success' : 'error',
+        text: response.data.message,
+      });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.response?.data?.message || 'Gong connection test failed' });
+    } finally {
+      setGongTesting(false);
+    }
+  };
+
+  const handleRemoveGong = async () => {
+    if (!confirm('Remove Gong integration?')) return;
+    try {
+      await api.delete('/api/admin/config/gong');
+      setGongConfigured(false);
+      setMessage({ type: 'success', text: 'Gong integration removed' });
+      fetchConfiguredKeys();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: 'Failed to remove Gong integration' });
     }
   };
 
@@ -340,6 +407,88 @@ export default function AIConfigTab() {
             </div>
           );
         })}
+      </div>
+
+      {/* Gong Integration */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📞</span>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Gong Integration</h3>
+                <p className="text-sm text-gray-600">Connect Gong to analyze call recordings, transcripts, and emails</p>
+              </div>
+            </div>
+            {gongConfigured && (
+              <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
+                Connected
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="p-6">
+          {gongConfigured ? (
+            <div>
+              <p className="text-sm text-gray-600 mb-4">
+                Gong is connected. Call insights will appear on opportunity and account detail pages.
+                The AI assistant will also use Gong call data when analyzing deals.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRemoveGong}
+                  className="px-4 py-2 text-sm text-red-600 border border-red-300 rounded-lg hover:bg-red-50"
+                >
+                  Remove Integration
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Enter your Gong API credentials to enable call insights. You can find these in your
+                Gong settings under API &gt; Company API.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Access Key</label>
+                <input
+                  type="text"
+                  value={gongAccessKey}
+                  onChange={(e) => setGongAccessKey(e.target.value)}
+                  placeholder="Enter Gong access key..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Secret Key</label>
+                <input
+                  type="password"
+                  value={gongSecretKey}
+                  onChange={(e) => setGongSecretKey(e.target.value)}
+                  placeholder="Enter Gong secret key..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleTestGong}
+                  disabled={gongTesting || !gongAccessKey || !gongSecretKey}
+                  className="px-4 py-2 text-sm text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {gongTesting ? 'Testing...' : 'Test Connection'}
+                </button>
+                <button
+                  onClick={handleSaveGong}
+                  disabled={gongSaving || !gongAccessKey || !gongSecretKey}
+                  className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {gongSaving ? 'Saving...' : 'Save Credentials'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Additional Help */}

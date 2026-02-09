@@ -5,48 +5,21 @@ import CommandOfMessageCard from '../components/CommandOfMessageCard';
 import ActivityTimeline from '../components/ActivityTimeline';
 import AIDealSummary from '../components/AIDealSummary';
 import AIAssistant from '../components/AIAssistant';
+import GongCallInsights from '../components/GongCallInsights';
 
-interface Opportunity {
-  Id: string;
-  Name: string;
-  AccountId: string;
-  Account: { Name: string };
-  StageName: string;
-  Amount: number;
-  Probability: number;
-  CloseDate: string;
-  Owner: {
-    Name: string;
-    Email: string;
-  };
-  CreatedDate: string;
-  LastModifiedDate: string;
-  DaysInStage__c: number;
-  IsAtRisk__c: boolean;
-  MEDDPICC_Metrics__c: number;
-  MEDDPICC_Economic_Buyer__c: number;
-  MEDDPICC_Decision_Criteria__c: number;
-  MEDDPICC_Decision_Process__c: number;
-  MEDDPICC_Paper_Process__c: number;
-  MEDDPICC_Identify_Pain__c: number;
-  MEDDPICC_Champion__c: number;
-  MEDDPICC_Competition__c: number;
-  MEDDPICC_Overall_Score__c: number;
-  NextStep: string;
-  Description: string;
-  Command_Why_Do_Anything__c?: string;
-  Command_Why_Now__c?: string;
-  Command_Why_Us__c?: string;
-  Command_Why_Trust__c?: string;
-  Command_Why_Pay_That__c?: string;
-  Command_Overall_Score__c?: number;
-  Command_Last_Updated__c?: string;
-  Command_Confidence_Level__c?: string;
-  Gong_Call_Count__c?: number;
-  Gong_Last_Call_Date__c?: string;
-  Gong_Sentiment__c?: string;
-  Gong_Competitor_Mentions__c?: string;
-  Gong_Call_Recording_URL__c?: string;
+interface DetailField {
+  label: string;
+  salesforceField: string;
+  fieldType: 'score' | 'text' | 'currency' | 'date' | 'percent' | 'url';
+  showProgressBar?: boolean;
+}
+
+interface DetailSection {
+  id: string;
+  label: string;
+  enabled: boolean;
+  order: number;
+  fields: DetailField[];
 }
 
 export default function OpportunityDetail() {
@@ -56,7 +29,7 @@ export default function OpportunityDetail() {
     queryKey: ['opportunity', id],
     queryFn: async () => {
       const response = await apiClient.get(`/api/opportunities/${id}`);
-      return response.data.data as Opportunity;
+      return response.data.data as Record<string, any>;
     },
     enabled: !!id,
   });
@@ -67,6 +40,15 @@ export default function OpportunityDetail() {
       const response = await apiClient.get('/auth/user');
       return response.data.data;
     },
+  });
+
+  const { data: configData } = useQuery({
+    queryKey: ['adminConfig'],
+    queryFn: async () => {
+      const response = await apiClient.get('/api/admin/config');
+      return response.data.data;
+    },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: timelineData } = useQuery({
@@ -85,8 +67,10 @@ export default function OpportunityDetail() {
       return response.data.data;
     },
     enabled: !!id,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
+
+  const detailSections: DetailSection[] = configData?.opportunityDetailConfig?.sections || [];
 
   const handleViewInSalesforce = () => {
     if (authData?.instanceUrl && opportunity?.Id) {
@@ -104,6 +88,7 @@ export default function OpportunityDetail() {
   };
 
   const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -112,34 +97,194 @@ export default function OpportunityDetail() {
   };
 
   const getStageColor = (stage: string) => {
-    switch (stage) {
-      case 'Discovery':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'Value Confirmation':
-        return 'bg-purple-100 text-purple-800 border-purple-300';
-      case 'Negotiation':
-        return 'bg-green-100 text-green-800 border-green-300';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
+    const s = stage?.toLowerCase() || '';
+    if (s.includes('closed won') || s.includes('won')) return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+    if (s.includes('closed lost') || s.includes('lost') || s.includes('abandoned')) return 'bg-red-100 text-red-800 border-red-300';
+    if (s.includes('negotiation') || s.includes('stage a')) return 'bg-green-100 text-green-800 border-green-300';
+    if (s.includes('discovery') || s.includes('stage f')) return 'bg-blue-100 text-blue-800 border-blue-300';
+    return 'bg-gray-100 text-gray-800 border-gray-300';
   };
 
-  const getMEDDPICCItemColor = (score: number) => {
+  const getScoreColor = (score: number) => {
     if (score >= 80) return 'bg-green-500';
     if (score >= 60) return 'bg-yellow-500';
     return 'bg-red-500';
   };
 
-  const meddpiccItems = [
-    { label: 'Metrics', key: 'MEDDPICC_Metrics__c', icon: '📊' },
-    { label: 'Economic Buyer', key: 'MEDDPICC_Economic_Buyer__c', icon: '💰' },
-    { label: 'Decision Criteria', key: 'MEDDPICC_Decision_Criteria__c', icon: '📋' },
-    { label: 'Decision Process', key: 'MEDDPICC_Decision_Process__c', icon: '🔄' },
-    { label: 'Paper Process', key: 'MEDDPICC_Paper_Process__c', icon: '📄' },
-    { label: 'Identify Pain', key: 'MEDDPICC_Identify_Pain__c', icon: '🎯' },
-    { label: 'Champion', key: 'MEDDPICC_Champion__c', icon: '👤' },
-    { label: 'Competition', key: 'MEDDPICC_Competition__c', icon: '🏆' },
-  ];
+  const getScoreTextColor = (score: number) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 60) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  /** Render a single field value based on its type */
+  const renderFieldValue = (field: DetailField, value: any) => {
+    if (value === undefined || value === null || value === '') {
+      return <span className="text-gray-400 italic">No data</span>;
+    }
+
+    switch (field.fieldType) {
+      case 'score': {
+        const numVal = typeof value === 'number' ? value : parseFloat(value) || 0;
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-medium text-gray-900">{field.label}</span>
+              <span className={`text-sm font-semibold ${getScoreTextColor(numVal)}`}>{numVal}%</span>
+            </div>
+            {field.showProgressBar !== false && (
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full ${getScoreColor(numVal)}`}
+                  style={{ width: `${Math.min(numVal, 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'currency':
+        return <p className="text-gray-900 mt-1 font-semibold">{formatCurrency(Number(value))}</p>;
+      case 'date':
+        return <p className="text-gray-900 mt-1">{formatDate(String(value))}</p>;
+      case 'percent':
+        return <p className="text-gray-900 mt-1">{value}%</p>;
+      case 'url':
+        return (
+          <a
+            href={String(value)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 mt-1 inline-block"
+          >
+            {String(value).length > 60 ? String(value).slice(0, 60) + '...' : String(value)}
+          </a>
+        );
+      case 'text':
+      default:
+        return <p className="text-gray-900 mt-1 whitespace-pre-wrap">{String(value)}</p>;
+    }
+  };
+
+  /** Render a section with score-type fields (e.g., MEDDPICC) */
+  const renderScoreSection = (section: DetailSection, opp: Record<string, any>) => {
+    // Calculate overall score from individual scores
+    const scores = section.fields
+      .map(f => ({ field: f, value: opp[f.salesforceField] }))
+      .filter(s => typeof s.value === 'number');
+    const overallScore = scores.length > 0
+      ? Math.round(scores.reduce((sum, s) => sum + s.value, 0) / scores.length)
+      : null;
+
+    // Also check for an explicit overall score field
+    const overallScoreField = opp.MEDDPICC_Overall_Score__c;
+    const displayScore = overallScoreField ?? overallScore;
+
+    const hasData = section.fields.some(f => opp[f.salesforceField] !== undefined && opp[f.salesforceField] !== null);
+
+    if (!hasData) {
+      return (
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-gray-900">{section.label}</h2>
+            <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">No Data</span>
+          </div>
+          <p className="text-gray-500 text-center py-4">No data available for this section</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-gray-900">{section.label}</h2>
+          {displayScore !== null && displayScore !== undefined && (
+            <div className="text-right">
+              <p className="text-sm text-gray-600">Overall Score</p>
+              <p className={`text-3xl font-bold ${getScoreTextColor(displayScore)}`}>{displayScore}%</p>
+            </div>
+          )}
+        </div>
+        <div className="space-y-4">
+          {section.fields.map((field) => {
+            const value = opp[field.salesforceField];
+            return (
+              <div key={field.salesforceField}>
+                {renderFieldValue(field, value)}
+              </div>
+            );
+          })}
+        </div>
+        {displayScore !== null && displayScore !== undefined && displayScore < 60 && (
+          <div className="mt-6 p-4 bg-red-50 rounded-lg border border-red-200">
+            <p className="text-sm text-red-800">
+              <span className="font-semibold">Action Required:</span> {section.label} score is below 60%. Focus on improving weak areas.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** Render a section with text-type fields (e.g., Details, Competitive) */
+  const renderTextSection = (section: DetailSection, opp: Record<string, any>) => {
+    const hasData = section.fields.some(f => {
+      const v = opp[f.salesforceField];
+      return v !== undefined && v !== null && v !== '';
+    });
+
+    return (
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-6">{section.label}</h2>
+        {section.fields.length === 0 || !hasData ? (
+          <p className="text-gray-500 text-center py-4">No data available</p>
+        ) : (
+          <div className="space-y-4">
+            {section.fields.map((field) => {
+              const value = opp[field.salesforceField];
+              if (field.fieldType === 'score') {
+                return (
+                  <div key={field.salesforceField}>
+                    {renderFieldValue(field, value)}
+                  </div>
+                );
+              }
+              return (
+                <div key={field.salesforceField}>
+                  <label className="text-sm font-medium text-gray-600">{field.label}</label>
+                  {renderFieldValue(field, value)}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** Render a config-driven section */
+  const renderSection = (section: DetailSection, opp: Record<string, any>) => {
+    if (!section.enabled) return null;
+
+    // Determine rendering style based on field types
+    const allScores = section.fields.length > 0 && section.fields.every(f => f.fieldType === 'score');
+
+    if (allScores) {
+      return renderScoreSection(section, opp);
+    }
+
+    // Special case: "command" section — use existing CommandOfMessageCard if fields match
+    if (section.id === 'command') {
+      // Build the field key map for CommandOfMessageCard
+      const commandFields = section.fields.map(f => ({
+        key: f.salesforceField,
+        label: f.label,
+      }));
+      return <CommandOfMessageCard opportunity={opp} configuredFields={commandFields} />;
+    }
+
+    return renderTextSection(section, opp);
+  };
 
   if (isLoading) {
     return (
@@ -169,11 +314,26 @@ export default function OpportunityDetail() {
             to="/dashboard"
             className="text-blue-600 hover:text-blue-700 font-medium"
           >
-            ← Back to Dashboard
+            &larr; Back to Dashboard
           </Link>
         </div>
       </div>
     );
+  }
+
+  // Sort sections by order, filter enabled
+  const enabledSections = [...detailSections]
+    .filter(s => s.enabled)
+    .sort((a, b) => a.order - b.order);
+
+  // Separate command section (rendered full-width above others)
+  const commandSection = enabledSections.find(s => s.id === 'command');
+  const otherSections = enabledSections.filter(s => s.id !== 'command');
+
+  // Split into pairs for 2-column layout
+  const sectionPairs: DetailSection[][] = [];
+  for (let i = 0; i < otherSections.length; i += 2) {
+    sectionPairs.push(otherSections.slice(i, i + 2));
   }
 
   return (
@@ -184,7 +344,7 @@ export default function OpportunityDetail() {
           to="/dashboard"
           className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-6"
         >
-          <span className="mr-2">←</span> Back to Dashboard
+          <span className="mr-2">&larr;</span> Back to Dashboard
         </Link>
 
         {/* Header */}
@@ -202,7 +362,7 @@ export default function OpportunityDetail() {
                 </span>
                 {opportunity.IsAtRisk__c && (
                   <span className="px-4 py-1.5 rounded-full text-sm font-semibold bg-red-100 text-red-800 border border-red-300">
-                    ⚠️ At Risk
+                    At Risk
                   </span>
                 )}
               </div>
@@ -210,7 +370,7 @@ export default function OpportunityDetail() {
                 to={`/account/${opportunity.AccountId}`}
                 className="text-blue-600 hover:text-blue-800 text-lg font-medium mb-4 block"
               >
-                {opportunity.Account.Name}
+                {opportunity.Account?.Name}
               </Link>
               <div className="grid grid-cols-4 gap-6 mt-6">
                 <div>
@@ -235,10 +395,10 @@ export default function OpportunityDetail() {
                   <p className="text-sm text-gray-600">Days in Stage</p>
                   <p
                     className={`text-xl font-semibold mt-1 ${
-                      opportunity.DaysInStage__c > 14 ? 'text-red-600' : 'text-gray-900'
+                      (opportunity.DaysInStage__c || 0) > 14 ? 'text-red-600' : 'text-gray-900'
                     }`}
                   >
-                    {opportunity.DaysInStage__c}
+                    {opportunity.DaysInStage__c ?? 'N/A'}
                   </p>
                 </div>
               </div>
@@ -268,138 +428,47 @@ export default function OpportunityDetail() {
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 gap-8">
-          {/* Command of the Message - Full Width */}
-          <CommandOfMessageCard opportunity={opportunity} />
+          {/* Command of the Message - Full Width (if configured) */}
+          {commandSection && renderSection(commandSection, opportunity)}
 
           {/* AI Deal Summary - Full Width */}
           <AIDealSummary summary={aiSummary} isLoading={aiLoading} />
 
-          {/* Two Column Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* MEDDPICC Scoring */}
-            <div className="bg-white rounded-xl shadow-md p-6">
-              <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900">MEDDPICC Qualification</h2>
-              <div className="text-right">
-                <p className="text-sm text-gray-600">Overall Score</p>
-                <p
-                  className={`text-3xl font-bold ${
-                    opportunity.MEDDPICC_Overall_Score__c >= 80
-                      ? 'text-green-600'
-                      : opportunity.MEDDPICC_Overall_Score__c >= 60
-                      ? 'text-yellow-600'
-                      : 'text-red-600'
-                  }`}
-                >
-                  {opportunity.MEDDPICC_Overall_Score__c}%
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {meddpiccItems.map((item) => {
-                const score = opportunity[item.key as keyof Opportunity] as number;
-                return (
-                  <div key={item.key}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span>{item.icon}</span>
-                        <span className="font-medium text-gray-900">{item.label}</span>
-                      </div>
-                      <span className="text-sm font-semibold text-gray-900">{score}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full ${getMEDDPICCItemColor(score)}`}
-                        style={{ width: `${score}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {opportunity.MEDDPICC_Overall_Score__c < 60 && (
-              <div className="mt-6 p-4 bg-red-50 rounded-lg border border-red-200">
-                <p className="text-sm text-red-800">
-                  <span className="font-semibold">⚠️ Action Required:</span> MEDDPICC score is
-                  below 60%. Focus on improving weak areas to increase win probability.
-                </p>
-              </div>
-            )}
-              </div>
-            </div>
-
-          {/* Opportunity Details */}
+          {/* Owner & Dates - Always shown */}
           <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Details</h2>
-
-            <div className="space-y-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Owner & Dates</h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
               <div>
                 <label className="text-sm font-medium text-gray-600">Owner</label>
-                <p className="text-gray-900 mt-1">{opportunity.Owner.Name}</p>
-                <p className="text-sm text-gray-600">{opportunity.Owner.Email}</p>
+                <p className="text-gray-900 mt-1">{opportunity.Owner?.Name}</p>
+                {opportunity.Owner?.Email && (
+                  <p className="text-sm text-gray-600">{opportunity.Owner.Email}</p>
+                )}
               </div>
-
               <div>
-                <label className="text-sm font-medium text-gray-600">Description</label>
-                <p className="text-gray-900 mt-1">{opportunity.Description}</p>
+                <label className="text-sm font-medium text-gray-600">Created</label>
+                <p className="text-gray-900 mt-1">{formatDate(opportunity.CreatedDate)}</p>
               </div>
-
               <div>
-                <label className="text-sm font-medium text-gray-600">Next Step</label>
-                <p className="text-gray-900 mt-1">{opportunity.NextStep}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200">
-                <div>
-                  <label className="text-sm font-medium text-gray-600">Created</label>
-                  <p className="text-gray-900 mt-1">{formatDate(opportunity.CreatedDate)}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-600">Last Modified</label>
-                  <p className="text-gray-900 mt-1">
-                    {formatDate(opportunity.LastModifiedDate)}
-                  </p>
-                </div>
+                <label className="text-sm font-medium text-gray-600">Last Modified</label>
+                <p className="text-gray-900 mt-1">{formatDate(opportunity.LastModifiedDate)}</p>
               </div>
             </div>
           </div>
 
-          {/* Competitive Encounters */}
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Competitive Encounters</h2>
-
-            <div className="space-y-3">
-              <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-gray-900">Cornerstone OnDemand</h3>
-                  <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-semibold rounded">
-                    Primary
-                  </span>
+          {/* Config-driven sections in 2-column layout */}
+          {sectionPairs.map((pair, pIdx) => (
+            <div key={pIdx} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {pair.map((section) => (
+                <div key={section.id}>
+                  {renderSection(section, opportunity)}
                 </div>
-                <p className="text-sm text-gray-700">
-                  Incumbent solution. Position on modern UI and better mobile experience.
-                </p>
-              </div>
-
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-gray-900">SAP SuccessFactors</h3>
-                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded">
-                    Secondary
-                  </span>
-                </div>
-                <p className="text-sm text-gray-700">
-                  Being evaluated. Differentiate on ease of use and faster implementation.
-                </p>
-              </div>
+              ))}
             </div>
+          ))}
 
-            <button className="mt-4 w-full px-4 py-2 bg-white border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:border-gray-400 transition">
-              Add Competitor
-            </button>
-          </div>
+          {/* Gong Call Insights */}
+          <GongCallInsights opportunityId={opportunity.Id} accountId={opportunity.AccountId} />
 
           {/* Activity Timeline */}
           <ActivityTimeline activities={timelineData || []} />

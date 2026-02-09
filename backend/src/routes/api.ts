@@ -409,7 +409,7 @@ router.get('/opportunities/:id', isAuthenticated, async (req: Request, res: Resp
       });
     }
 
-    const opportunity = await SFData.getOpportunityById(connection, id);
+    const opportunity = await SFData.getOpportunityById(connection, id, pool);
 
     if (!opportunity) {
       return res.status(404).json({
@@ -482,7 +482,7 @@ router.get('/opportunities/:id/ai-summary', isAuthenticated, async (req: Request
     }
 
     // Fetch opportunity data
-    const opportunity = await SFData.getOpportunityById(connection, id);
+    const opportunity = await SFData.getOpportunityById(connection, id, pool);
     if (!opportunity) {
       return res.status(404).json({
         success: false,
@@ -1641,6 +1641,130 @@ router.get('/ai/status', isAuthenticated, async (_req: Request, res: Response) =
         isConfigured: false,
         message: `AI service error: ${error.message}`,
       },
+    });
+  }
+});
+
+// ==========================================
+// Gong Integration Routes
+// ==========================================
+
+/**
+ * GET /api/gong/calls
+ * Get Gong calls for an opportunity or account
+ * Query params: opportunityId, accountId
+ */
+router.get('/gong/calls', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { createGongServiceFromDB } = await import('../services/gongService');
+    const gongService = await createGongServiceFromDB();
+
+    if (!gongService) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'Gong integration not configured',
+      });
+    }
+
+    const { opportunityId, accountId } = req.query;
+
+    let calls;
+    if (opportunityId) {
+      calls = await gongService.getCallsForOpportunity(String(opportunityId));
+    } else if (accountId) {
+      calls = await gongService.getCallsForAccount(String(accountId));
+    } else {
+      // Get recent calls (last 30 days)
+      const fromDateTime = new Date(Date.now() - 30 * 86400000).toISOString();
+      calls = await gongService.getCalls({ fromDateTime });
+    }
+
+    res.json({
+      success: true,
+      data: calls,
+      count: calls.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching Gong calls:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Gong calls',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/gong/transcript/:callId
+ * Get full transcript for a specific Gong call
+ */
+router.get('/gong/transcript/:callId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { createGongServiceFromDB } = await import('../services/gongService');
+    const gongService = await createGongServiceFromDB();
+
+    if (!gongService) {
+      return res.status(404).json({
+        success: false,
+        error: 'Gong integration not configured',
+      });
+    }
+
+    const transcript = await gongService.getTranscript(req.params.callId);
+
+    res.json({
+      success: true,
+      data: transcript,
+    });
+  } catch (error: any) {
+    console.error('Error fetching Gong transcript:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Gong transcript',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/gong/emails
+ * Get Gong Engage email activity
+ * Query params: accountId
+ */
+router.get('/gong/emails', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { createGongServiceFromDB } = await import('../services/gongService');
+    const gongService = await createGongServiceFromDB();
+
+    if (!gongService) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'Gong integration not configured',
+      });
+    }
+
+    const fromDateTime = new Date(Date.now() - 90 * 86400000).toISOString();
+    const emails = await gongService.getEmailActivity({ fromDateTime });
+
+    // Filter by account if specified
+    const { accountId } = req.query;
+    const filtered = accountId
+      ? emails.filter(e => e.accountId === String(accountId))
+      : emails;
+
+    res.json({
+      success: true,
+      data: filtered,
+      count: filtered.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching Gong emails:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Gong emails',
+      message: error.message,
     });
   }
 });

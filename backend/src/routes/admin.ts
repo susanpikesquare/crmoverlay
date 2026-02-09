@@ -46,6 +46,7 @@ router.get('/config', async (_req: Request, res: Response) => {
     const salesforceFields = await adminSettings.getSalesforceFieldConfig();
     const hubLayout = await adminSettings.getHubLayoutConfig();
     const forecastConfig = await adminSettings.getForecastConfig();
+    const opportunityDetailConfig = await adminSettings.getOpportunityDetailConfig();
 
     res.json({
       success: true,
@@ -54,6 +55,7 @@ router.get('/config', async (_req: Request, res: Response) => {
         salesforceFields,
         hubLayout,
         forecastConfig,
+        opportunityDetailConfig,
       },
     });
   } catch (error: any) {
@@ -308,6 +310,41 @@ router.put('/config/forecast', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: 'Failed to update forecast configuration',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/config/opportunity-detail
+ * Update opportunity detail page layout configuration
+ */
+router.put('/config/opportunity-detail', async (req: Request, res: Response) => {
+  try {
+    const { sections } = req.body;
+    const session = req.session as any;
+    const userId = session.userId || 'Unknown';
+
+    if (!sections || !Array.isArray(sections)) {
+      return res.status(400).json({
+        success: false,
+        error: 'sections array is required',
+      });
+    }
+
+    const config = { sections };
+    await adminSettings.setOpportunityDetailConfig(config, userId);
+
+    res.json({
+      success: true,
+      data: config,
+      message: 'Opportunity detail configuration updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating opportunity detail config:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update opportunity detail configuration',
       message: error.message,
     });
   }
@@ -712,6 +749,119 @@ router.delete('/ai-api-keys/:provider', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to delete AI API key',
+      message: error.message,
+    });
+  }
+});
+
+// ==========================================
+// Gong Integration Admin Routes
+// ==========================================
+
+/**
+ * PUT /api/admin/config/gong
+ * Save Gong API credentials
+ */
+router.put('/config/gong', async (req: Request, res: Response) => {
+  try {
+    const { accessKey, secretKey } = req.body;
+    const session = req.session as any;
+
+    if (!accessKey || !secretKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'Both accessKey and secretKey are required',
+      });
+    }
+
+    const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
+    const credentials = JSON.stringify({ accessKey, secretKey });
+
+    // Upsert Gong credentials
+    const existing = await AIApiKey.findOne({
+      where: { customerId: DEMO_CUSTOMER_ID, provider: AIProvider.GONG },
+    });
+
+    if (existing) {
+      existing.apiKey = credentials;
+      existing.isActive = true;
+      await existing.save();
+    } else {
+      await AIApiKey.create({
+        customerId: DEMO_CUSTOMER_ID,
+        provider: AIProvider.GONG,
+        apiKey: credentials,
+        isActive: true,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Gong credentials saved successfully',
+    });
+  } catch (error: any) {
+    console.error('Error saving Gong credentials:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save Gong credentials',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/config/gong/test
+ * Test Gong API connection
+ */
+router.post('/config/gong/test', async (req: Request, res: Response) => {
+  try {
+    const { accessKey, secretKey } = req.body;
+
+    if (!accessKey || !secretKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'Both accessKey and secretKey are required',
+      });
+    }
+
+    const { GongService } = await import('../services/gongService');
+    const gongService = new GongService(accessKey, secretKey);
+    const result = await gongService.testConnection();
+
+    res.json({
+      success: result.success,
+      message: result.message,
+    });
+  } catch (error: any) {
+    console.error('Error testing Gong connection:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to test Gong connection',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/config/gong
+ * Remove Gong integration
+ */
+router.delete('/config/gong', async (req: Request, res: Response) => {
+  try {
+    const DEMO_CUSTOMER_ID = '00000000-0000-0000-0000-000000000000';
+    await AIApiKey.destroy({
+      where: { customerId: DEMO_CUSTOMER_ID, provider: AIProvider.GONG },
+    });
+
+    res.json({
+      success: true,
+      message: 'Gong integration removed',
+    });
+  } catch (error: any) {
+    console.error('Error removing Gong integration:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to remove Gong integration',
       message: error.message,
     });
   }

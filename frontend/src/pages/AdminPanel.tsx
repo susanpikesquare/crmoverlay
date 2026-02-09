@@ -14,7 +14,8 @@ import ConfigManagementTab from '../components/admin/ConfigManagementTab';
 import AIConfigTab from '../components/admin/AIConfigTab';
 import OpportunityStagesTab from '../components/admin/OpportunityStagesTab';
 import ForecastSettingsTab from '../components/admin/ForecastSettingsTab';
-type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'forecast-settings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
+import OpportunityDetailTab from '../components/admin/OpportunityDetailTab';
+type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'opportunity-detail' | 'forecast-settings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
 
 interface TabConfig {
   id: TabType;
@@ -47,6 +48,12 @@ const TABS: TabConfig[] = [
     label: 'Opportunity Stages',
     icon: '📊',
     description: 'Configure which sales stages appear in opportunity filters',
+  },
+  {
+    id: 'opportunity-detail',
+    label: 'Opportunity Detail',
+    icon: '📋',
+    description: 'Configure which sections and fields display on opportunity detail pages',
   },
   {
     id: 'forecast-settings',
@@ -289,6 +296,12 @@ export default function AdminPanel() {
             )}
             {activeTab === 'opportunity-stages' && (
               <OpportunityStagesTab
+                config={configData}
+                onSave={(status) => setSaveStatus(status)}
+              />
+            )}
+            {activeTab === 'opportunity-detail' && (
+              <OpportunityDetailTab
                 config={configData}
                 onSave={(status) => setSaveStatus(status)}
               />

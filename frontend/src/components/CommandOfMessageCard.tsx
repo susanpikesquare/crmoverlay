@@ -1,25 +1,58 @@
 import React from 'react';
 
-interface CommandOfMessageProps {
-  opportunity: {
-    Command_Why_Do_Anything__c?: string;
-    Command_Why_Now__c?: string;
-    Command_Why_Us__c?: string;
-    Command_Why_Trust__c?: string;
-    Command_Why_Pay_That__c?: string;
-    Command_Overall_Score__c?: number;
-    Command_Last_Updated__c?: string;
-    Command_Confidence_Level__c?: string;
-    Gong_Call_Count__c?: number;
-    Gong_Last_Call_Date__c?: string;
-    Gong_Sentiment__c?: string;
-    Gong_Competitor_Mentions__c?: string;
-    Gong_Call_Recording_URL__c?: string;
-  };
+interface ConfiguredField {
+  key: string;
+  label: string;
 }
 
-export default function CommandOfMessageCard({ opportunity }: CommandOfMessageProps) {
-  const commandCriteria = [
+interface CommandOfMessageProps {
+  opportunity: Record<string, any>;
+  configuredFields?: ConfiguredField[];
+}
+
+const DEFAULT_CRITERIA = [
+  {
+    key: 'Command_Why_Do_Anything__c',
+    label: 'Why Do Anything?',
+    icon: '🎯',
+    description: 'Compelling reason for change',
+  },
+  {
+    key: 'Command_Why_Now__c',
+    label: 'Why Now?',
+    icon: '⏰',
+    description: 'Urgency and timing',
+  },
+  {
+    key: 'Command_Why_Us__c',
+    label: 'Why Us?',
+    icon: '⭐',
+    description: 'Competitive differentiation',
+  },
+  {
+    key: 'Command_Why_Trust__c',
+    label: 'Why Trust?',
+    icon: '🤝',
+    description: 'Credibility and proof',
+  },
+  {
+    key: 'Command_Why_Pay_That__c',
+    label: 'Why Pay That?',
+    icon: '💰',
+    description: 'Value justification',
+  },
+];
+
+export default function CommandOfMessageCard({ opportunity, configuredFields }: CommandOfMessageProps) {
+  // Use admin-configured fields if provided, otherwise fall back to defaults
+  const commandCriteria = configuredFields
+    ? configuredFields.map((f, idx) => ({
+        key: f.key,
+        label: f.label,
+        icon: DEFAULT_CRITERIA[idx]?.icon || '📌',
+        description: DEFAULT_CRITERIA.find(d => d.label === f.label)?.description || f.label,
+      }))
+    : [
     {
       key: 'Command_Why_Do_Anything__c',
       label: 'Why Do Anything?',
@@ -106,7 +139,7 @@ export default function CommandOfMessageCard({ opportunity }: CommandOfMessagePr
 
   // Check if any Command data exists
   const hasCommandData = commandCriteria.some(
-    criterion => opportunity[criterion.key as keyof typeof opportunity]
+    criterion => opportunity[criterion.key]
   );
 
   if (!hasCommandData) {
@@ -173,7 +206,7 @@ export default function CommandOfMessageCard({ opportunity }: CommandOfMessagePr
       {/* Command Criteria Cards */}
       <div className="space-y-3 mb-6">
         {commandCriteria.map((criterion) => {
-          const text = opportunity[criterion.key as keyof typeof opportunity] as string;
+          const text = opportunity[criterion.key] as string;
           const score = parseScore(text);
           const isWeak = score < 60;
 

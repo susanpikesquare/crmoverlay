@@ -276,6 +276,44 @@ export class AIService {
     }
   }
 
+  /**
+   * Fetch Gong call context for an opportunity to enrich AI prompts
+   */
+  private async getGongContext(opportunityId?: string, accountId?: string): Promise<string> {
+    try {
+      const { createGongServiceFromDB } = await import('./gongService');
+      const gongService = await createGongServiceFromDB();
+      if (!gongService) return '';
+
+      let calls: any[] = [];
+      if (opportunityId) {
+        calls = await gongService.getCallsForOpportunity(opportunityId);
+      } else if (accountId) {
+        calls = await gongService.getCallsForAccount(accountId);
+      }
+
+      if (calls.length === 0) return '';
+
+      let context = '\n\n**Gong Call Insights:**\n';
+      calls.slice(0, 5).forEach((call, idx) => {
+        context += `${idx + 1}. "${call.title}" - ${call.started ? new Date(call.started).toLocaleDateString() : 'Unknown date'}`;
+        context += ` (${Math.round(call.duration / 60)} min)`;
+        if (call.topics && call.topics.length > 0) {
+          context += ` - Topics: ${call.topics.join(', ')}`;
+        }
+        if (call.sentiment) {
+          context += ` - Sentiment: ${call.sentiment}`;
+        }
+        context += '\n';
+      });
+
+      return context;
+    } catch (error) {
+      console.error('Error fetching Gong context for AI:', error);
+      return '';
+    }
+  }
+
   async generateDealSummary(opportunityData: any, activityData: any[]): Promise<DealSummary> {
     await this.ensureInitialized();
 
@@ -284,7 +322,9 @@ export class AIService {
     }
 
     try {
-      const prompt = this.buildDealSummaryPrompt(opportunityData, activityData);
+      // Enrich with Gong data if available
+      const gongContext = await this.getGongContext(opportunityData?.Id, opportunityData?.AccountId);
+      const prompt = this.buildDealSummaryPrompt(opportunityData, activityData) + gongContext;
 
       switch (this.provider) {
         case 'anthropic':
@@ -522,7 +562,15 @@ Provide ONLY the JSON response, no additional text.`;
     }
 
     try {
-      const prompt = this.buildAssistantPrompt(question, userData);
+      // Enrich with Gong context if user asks about a specific opportunity/account
+      let gongContext = '';
+      if (userData?.opportunities?.length > 0) {
+        // Get Gong data for the first opportunity mentioned
+        const firstOpp = userData.opportunities[0];
+        gongContext = await this.getGongContext(firstOpp.Id, firstOpp.AccountId);
+      }
+
+      const prompt = this.buildAssistantPrompt(question, userData) + gongContext;
 
       // In multi-provider mode, prefer external AI (Claude/OpenAI/Gemini) for chat
       // because it's better for general conversation and complex reasoning

@@ -68,6 +68,25 @@ export interface HubLayoutConfig {
   };
 }
 
+export interface OpportunityDetailField {
+  label: string;
+  salesforceField: string;
+  fieldType: 'score' | 'text' | 'currency' | 'date' | 'percent' | 'url';
+  showProgressBar?: boolean;
+}
+
+export interface OpportunityDetailSection {
+  id: string;
+  label: string;
+  enabled: boolean;
+  order: number;
+  fields: OpportunityDetailField[];
+}
+
+export interface OpportunityDetailConfig {
+  sections: OpportunityDetailSection[];
+}
+
 export interface AdminSettings {
   aiProvider: AIProviderConfig;
   salesforceFields: SalesforceFieldConfig;
@@ -330,6 +349,82 @@ export class AdminSettingsService {
        ON CONFLICT (setting_key)
        DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
       ['forecast_config', JSON.stringify(config), userId]
+    );
+  }
+
+  private getDefaultOpportunityDetailConfig(): OpportunityDetailConfig {
+    return {
+      sections: [
+        {
+          id: 'meddpicc',
+          label: 'MEDDPICC Qualification',
+          enabled: true,
+          order: 1,
+          fields: [
+            { label: 'Metrics', salesforceField: 'MEDDPICC_Metrics__c', fieldType: 'score', showProgressBar: true },
+            { label: 'Economic Buyer', salesforceField: 'MEDDPICC_Economic_Buyer__c', fieldType: 'score', showProgressBar: true },
+            { label: 'Decision Criteria', salesforceField: 'MEDDPICC_Decision_Criteria__c', fieldType: 'score', showProgressBar: true },
+            { label: 'Decision Process', salesforceField: 'MEDDPICC_Decision_Process__c', fieldType: 'score', showProgressBar: true },
+            { label: 'Paper Process', salesforceField: 'MEDDPICC_Paper_Process__c', fieldType: 'score', showProgressBar: true },
+            { label: 'Identify Pain', salesforceField: 'MEDDPICC_Identify_Pain__c', fieldType: 'score', showProgressBar: true },
+            { label: 'Champion', salesforceField: 'MEDDPICC_Champion__c', fieldType: 'score', showProgressBar: true },
+            { label: 'Competition', salesforceField: 'MEDDPICC_Competition__c', fieldType: 'score', showProgressBar: true },
+          ],
+        },
+        {
+          id: 'command',
+          label: 'Command of the Message',
+          enabled: true,
+          order: 2,
+          fields: [
+            { label: 'Why Do Anything?', salesforceField: 'Command_Why_Do_Anything__c', fieldType: 'text' },
+            { label: 'Why Now?', salesforceField: 'Command_Why_Now__c', fieldType: 'text' },
+            { label: 'Why Us?', salesforceField: 'Command_Why_Us__c', fieldType: 'text' },
+            { label: 'Why Trust?', salesforceField: 'Command_Why_Trust__c', fieldType: 'text' },
+            { label: 'Why Pay That?', salesforceField: 'Command_Why_Pay_That__c', fieldType: 'text' },
+          ],
+        },
+        {
+          id: 'details',
+          label: 'Details',
+          enabled: true,
+          order: 3,
+          fields: [
+            { label: 'Description', salesforceField: 'Description', fieldType: 'text' },
+            { label: 'Next Step', salesforceField: 'NextStep', fieldType: 'text' },
+          ],
+        },
+        {
+          id: 'competitive',
+          label: 'Competitive Encounters',
+          enabled: true,
+          order: 4,
+          fields: [],
+        },
+      ],
+    };
+  }
+
+  async getOpportunityDetailConfig(): Promise<OpportunityDetailConfig> {
+    const result = await this.pool.query(
+      'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
+      ['opportunity_detail_config']
+    );
+
+    if (result.rows.length === 0) {
+      return this.getDefaultOpportunityDetailConfig();
+    }
+
+    return result.rows[0].setting_value as OpportunityDetailConfig;
+  }
+
+  async setOpportunityDetailConfig(config: OpportunityDetailConfig, userId: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
+      ['opportunity_detail_config', JSON.stringify(config), userId]
     );
   }
 
