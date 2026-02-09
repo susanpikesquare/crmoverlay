@@ -223,14 +223,14 @@ export class AdminSettingsService {
       // Return default config
       return {
         opportunityAmountField: 'Amount',
-        forecastCategoryField: 'ForecastCategory',
+        forecastCategoryField: 'Forecast_Category__c',
       };
     }
 
     const config = result.rows[0].setting_value as SalesforceFieldConfig;
     return {
       opportunityAmountField: config.opportunityAmountField || 'Amount',
-      forecastCategoryField: config.forecastCategoryField || 'ForecastCategory',
+      forecastCategoryField: config.forecastCategoryField || 'Forecast_Category__c',
     };
   }
 

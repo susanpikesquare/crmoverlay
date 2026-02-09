@@ -140,7 +140,7 @@ async function getForecastCategoryFieldName(pool: Pool): Promise<string> {
     return config.forecastCategoryField || 'ForecastCategory';
   } catch (error) {
     console.error('Error fetching forecast category field config:', error);
-    return 'ForecastCategory';
+    return 'Forecast_Category__c';
   }
 }
 

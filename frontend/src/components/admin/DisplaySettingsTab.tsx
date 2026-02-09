@@ -32,7 +32,7 @@ export default function DisplaySettingsTab({ config, onSave }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [settings, setSettings] = useState<DisplaySettings>(config.displaySettings);
   const [salesforceFields, setSalesforceFields] = useState<SalesforceFieldConfig>(
-    config.salesforceFields || { opportunityAmountField: 'Amount', forecastCategoryField: 'ForecastCategory' }
+    config.salesforceFields || { opportunityAmountField: 'Amount', forecastCategoryField: 'Forecast_Category__c' }
   );
 
   // Branding state
@@ -410,9 +410,10 @@ export default function DisplaySettingsTab({ config, onSave }: Props) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="ForecastCategory">ForecastCategory (Standard)</option>
+                <option value="Forecast_Category__c">Forecast_Category__c (Custom)</option>
                 {sfFieldsData?.opportunityFields
                   ?.filter((field: any) =>
-                    field.type === 'picklist' && field.name !== 'ForecastCategory'
+                    field.type === 'picklist' && field.name !== 'ForecastCategory' && field.name !== 'Forecast_Category__c'
                   )
                   .map((field: any) => (
                     <option key={field.name} value={field.name}>
