@@ -260,7 +260,29 @@ router.get('/user/me', isAuthenticated, async (req: Request, res: Response) => {
 
     const user = result.records[0] as any;
     const profileName = user.Profile?.Name || 'Unknown';
-    const role = mapProfileToRole(profileName);
+
+    // Check user-name-based role overrides first (highest priority)
+    let role: AppRole | null = null;
+    try {
+      const appConfig = configService.getConfig();
+      const userOverrides = appConfig.userRoleOverrides || [];
+      const userName = (user.Name || '').toLowerCase();
+      const userEmail = (user.Email || '').toLowerCase();
+      const userOverride = userOverrides.find(
+        o => userName === o.userName.toLowerCase() || userEmail === o.userName.toLowerCase()
+      );
+      if (userOverride) {
+        if (userOverride.appRole === 'admin' || userOverride.appRole === 'sales-leader') {
+          role = 'sales-leader';
+        } else {
+          role = userOverride.appRole as AppRole;
+        }
+      }
+    } catch { }
+
+    if (!role) {
+      role = mapProfileToRole(profileName);
+    }
 
     // Store profile and role in session for future use
     session.userProfile = profileName;

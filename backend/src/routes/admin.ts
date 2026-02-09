@@ -248,6 +248,34 @@ router.put('/config/role-mappings', async (req: Request, res: Response) => {
 });
 
 /**
+ * PUT /api/admin/config/user-role-overrides
+ * Update user-name-based role overrides
+ */
+router.put('/config/user-role-overrides', async (req: Request, res: Response) => {
+  try {
+    const { overrides } = req.body;
+    const session = req.session as any;
+    const modifiedBy = session.userInfo?.name || 'Unknown';
+
+    const updatedConfig = configService.updateConfig({ userRoleOverrides: overrides }, modifiedBy);
+    await persistAppConfig(modifiedBy);
+
+    res.json({
+      success: true,
+      data: updatedConfig.userRoleOverrides,
+      message: 'User role overrides updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Error updating user role overrides:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update user role overrides',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * PUT /api/admin/config/display-settings
  * Update display settings configuration
  */

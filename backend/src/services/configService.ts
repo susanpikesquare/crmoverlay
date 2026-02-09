@@ -70,6 +70,10 @@ export interface AppConfig {
     salesforceProfile: string;
     appRole: 'ae' | 'am' | 'csm' | 'admin' | 'executive' | 'sales-leader';
   }>;
+  userRoleOverrides: Array<{
+    userName: string;
+    appRole: 'ae' | 'am' | 'csm' | 'admin' | 'executive' | 'sales-leader';
+  }>;
   displaySettings: {
     accountsPerPage: number;
     dealsPerPage: number;
@@ -201,6 +205,7 @@ const defaultConfig: AppConfig = {
     { salesforceProfile: 'Customer Success Manager', appRole: 'csm' },
     { salesforceProfile: 'System Administrator', appRole: 'admin' },
   ],
+  userRoleOverrides: [],
   displaySettings: {
     accountsPerPage: 10,
     dealsPerPage: 8,
