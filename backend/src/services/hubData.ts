@@ -1459,13 +1459,25 @@ export async function getSalesLeaderDashboard(
       LIMIT 20
     `;
 
+    // Query won deals with dates for deal cycle calculation
+    const dealCycleQuery = `
+      SELECT Id, CreatedDate, CloseDate
+      FROM Opportunity
+      WHERE OwnerId IN (${teamMemberIdsStr})
+        AND IsWon = true
+        AND ${dateFilter}
+        AND CreatedDate != null
+        AND CloseDate != null
+    `;
+
     // Execute all queries in parallel
-    const [closedWonResult, pipelineResult, recentWinsResult, recentLossesResult, coldAccountsResult] = await Promise.all([
+    const [closedWonResult, pipelineResult, recentWinsResult, recentLossesResult, coldAccountsResult, dealCycleResult] = await Promise.all([
       connection.query(closedWonQuery),
       connection.query(pipelineQuery),
       connection.query(recentWinsQuery),
       connection.query(recentLossesQuery),
       connection.query(coldAccountsQuery),
+      connection.query(dealCycleQuery),
     ]);
 
     const closedWonByRep = closedWonResult.records as any[];
@@ -1473,10 +1485,58 @@ export async function getSalesLeaderDashboard(
     const wins = recentWinsResult.records as any[];
     const losses = recentLossesResult.records as any[];
     const coldAccountsRaw = coldAccountsResult.records as any[];
+    const dealCycleOpps = dealCycleResult.records as any[];
+
+    // Resolve per-rep quotas from admin forecast config
+    const repQuotaMap = new Map<string, number>();
+    if (pool) {
+      const adminSettings = new AdminSettingsService(pool);
+      const forecastConfig = await adminSettings.getForecastConfig();
+      const { quotaSource } = forecastConfig;
+
+      if (quotaSource === 'salesforce') {
+        try {
+          const quotaField = forecastConfig.salesforceQuotaField || 'Quarterly_Quota__c';
+          const quotaQuery = `SELECT Id, ${quotaField} FROM User WHERE Id IN (${teamMemberIdsStr})`;
+          const quotaResult = await connection.query(quotaQuery);
+          for (const rec of quotaResult.records as any[]) {
+            repQuotaMap.set(rec.Id, rec[quotaField] || 0);
+          }
+        } catch (quotaError) {
+          console.log('Could not fetch team quotas from Salesforce:', quotaError);
+        }
+      } else if (quotaSource === 'forecastingQuota') {
+        try {
+          const dateRange = filters.dateRange;
+          const period = getPeriodDates(dateRange, filters.startDate, filters.endDate);
+          const fqQuery = `
+            SELECT QuotaOwnerId, QuotaAmount, StartDate
+            FROM ForecastingQuota
+            WHERE QuotaOwnerId IN (${teamMemberIdsStr})
+              AND StartDate >= ${period.start}
+              AND StartDate <= ${period.end}
+              AND IsQuantity = false
+            ORDER BY StartDate
+          `;
+          const fqResult = await connection.query(fqQuery);
+          for (const rec of fqResult.records as any[]) {
+            const existing = repQuotaMap.get(rec.QuotaOwnerId) || 0;
+            repQuotaMap.set(rec.QuotaOwnerId, existing + (rec.QuotaAmount || 0));
+          }
+        } catch (fqError) {
+          console.log('Could not fetch ForecastingQuota for team:', fqError);
+        }
+      } else if (quotaSource === 'manual') {
+        const manualQuotas = forecastConfig.manualQuotas || {};
+        for (const member of teamMembers) {
+          repQuotaMap.set(member.Id, manualQuotas[member.Id] ?? (forecastConfig.defaultQuota || 0));
+        }
+      }
+    }
 
     // Calculate team metrics
     const totalClosedWon = closedWonByRep.reduce((sum, r) => sum + (r.total || 0), 0);
-    const teamQuotaTarget = teamMembers.length * 1000000; // $1M per rep - should come from actual quota fields
+    const teamQuotaTarget = teamMemberIds.reduce((sum, id) => sum + (repQuotaMap.get(id) || 0), 0);
     const quotaPercentage = teamQuotaTarget > 0 ? (totalClosedWon / teamQuotaTarget) * 100 : 0;
 
     const totalPipeline = allPipeline.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
@@ -1490,24 +1550,30 @@ export async function getSalesLeaderDashboard(
       pipelineStatus = 'Monitor';
     }
 
-    // Calculate at-risk deals
+    // Calculate at-risk deals: stale activity (>14 days) or past close date
     const now = new Date();
     const atRiskDeals = allPipeline.filter(opp => {
       const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
-      const meddpiccScore = calculateMEDDPICCScore(opp);
-      return daysSinceUpdate > 14 || meddpiccScore < 60;
+      const isPastDue = opp.CloseDate ? new Date(opp.CloseDate) < now : false;
+      return daysSinceUpdate > 14 || isPastDue;
     });
     const atRiskValue = atRiskDeals.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
 
-    // Calculate average deal cycle (from created to closed for won deals this year)
-    const avgDealCycleDays = 0;
+    // Calculate average deal cycle (from created to closed for won deals in the period)
+    let avgDealCycleDays = 0;
+    if (dealCycleOpps.length > 0) {
+      const totalCycleDays = dealCycleOpps.reduce((sum, opp) => {
+        return sum + daysBetween(opp.CreatedDate, opp.CloseDate);
+      }, 0);
+      avgDealCycleDays = Math.round(totalCycleDays / dealCycleOpps.length);
+    }
     const avgDealCycleTrend = 0;
 
     // Build rep performance leaderboard
     const repPerformance = teamMembers.map(rep => {
       const repClosedWon = closedWonByRep.find(r => r.OwnerId === rep.Id);
       const closedWonAmount = repClosedWon?.total || 0;
-      const repQuota = 0;
+      const repQuota = repQuotaMap.get(rep.Id) || 0;
       const quotaAttainment = repQuota > 0 ? (closedWonAmount / repQuota) * 100 : 0;
 
       const repPipeline = allPipeline.filter(opp => opp.OwnerId === rep.Id);
@@ -1518,8 +1584,8 @@ export async function getSalesLeaderDashboard(
       const activeDeals = repPipeline.length;
       const repAtRiskDeals = repPipeline.filter(opp => {
         const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
-        const meddpiccScore = calculateMEDDPICCScore(opp);
-        return daysSinceUpdate > 14 || meddpiccScore < 60;
+        const isPastDue = opp.CloseDate ? new Date(opp.CloseDate) < now : false;
+        return daysSinceUpdate > 14 || isPastDue;
       }).length;
 
       const avgDealSize = activeDeals > 0 ? Math.round(totalRepPipeline / activeDeals) : 0;
@@ -1566,6 +1632,8 @@ export async function getSalesLeaderDashboard(
 
     const lowMEDDPICC = allPipeline
       .filter(opp => {
+        // Only flag low MEDDPICC if Probability is actually set (> 0), otherwise the score is unreliable
+        if (!opp.Probability || opp.Probability <= 0) return false;
         const meddpiccScore = calculateMEDDPICCScore(opp);
         return meddpiccScore < 60 && opp.StageName !== 'Prospecting' && opp.StageName !== 'Qualification';
       })
