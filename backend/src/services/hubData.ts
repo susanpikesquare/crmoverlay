@@ -1490,23 +1490,19 @@ export async function getSalesLeaderDashboard(
     // Resolve per-rep quotas from admin forecast config
     const repQuotaMap = new Map<string, number>();
     if (pool) {
-      const adminSettings = new AdminSettingsService(pool);
-      const forecastConfig = await adminSettings.getForecastConfig();
-      const { quotaSource } = forecastConfig;
+      try {
+        const adminSettings = new AdminSettingsService(pool);
+        const forecastConfig = await adminSettings.getForecastConfig();
+        const { quotaSource } = forecastConfig;
 
-      if (quotaSource === 'salesforce') {
-        try {
+        if (quotaSource === 'salesforce') {
           const quotaField = forecastConfig.salesforceQuotaField || 'Quarterly_Quota__c';
           const quotaQuery = `SELECT Id, ${quotaField} FROM User WHERE Id IN (${teamMemberIdsStr})`;
           const quotaResult = await connection.query(quotaQuery);
           for (const rec of quotaResult.records as any[]) {
             repQuotaMap.set(rec.Id, rec[quotaField] || 0);
           }
-        } catch (quotaError) {
-          console.log('Could not fetch team quotas from Salesforce:', quotaError);
-        }
-      } else if (quotaSource === 'forecastingQuota') {
-        try {
+        } else if (quotaSource === 'forecastingQuota') {
           const dateRange = filters.dateRange;
           const period = getPeriodDates(dateRange, filters.startDate, filters.endDate);
           const fqQuery = `
@@ -1523,14 +1519,14 @@ export async function getSalesLeaderDashboard(
             const existing = repQuotaMap.get(rec.QuotaOwnerId) || 0;
             repQuotaMap.set(rec.QuotaOwnerId, existing + (rec.QuotaAmount || 0));
           }
-        } catch (fqError) {
-          console.log('Could not fetch ForecastingQuota for team:', fqError);
+        } else if (quotaSource === 'manual') {
+          const manualQuotas = forecastConfig.manualQuotas || {};
+          for (const member of teamMembers) {
+            repQuotaMap.set(member.Id, manualQuotas[member.Id] ?? (forecastConfig.defaultQuota || 0));
+          }
         }
-      } else if (quotaSource === 'manual') {
-        const manualQuotas = forecastConfig.manualQuotas || {};
-        for (const member of teamMembers) {
-          repQuotaMap.set(member.Id, manualQuotas[member.Id] ?? (forecastConfig.defaultQuota || 0));
-        }
+      } catch (quotaError) {
+        console.log('Could not resolve team quotas:', quotaError);
       }
     }
 
