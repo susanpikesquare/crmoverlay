@@ -4,7 +4,7 @@ import api from '../../services/api';
 
 interface RoleMapping {
   salesforceProfile: string;
-  appRole: 'ae' | 'am' | 'csm' | 'admin';
+  appRole: 'ae' | 'am' | 'csm' | 'admin' | 'executive' | 'sales-leader';
 }
 
 interface Props {
@@ -16,6 +16,8 @@ const APP_ROLES = [
   { value: 'ae', label: 'Account Executive (AE)', icon: '💼' },
   { value: 'am', label: 'Account Manager (AM)', icon: '🤝' },
   { value: 'csm', label: 'Customer Success Manager (CSM)', icon: '💚' },
+  { value: 'sales-leader', label: 'Sales Leader', icon: '📊' },
+  { value: 'executive', label: 'Executive', icon: '👔' },
   { value: 'admin', label: 'Administrator', icon: '⚙️' },
 ];
 

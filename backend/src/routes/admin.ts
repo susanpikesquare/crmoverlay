@@ -138,16 +138,71 @@ router.put('/config/priority-scoring', async (req: Request, res: Response) => {
 
 /**
  * PUT /api/admin/config/field-mappings
- * Update field mappings configuration
+ * Update field mappings configuration.
+ * Also syncs MEDDPICC and Command of the Message mappings into the
+ * opportunity detail config so they are actually queried and displayed.
  */
 router.put('/config/field-mappings', async (req: Request, res: Response) => {
   try {
     const { mappings } = req.body;
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
+    const userId = session.userId || 'Unknown';
 
     const updatedConfig = configService.updateFieldMappings(mappings, modifiedBy);
     await persistAppConfig(modifiedBy);
+
+    // Sync meddpicc & command field mappings into the opportunity detail config
+    try {
+      const detailConfig = await adminSettings.getOpportunityDetailConfig();
+
+      const meddpiccMappings = (mappings as configService.FieldMapping[])
+        .filter((m: configService.FieldMapping) => m.category === 'meddpicc' && m.salesforceField);
+      const commandMappings = (mappings as configService.FieldMapping[])
+        .filter((m: configService.FieldMapping) => m.category === 'command' && m.salesforceField);
+
+      let changed = false;
+
+      // Sync MEDDPICC section
+      if (meddpiccMappings.length > 0) {
+        let meddpiccSection = detailConfig.sections.find(s => s.id === 'meddpicc');
+        if (!meddpiccSection) {
+          meddpiccSection = { id: 'meddpicc', label: 'MEDDPICC Qualification', enabled: true, order: 1, fields: [] };
+          detailConfig.sections.push(meddpiccSection);
+        }
+        meddpiccSection.enabled = true;
+        meddpiccSection.fields = meddpiccMappings.map((m: configService.FieldMapping) => ({
+          label: m.conceptName,
+          salesforceField: m.salesforceField!,
+          fieldType: 'score' as const,
+          showProgressBar: true,
+        }));
+        changed = true;
+      }
+
+      // Sync Command of the Message section
+      if (commandMappings.length > 0) {
+        let commandSection = detailConfig.sections.find(s => s.id === 'command');
+        if (!commandSection) {
+          commandSection = { id: 'command', label: 'Command of the Message', enabled: true, order: 2, fields: [] };
+          detailConfig.sections.push(commandSection);
+        }
+        commandSection.enabled = true;
+        commandSection.fields = commandMappings.map((m: configService.FieldMapping) => ({
+          label: m.conceptName,
+          salesforceField: m.salesforceField!,
+          fieldType: 'text' as const,
+        }));
+        changed = true;
+      }
+
+      if (changed) {
+        await adminSettings.setOpportunityDetailConfig(detailConfig, userId);
+      }
+    } catch (syncErr) {
+      console.error('Error syncing field mappings to opportunity detail config:', syncErr);
+      // Don't fail the request — field mappings were saved successfully
+    }
 
     res.json({
       success: true,

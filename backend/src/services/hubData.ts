@@ -721,21 +721,26 @@ export async function getAMMetrics(
  */
 export async function getRenewalAccounts(
   connection: Connection,
-  userId: string
+  userId: string,
+  teamMemberIds?: string[]
 ): Promise<RenewalAccount[]> {
+  const ownerFilter = teamMemberIds && teamMemberIds.length > 0
+    ? `OwnerId IN ('${teamMemberIds.join("','")}')`
+    : `OwnerId = '${userId}'`;
+
   const query = `
-    SELECT Id, Name, Industry, OwnerId,
+    SELECT Id, Name, Industry, OwnerId, Owner.Name,
            Agreement_Expiry_Date__c, Total_ARR__c,
            Current_Gainsight_Score__c, Risk__c,
            Customer_Stage__c, of_Axonify_Users__c,
            Last_QBR__c, Risk_Notes__c,
            CreatedDate, LastModifiedDate
     FROM Account
-    WHERE OwnerId = '${userId}'
+    WHERE ${ownerFilter}
       AND Agreement_Expiry_Date__c != null
       AND Agreement_Expiry_Date__c <= NEXT_N_DAYS:180
     ORDER BY Agreement_Expiry_Date__c ASC
-    LIMIT 20
+    LIMIT ${teamMemberIds ? 50 : 20}
   `;
 
   try {
@@ -855,26 +860,31 @@ export async function getRenewalAccounts(
  */
 export async function getCSMMetrics(
   connection: Connection,
-  userId: string
+  userId: string,
+  teamMemberIds?: string[]
 ): Promise<CSMMetrics> {
+  const userFilter = teamMemberIds && teamMemberIds.length > 0
+    ? `(Customer_Success_Manager__c IN ('${teamMemberIds.join("','")}') OR OwnerId IN ('${teamMemberIds.join("','")}'))`
+    : `Customer_Success_Manager__c = '${userId}'`;
+
   const atRiskQuery = `
     SELECT COUNT() total
     FROM Account
-    WHERE Customer_Success_Manager__c = '${userId}'
+    WHERE ${userFilter}
       AND (Risk__c = 'Red' OR Current_Gainsight_Score__c < 60)
   `;
 
   const avgHealthQuery = `
     SELECT AVG(Current_Gainsight_Score__c) avg
     FROM Account
-    WHERE Customer_Success_Manager__c = '${userId}'
+    WHERE ${userFilter}
       AND Current_Gainsight_Score__c != null
   `;
 
   const upcomingRenewalsQuery = `
     SELECT COUNT() total
     FROM Account
-    WHERE Customer_Success_Manager__c = '${userId}'
+    WHERE ${userFilter}
       AND Agreement_Expiry_Date__c != null
       AND Agreement_Expiry_Date__c <= NEXT_N_DAYS:90
   `;
@@ -923,28 +933,37 @@ export interface AtRiskAccount {
  */
 export async function getAtRiskAccounts(
   connection: Connection,
-  userId: string
+  userId: string,
+  teamMemberIds?: string[]
 ): Promise<AtRiskAccount[]> {
   try {
+    const userFilter = teamMemberIds && teamMemberIds.length > 0
+      ? `(Customer_Success_Manager__c IN ('${teamMemberIds.join("','")}') OR OwnerId IN ('${teamMemberIds.join("','")}'))`
+      : `(Customer_Success_Manager__c = '${userId}' OR OwnerId = '${userId}')`;
+
     // Primary query with full fields - broadened to include active customers
     const query = `
       SELECT Id, Name, Current_Gainsight_Score__c, Risk__c,
              Total_ARR__c, Agreement_Expiry_Date__c,
              LastActivityDate, Customer_Success_Manager__r.Name,
-             Customer_Stage__c
+             Customer_Stage__c, Owner.Name
       FROM Account
-      WHERE (Customer_Success_Manager__c = '${userId}' OR OwnerId = '${userId}')
+      WHERE ${userFilter}
         AND (Customer_Stage__c IN ('Customer', 'Active', 'Active Customer', 'Renewal', 'Implementation') OR Customer_Stage__c = null)
         AND (Risk__c = 'Red' OR Risk__c = 'At Risk' OR Current_Gainsight_Score__c < 60 OR Agreement_Expiry_Date__c <= NEXT_N_DAYS:90)
       ORDER BY Current_Gainsight_Score__c ASC NULLS LAST
       LIMIT 50
     `;
 
+    const fallbackFilter = teamMemberIds && teamMemberIds.length > 0
+      ? `OwnerId IN ('${teamMemberIds.join("','")}')`
+      : `OwnerId = '${userId}'`;
+
     // Fallback query if custom fields don't exist
     const fallbackQuery = `
       SELECT Id, Name, LastActivityDate
       FROM Account
-      WHERE OwnerId = '${userId}'
+      WHERE ${fallbackFilter}
       ORDER BY LastActivityDate ASC NULLS LAST
       LIMIT 20
     `;
@@ -3242,5 +3261,112 @@ export async function getExpansionOpportunityAccounts(
   } catch (error) {
     console.error('Error fetching expansion opportunity accounts:', error);
     return [];
+  }
+}
+
+// ============================================================================
+// EXECUTIVE HUB QUERIES
+// ============================================================================
+
+export interface ExecutiveMetrics {
+  totalPipeline: number;
+  closedWonYTD: number;
+  renewalsAtRisk: number;
+  avgHealthScore: number;
+  atRiskAccountCount: number;
+  expansionPipeline: number;
+  upcomingRenewals: number;
+}
+
+/**
+ * Get cross-org executive metrics (no user filter — SF sharing rules apply)
+ */
+export async function getExecutiveMetrics(
+  connection: Connection,
+  pool: Pool
+): Promise<ExecutiveMetrics> {
+  const amountField = await getAmountFieldName(pool);
+  const yearStart = `${new Date().getFullYear()}-01-01`;
+
+  const pipelineQuery = `
+    SELECT SUM(${amountField}) total
+    FROM Opportunity
+    WHERE IsClosed = false
+  `;
+
+  const closedWonQuery = `
+    SELECT SUM(${amountField}) total
+    FROM Opportunity
+    WHERE IsWon = true
+      AND CloseDate >= ${yearStart}
+  `;
+
+  const renewalsAtRiskQuery = `
+    SELECT COUNT(Id) cnt
+    FROM Account
+    WHERE (Risk__c = 'Red' OR Current_Gainsight_Score__c < 60)
+      AND Agreement_Expiry_Date__c != null
+      AND Agreement_Expiry_Date__c <= NEXT_N_DAYS:180
+  `;
+
+  const avgHealthQuery = `
+    SELECT AVG(Current_Gainsight_Score__c) avg
+    FROM Account
+    WHERE Current_Gainsight_Score__c != null
+  `;
+
+  const atRiskCountQuery = `
+    SELECT COUNT(Id) cnt
+    FROM Account
+    WHERE (Risk__c = 'Red' OR Risk__c = 'At Risk' OR Current_Gainsight_Score__c < 60)
+  `;
+
+  const expansionQuery = `
+    SELECT SUM(${amountField}) total
+    FROM Opportunity
+    WHERE IsClosed = false
+      AND (Type = 'Upsell' OR Type = 'Expansion' OR Type = 'Add-On'
+           OR Type = 'Customer Expansion' OR Type = 'Renewal + Expansion')
+  `;
+
+  const upcomingRenewalsQuery = `
+    SELECT COUNT(Id) cnt
+    FROM Account
+    WHERE Agreement_Expiry_Date__c != null
+      AND Agreement_Expiry_Date__c <= NEXT_N_DAYS:90
+  `;
+
+  try {
+    const [pipeline, closedWon, renewalsAtRisk, avgHealth, atRiskCount, expansion, upcomingRenewals] =
+      await Promise.all([
+        connection.query(pipelineQuery),
+        connection.query(closedWonQuery),
+        connection.query(renewalsAtRiskQuery),
+        connection.query(avgHealthQuery),
+        connection.query(atRiskCountQuery),
+        connection.query(expansionQuery),
+        connection.query(upcomingRenewalsQuery),
+      ]);
+
+    return {
+      totalPipeline: (pipeline.records[0] as any)?.total || 0,
+      closedWonYTD: (closedWon.records[0] as any)?.total || 0,
+      renewalsAtRisk: (renewalsAtRisk.records[0] as any)?.cnt || 0,
+      avgHealthScore: Math.round((avgHealth.records[0] as any)?.avg || 0),
+      atRiskAccountCount: (atRiskCount.records[0] as any)?.cnt || 0,
+      expansionPipeline: (expansion.records[0] as any)?.total || 0,
+      upcomingRenewals: (upcomingRenewals.records[0] as any)?.cnt || 0,
+    };
+  } catch (error) {
+    console.error('Error fetching executive metrics:', error);
+    return {
+      totalPipeline: 0,
+      closedWonYTD: 0,
+      renewalsAtRisk: 0,
+      avgHealthScore: 0,
+      atRiskAccountCount: 0,
+      expansionPipeline: 0,
+      upcomingRenewals: 0,
+    };
   }
 }

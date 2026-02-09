@@ -8,7 +8,7 @@ interface UserInfo {
   name: string;
   email: string;
   profile: string;
-  role: 'sales-leader' | 'ae' | 'am' | 'csm' | 'unknown';
+  role: 'executive' | 'sales-leader' | 'ae' | 'am' | 'csm' | 'unknown';
 }
 
 export default function Dashboard() {
@@ -27,6 +27,9 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isLoading && userInfo) {
       switch (userInfo.role) {
+        case 'executive':
+          navigate('/dashboard/executive', { replace: true });
+          break;
         case 'sales-leader':
           navigate('/dashboard/sales-leader', { replace: true });
           break;

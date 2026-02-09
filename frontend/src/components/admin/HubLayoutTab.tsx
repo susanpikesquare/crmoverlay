@@ -27,6 +27,7 @@ interface HubLayoutConfig {
   am: RoleHubConfig;
   csm: RoleHubConfig;
   salesLeader: RoleHubConfig;
+  executive: RoleHubConfig;
 }
 
 interface Props {
@@ -36,10 +37,15 @@ interface Props {
 
 export default function HubLayoutTab({ config, onSave }: Props) {
   const queryClient = useQueryClient();
-  const [hubLayout, setHubLayout] = useState<HubLayoutConfig>(
-    config.hubLayout || getDefaultHubLayout()
+  const [hubLayout, setHubLayout] = useState<HubLayoutConfig>(() => {
+    const defaults = getDefaultHubLayout();
+    const stored = config.hubLayout || defaults;
+    // Ensure executive config exists (backward compatibility)
+    if (!stored.executive) stored.executive = defaults.executive;
+    return stored;
+  }
   );
-  const [selectedRole, setSelectedRole] = useState<'ae' | 'am' | 'csm' | 'salesLeader'>('ae');
+  const [selectedRole, setSelectedRole] = useState<'ae' | 'am' | 'csm' | 'salesLeader' | 'executive'>('ae');
   const [editingLink, setEditingLink] = useState<CustomLink | null>(null);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
 
@@ -87,6 +93,18 @@ export default function HubLayoutTab({ config, onSave }: Props) {
           { id: 'pipeline', name: 'Pipeline Analysis', enabled: true, order: 4 },
           { id: 'forecasts', name: 'Forecasts', enabled: true, order: 5 },
           { id: 'custom-links', name: 'Quick Links', enabled: true, order: 6 },
+        ],
+        customLinks: [],
+      },
+      executive: {
+        sections: [
+          { id: 'metrics', name: 'Executive Summary', enabled: true, order: 1 },
+          { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
+          { id: 'new-business', name: 'New Business', enabled: true, order: 3 },
+          { id: 'renewals', name: 'Renewals & Retention', enabled: true, order: 4 },
+          { id: 'customer-health', name: 'Customer Health', enabled: true, order: 5 },
+          { id: 'team-performance', name: 'Team Performance', enabled: true, order: 6 },
+          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 7 },
         ],
         customLinks: [],
       },
@@ -215,6 +233,7 @@ export default function HubLayoutTab({ config, onSave }: Props) {
     am: 'Account Manager',
     csm: 'Customer Success Manager',
     salesLeader: 'Sales Leader',
+    executive: 'Executive',
   };
 
   return (

@@ -10,6 +10,61 @@ export default function Navigation() {
   const [showAccountsMenu, setShowAccountsMenu] = useState(false);
   const accountsMenuRef = useRef<HTMLDivElement>(null);
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ accounts: any[]; opportunities: any[] } | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSearchResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (searchQuery.trim().length < 2) {
+      setSearchResults(null);
+      setShowSearchResults(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    setShowSearchResults(true);
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const response = await apiClient.get('/api/search', { params: { q: searchQuery.trim() } });
+        setSearchResults(response.data.data);
+      } catch {
+        setSearchResults({ accounts: [], opportunities: [] });
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchQuery]);
+
+  const handleSearchSelect = (type: 'account' | 'opportunity', id: string) => {
+    setShowSearchResults(false);
+    setSearchQuery('');
+    setSearchResults(null);
+    navigate(type === 'account' ? `/account/${id}` : `/opportunity/${id}`);
+  };
+
   // Close accounts dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -90,7 +145,9 @@ export default function Navigation() {
       const userRole = userResponse.data.data.role;
 
       // Redirect to appropriate cockpit based on role
-      if (userRole === 'ae') {
+      if (userRole === 'executive') {
+        navigate('/dashboard/executive');
+      } else if (userRole === 'ae') {
         navigate('/dashboard/ae');
       } else if (userRole === 'am') {
         navigate('/dashboard/am');
@@ -205,6 +262,86 @@ export default function Navigation() {
                 </svg>
                 Settings
               </Link>
+            )}
+          </div>
+
+          {/* Global Search */}
+          <div className="relative" ref={searchRef}>
+            <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 focus-within:ring-2 focus-within:ring-purple-400 focus-within:bg-white transition">
+              <svg className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search accounts & opps..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onFocus={() => { if (searchResults) setShowSearchResults(true); }}
+                onKeyDown={e => { if (e.key === 'Escape') { setShowSearchResults(false); (e.target as HTMLInputElement).blur(); } }}
+                className="bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400 w-52"
+              />
+            </div>
+            {showSearchResults && (
+              <div className="absolute left-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                {searchLoading ? (
+                  <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                    <svg className="animate-spin h-5 w-5 mx-auto mb-2 text-purple-500" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Searching...
+                  </div>
+                ) : searchResults && searchResults.accounts.length === 0 && searchResults.opportunities.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-gray-500 text-sm">No results found</div>
+                ) : (
+                  <>
+                    {searchResults && searchResults.accounts.length > 0 && (
+                      <>
+                        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+                          Accounts
+                        </div>
+                        {searchResults.accounts.map((acc: any) => (
+                          <button
+                            key={acc.id}
+                            onClick={() => handleSearchSelect('account', acc.id)}
+                            className="w-full px-4 py-2.5 text-left hover:bg-gray-50 transition border-b border-gray-50 last:border-0"
+                          >
+                            <p className="text-sm font-medium text-gray-900">{acc.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {acc.ownerName && <span>Owner: {acc.ownerName}</span>}
+                              {acc.ownerName && acc.industry && <span> &middot; </span>}
+                              {acc.industry && <span>{acc.industry}</span>}
+                            </p>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {searchResults && searchResults.opportunities.length > 0 && (
+                      <>
+                        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+                          Opportunities
+                        </div>
+                        {searchResults.opportunities.map((opp: any) => (
+                          <button
+                            key={opp.id}
+                            onClick={() => handleSearchSelect('opportunity', opp.id)}
+                            className="w-full px-4 py-2.5 text-left hover:bg-gray-50 transition border-b border-gray-50 last:border-0"
+                          >
+                            <p className="text-sm font-medium text-gray-900">{opp.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {opp.accountName && <span>{opp.accountName}</span>}
+                              {opp.accountName && opp.ownerName && <span> &middot; </span>}
+                              {opp.ownerName && <span>Owner: {opp.ownerName}</span>}
+                              {(opp.accountName || opp.ownerName) && opp.stageName && <span> &middot; </span>}
+                              {opp.stageName && <span>{opp.stageName}</span>}
+                            </p>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </div>
 

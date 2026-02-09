@@ -68,7 +68,7 @@ export interface AppConfig {
   opportunityStages?: string[]; // Sales stages to include in filters and queries
   roleMapping: Array<{
     salesforceProfile: string;
-    appRole: 'ae' | 'am' | 'csm' | 'admin';
+    appRole: 'ae' | 'am' | 'csm' | 'admin' | 'executive' | 'sales-leader';
   }>;
   displaySettings: {
     accountsPerPage: number;

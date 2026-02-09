@@ -2,28 +2,57 @@ import { Router, Request, Response } from 'express';
 import { isAuthenticated } from '../middleware/auth';
 import * as SFData from '../services/salesforceData';
 import * as HubData from '../services/hubData';
+import * as configService from '../services/configService';
 import { aiService } from '../services/aiService';
 import { pool } from '../config/database';
 import { AdminSettingsService } from '../services/adminSettings';
 
 const router = Router();
 
+type AppRole = 'executive' | 'sales-leader' | 'ae' | 'am' | 'csm' | 'unknown';
+
 /**
  * Map Salesforce Profile to app role
  */
-function mapProfileToRole(profileName: string): 'sales-leader' | 'ae' | 'am' | 'csm' | 'unknown' {
+function mapProfileToRole(profileName: string): AppRole {
   const profile = profileName.toLowerCase();
 
-  // Check for sales leadership roles first
+  // 1. Check admin-configured role overrides first
+  try {
+    const appConfig = configService.getConfig();
+    const override = appConfig.roleMapping.find(
+      m => profile.includes(m.salesforceProfile.toLowerCase())
+    );
+    if (override) {
+      if (override.appRole === 'executive') return 'executive';
+      if (override.appRole === 'admin' || override.appRole === 'sales-leader') return 'sales-leader';
+      return override.appRole as 'ae' | 'am' | 'csm';
+    }
+  } catch {
+    // Config not loaded yet, fall through to pattern matching
+  }
+
+  // 2. Check for sales-specific leadership roles (before general executive)
   if (
     profile.includes('sales manager') ||
     profile.includes('vp sales') ||
     profile.includes('cro') ||
-    profile.includes('chief revenue') ||
     profile.includes('sales director') ||
     profile.includes('system administrator')
   ) {
     return 'sales-leader';
+  }
+
+  // 3. Check for executive/senior leadership roles
+  if (
+    profile.includes('svp') ||
+    profile.includes('senior vice president') ||
+    profile.includes('chief') ||
+    profile.includes('president') ||
+    profile.includes('executive') ||
+    profile.includes('director')
+  ) {
+    return 'executive';
   }
 
   if (profile.includes('sales user')) {
@@ -43,6 +72,88 @@ function mapProfileToRole(profileName: string): 'sales-leader' | 'ae' | 'am' | '
 
   return 'unknown';
 }
+
+/**
+ * GET /api/search
+ * Global search across Accounts and Opportunities using Salesforce-native sharing rules.
+ * No OwnerId filter — Salesforce handles visibility via the user's OAuth connection.
+ */
+router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const q = (req.query.q as string || '').trim();
+
+    if (!connection) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    if (q.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Search term must be at least 2 characters',
+      });
+    }
+
+    // Escape single quotes for SOQL safety
+    const safeTerm = q.replace(/'/g, "\\'");
+
+    const accountQuery = `
+      SELECT Id, Name, Industry, OwnerId, Owner.Name
+      FROM Account
+      WHERE Name LIKE '%${safeTerm}%'
+      ORDER BY LastModifiedDate DESC
+      LIMIT 8
+    `;
+
+    const oppQuery = `
+      SELECT Id, Name, StageName, Amount, CloseDate, OwnerId, Owner.Name, AccountId, Account.Name
+      FROM Opportunity
+      WHERE Name LIKE '%${safeTerm}%'
+      ORDER BY LastModifiedDate DESC
+      LIMIT 8
+    `;
+
+    const [accountResult, oppResult] = await Promise.all([
+      connection.query(accountQuery),
+      connection.query(oppQuery),
+    ]);
+
+    const accounts = accountResult.records.map((a: any) => ({
+      id: a.Id,
+      name: a.Name,
+      industry: a.Industry,
+      ownerId: a.OwnerId,
+      ownerName: a.Owner?.Name,
+    }));
+
+    const opportunities = oppResult.records.map((o: any) => ({
+      id: o.Id,
+      name: o.Name,
+      stageName: o.StageName,
+      amount: o.Amount,
+      closeDate: o.CloseDate,
+      ownerId: o.OwnerId,
+      ownerName: o.Owner?.Name,
+      accountId: o.AccountId,
+      accountName: o.Account?.Name,
+    }));
+
+    res.json({
+      success: true,
+      data: { accounts, opportunities },
+    });
+  } catch (error: any) {
+    console.error('Error in global search:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Search failed',
+      message: error.message,
+    });
+  }
+});
 
 /**
  * GET /api/branding
@@ -1371,6 +1482,97 @@ router.get('/hub/am/expansion-opportunities', isAuthenticated, async (req: Reque
     res.status(500).json({
       success: false,
       error: 'Failed to fetch expansion opportunity accounts',
+      message: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// EXECUTIVE HUB ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/hub/executive/metrics
+ * Cross-org executive KPIs (no user filter — SF sharing rules apply)
+ */
+router.get('/hub/executive/metrics', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const metrics = await HubData.getExecutiveMetrics(connection, pool);
+
+    res.json({ success: true, data: metrics });
+  } catch (error: any) {
+    console.error('Error fetching executive metrics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch executive metrics',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/executive/renewals
+ * Team-wide renewal accounts for executive view
+ */
+router.get('/hub/executive/renewals', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const usersResult = await connection.query('SELECT Id FROM User WHERE IsActive = true LIMIT 200');
+    const allUserIds = (usersResult.records as any[]).map((u: any) => u.Id);
+
+    const renewals = await HubData.getRenewalAccounts(connection, '', allUserIds);
+
+    res.json({ success: true, data: renewals, count: renewals.length });
+  } catch (error: any) {
+    console.error('Error fetching executive renewals:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch executive renewals',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/executive/customer-health
+ * Team-wide customer health: at-risk accounts + aggregated metrics
+ */
+router.get('/hub/executive/customer-health', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const usersResult = await connection.query('SELECT Id FROM User WHERE IsActive = true LIMIT 200');
+    const allUserIds = (usersResult.records as any[]).map((u: any) => u.Id);
+
+    const [atRiskAccounts, metrics] = await Promise.all([
+      HubData.getAtRiskAccounts(connection, '', allUserIds),
+      HubData.getCSMMetrics(connection, '', allUserIds),
+    ]);
+
+    res.json({
+      success: true,
+      data: { atRiskAccounts, metrics },
+    });
+  } catch (error: any) {
+    console.error('Error fetching executive customer health:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch executive customer health',
       message: error.message,
     });
   }

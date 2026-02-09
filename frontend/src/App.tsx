@@ -6,6 +6,7 @@ import SuperAdminLogin from './pages/SuperAdminLogin';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import Dashboard from './pages/Dashboard';
 import SalesLeaderDashboard from './pages/SalesLeaderDashboard';
+import ExecutiveHub from './pages/ExecutiveHub';
 import AEHub from './pages/AEHub';
 import AMHub from './pages/AMHub';
 import CSMHub from './pages/CSMHub';
@@ -64,6 +65,7 @@ function App() {
             <Route path="/superadmin/login" element={<SuperAdminLogin />} />
             <Route path="/superadmin/dashboard" element={<SuperAdminDashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/executive" element={<ExecutiveHub />} />
             <Route path="/dashboard/sales-leader" element={<SalesLeaderDashboard />} />
             <Route path="/dashboard/ae" element={<AEHub />} />
             <Route path="/dashboard/am" element={<AMHub />} />

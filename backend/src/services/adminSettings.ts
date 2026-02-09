@@ -66,6 +66,10 @@ export interface HubLayoutConfig {
     sections: HubSectionConfig[];
     customLinks: CustomLink[];
   };
+  executive: {
+    sections: HubSectionConfig[];
+    customLinks: CustomLink[];
+  };
 }
 
 export interface OpportunityDetailField {
@@ -186,6 +190,18 @@ export class AdminSettingsService {
         ],
         customLinks: [],
       },
+      executive: {
+        sections: [
+          { id: 'metrics', name: 'Executive Summary', enabled: true, order: 1 },
+          { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
+          { id: 'new-business', name: 'New Business', enabled: true, order: 3 },
+          { id: 'renewals', name: 'Renewals & Retention', enabled: true, order: 4 },
+          { id: 'customer-health', name: 'Customer Health', enabled: true, order: 5 },
+          { id: 'team-performance', name: 'Team Performance', enabled: true, order: 6 },
+          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 7 },
+        ],
+        customLinks: [],
+      },
     };
   }
 
@@ -251,11 +267,15 @@ export class AdminSettingsService {
     );
 
     if (result.rows.length === 0) {
-      // Return default config
       return this.getDefaultHubLayout();
     }
 
-    return result.rows[0].setting_value as HubLayoutConfig;
+    const stored = result.rows[0].setting_value as HubLayoutConfig;
+    // Ensure executive config exists (backward compatibility)
+    if (!stored.executive) {
+      stored.executive = this.getDefaultHubLayout().executive;
+    }
+    return stored;
   }
 
   async setHubLayoutConfig(config: HubLayoutConfig, userId: string): Promise<void> {
