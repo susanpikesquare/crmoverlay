@@ -2051,6 +2051,7 @@ export async function getPipelineForecast(
     let pipelineAmount: number;
     let commitLabel: string;
     let bestCaseLabel: string;
+    let forecastMethodUsed = forecastConfig.forecastMethod;
     const { forecastMethod, commitProbabilityThreshold, bestCaseProbabilityThreshold } = forecastConfig;
 
     if (forecastMethod === 'forecastCategory') {
@@ -2079,6 +2080,28 @@ export async function getPipelineForecast(
         .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
       commitLabel = `>=${commitThreshold}%`;
       bestCaseLabel = `>=${bestCaseThreshold}%`;
+
+      // Fallback: if probability method yields $0 for commit+bestCase but there is pipeline,
+      // try ForecastCategory as a fallback (many orgs have Probability values unset or at 0)
+      if (commitAmount === 0 && bestCaseAmount === 0 && totalPipeline > 0) {
+        const fcCommit = openOpps
+          .filter((opp) => opp[forecastCategoryField] === 'Commit')
+          .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+        const fcBestCase = openOpps
+          .filter((opp) => opp[forecastCategoryField] === 'Best Case')
+          .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+        const fcPipeline = openOpps
+          .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
+          .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+        if (fcCommit > 0 || fcBestCase > 0) {
+          commitAmount = fcCommit;
+          bestCaseAmount = fcBestCase;
+          pipelineAmount = fcPipeline;
+          commitLabel = 'Commit';
+          bestCaseLabel = 'Best Case';
+          forecastMethodUsed = 'forecastCategory';
+        }
+      }
     }
 
     // Collect distinct Opportunity Types from the data
@@ -2120,7 +2143,7 @@ export async function getPipelineForecast(
       bestCaseAmount,
       pipelineAmount,
       closedWon,
-      forecastMethod,
+      forecastMethod: forecastMethodUsed,
       commitLabel,
       bestCaseLabel,
       quotaTarget,
@@ -2472,6 +2495,7 @@ export async function getTeamPipelineForecast(
     let pipelineAmount: number;
     let commitLabel: string;
     let bestCaseLabel: string;
+    let forecastMethodUsed = forecastConfig.forecastMethod;
     const { forecastMethod, commitProbabilityThreshold, bestCaseProbabilityThreshold } = forecastConfig;
 
     if (forecastMethod === 'forecastCategory') {
@@ -2501,6 +2525,28 @@ export async function getTeamPipelineForecast(
         .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
       commitLabel = `>=${commitThreshold}%`;
       bestCaseLabel = `>=${bestCaseThreshold}%`;
+
+      // Fallback: if probability method yields $0 for commit+bestCase but there is pipeline,
+      // try ForecastCategory as a fallback (many orgs have Probability values unset or at 0)
+      if (commitAmount === 0 && bestCaseAmount === 0 && totalPipeline > 0) {
+        const fcCommit = openOpps
+          .filter((opp) => opp[forecastCategoryField] === 'Commit')
+          .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+        const fcBestCase = openOpps
+          .filter((opp) => opp[forecastCategoryField] === 'Best Case')
+          .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+        const fcPipeline = openOpps
+          .filter((opp) => opp[forecastCategoryField] === 'Pipeline')
+          .reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+        if (fcCommit > 0 || fcBestCase > 0) {
+          commitAmount = fcCommit;
+          bestCaseAmount = fcBestCase;
+          pipelineAmount = fcPipeline;
+          commitLabel = 'Commit';
+          bestCaseLabel = 'Best Case';
+          forecastMethodUsed = 'forecastCategory';
+        }
+      }
     }
 
     // Collect distinct Opportunity Types from the data
@@ -2542,7 +2588,7 @@ export async function getTeamPipelineForecast(
       bestCaseAmount,
       pipelineAmount,
       closedWon,
-      forecastMethod,
+      forecastMethod: forecastMethodUsed,
       commitLabel,
       bestCaseLabel,
       quotaTarget,

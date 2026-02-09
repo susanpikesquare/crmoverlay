@@ -15,9 +15,28 @@ const adminSettings = new AdminSettingsService(pool);
 router.use(isAuthenticated);
 router.use(isAdmin);
 
+// Track whether in-memory config has been hydrated from the database
+let configHydrated = false;
+
+// Ensure in-memory config is up-to-date with DB before persisting,
+// so a save on one section doesn't overwrite DB values for other sections
+async function hydrateConfigFromDB(): Promise<void> {
+  if (configHydrated) return;
+  try {
+    const dbAppConfig = await adminSettings.getAppConfig();
+    if (dbAppConfig) {
+      configService.updateConfig(dbAppConfig, dbAppConfig.lastModified?.by || 'system');
+    }
+    configHydrated = true;
+  } catch (err) {
+    console.error('Failed to hydrate config from database:', err);
+  }
+}
+
 // Helper: persist the current in-memory AppConfig to the database
 async function persistAppConfig(userId: string): Promise<void> {
   try {
+    await hydrateConfigFromDB();
     const config = configService.getConfig();
     await adminSettings.saveAppConfig(config, userId);
   } catch (err) {
@@ -31,16 +50,9 @@ async function persistAppConfig(userId: string): Promise<void> {
  */
 router.get('/config', async (_req: Request, res: Response) => {
   try {
-    // Load persisted app config from database (survives server restarts)
-    const dbAppConfig = await adminSettings.getAppConfig();
-
-    // Get in-memory defaults, then override with DB values if they exist
-    let config = configService.getConfig();
-    if (dbAppConfig) {
-      // Restore DB config into memory so subsequent in-process reads are current
-      configService.updateConfig(dbAppConfig, dbAppConfig.lastModified?.by || 'system');
-      config = configService.getConfig();
-    }
+    // Hydrate in-memory config from database (survives server restarts)
+    await hydrateConfigFromDB();
+    const config = configService.getConfig();
 
     // Add database-backed settings (these are already persisted separately)
     const salesforceFields = await adminSettings.getSalesforceFieldConfig();

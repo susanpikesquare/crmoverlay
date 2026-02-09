@@ -307,7 +307,7 @@ export class AdminSettingsService {
     );
 
     const defaults: ForecastConfig = {
-      forecastMethod: 'probability',
+      forecastMethod: 'forecastCategory',
       commitProbabilityThreshold: 70,
       bestCaseProbabilityThreshold: 50,
       commitProbability: 90,
