@@ -1567,6 +1567,56 @@ router.get('/hub/executive/renewals', isAuthenticated, async (req: Request, res:
 });
 
 /**
+ * GET /api/hub/executive/priorities
+ * Org-wide executive priorities (critical at-risk deals, missing info, stuck deals)
+ */
+router.get('/hub/executive/priorities', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const priorities = await HubData.getExecutivePriorities(connection, pool);
+
+    res.json({ success: true, data: priorities, count: priorities.length });
+  } catch (error: any) {
+    console.error('Error fetching executive priorities:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch executive priorities',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/executive/at-risk-deals
+ * Org-wide at-risk deals with risk signals
+ */
+router.get('/hub/executive/at-risk-deals', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const deals = await HubData.getExecutiveAtRiskDeals(connection, pool);
+
+    res.json({ success: true, data: deals, count: deals.length });
+  } catch (error: any) {
+    console.error('Error fetching executive at-risk deals:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch executive at-risk deals',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/hub/executive/customer-health
  * Team-wide customer health: at-risk accounts + aggregated metrics
  */

@@ -50,7 +50,7 @@ export default function ForecastSettingsTab({ config, onSave }: Props) {
       return response.data;
     },
     staleTime: 5 * 60 * 1000,
-    enabled: quotaSource === 'manual',
+    enabled: quotaSource !== 'none',
   });
 
   const teamMembers = teamData?.data || [];
@@ -301,6 +301,46 @@ export default function ForecastSettingsTab({ config, onSave }: Props) {
               {teamMembers.length === 0 && (
                 <p className="text-xs text-green-700">
                   Team member list will appear here once user data is available. The default quota will be used for all team members.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Individual Overrides for non-manual sources */}
+          {(quotaSource === 'salesforce' || quotaSource === 'forecastingQuota') && (
+            <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-yellow-800 mb-1">Individual Overrides</label>
+                <p className="text-xs text-yellow-700">
+                  Override the {quotaSource === 'salesforce' ? 'User Field' : 'Forecasting Quota'} value for specific users.
+                  Leave empty to use the primary source value.
+                </p>
+              </div>
+
+              {teamMembers.length > 0 ? (
+                <div>
+                  <div className="bg-white rounded-lg border border-yellow-200 divide-y divide-yellow-100">
+                    {teamMembers.map((member) => (
+                      <div key={member.id} className="px-3 py-2 flex items-center justify-between">
+                        <span className="text-sm text-gray-900">{member.name}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm text-gray-400">$</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={manualQuotas[member.id] ?? ''}
+                            onChange={(e) => handleManualQuotaChange(member.id, Number(e.target.value))}
+                            placeholder="Auto"
+                            className="w-28 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-yellow-700">
+                  Team member list will appear here once user data is available.
                 </p>
               )}
             </div>

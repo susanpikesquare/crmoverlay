@@ -1544,6 +1544,16 @@ export async function getSalesLeaderDashboard(
             repQuotaMap.set(member.Id, manualQuotas[member.Id] ?? (forecastConfig.defaultQuota || 0));
           }
         }
+
+        // Apply manual overrides on top of any primary source
+        if (quotaSource !== 'manual' && quotaSource !== 'none') {
+          const manualQuotas = forecastConfig.manualQuotas || {};
+          for (const [userId, amount] of Object.entries(manualQuotas)) {
+            if (amount > 0) {
+              repQuotaMap.set(userId, amount);
+            }
+          }
+        }
       } catch (quotaError) {
         console.log('Could not resolve team quotas:', quotaError);
       }
@@ -2213,6 +2223,14 @@ export async function getPipelineForecast(
       const manualQuotas = forecastConfig.manualQuotas || {};
       quotaTarget = manualQuotas[userId] ?? (forecastConfig.defaultQuota || 0);
     }
+
+    // Apply manual override on top of any primary source
+    if (quotaSource !== 'manual' && quotaSource !== 'none') {
+      const manualQuotas = forecastConfig.manualQuotas || {};
+      if (manualQuotas[userId] && manualQuotas[userId] > 0) {
+        quotaTarget = manualQuotas[userId];
+      }
+    }
     const quotaAttainment = quotaTarget > 0 ? (closedWon / quotaTarget) * 100 : 0;
 
     // Get Salesforce instance URL
@@ -2657,6 +2675,14 @@ export async function getTeamPipelineForecast(
     } else if (quotaSource === 'manual') {
       const manualQuotas = forecastConfig.manualQuotas || {};
       quotaTarget = manualQuotas[managerId] ?? (forecastConfig.defaultQuota || 0);
+    }
+
+    // Apply manual override on top of any primary source
+    if (quotaSource !== 'manual' && quotaSource !== 'none') {
+      const manualQuotas = forecastConfig.manualQuotas || {};
+      if (manualQuotas[managerId] && manualQuotas[managerId] > 0) {
+        quotaTarget = manualQuotas[managerId];
+      }
     }
     const quotaAttainment = quotaTarget > 0 ? (closedWon / quotaTarget) * 100 : 0;
 
@@ -3368,5 +3394,252 @@ export async function getExecutiveMetrics(
       expansionPipeline: 0,
       upcomingRenewals: 0,
     };
+  }
+}
+
+/**
+ * Executive At-Risk Deal
+ */
+export interface ExecutiveAtRiskDeal {
+  id: string;
+  name: string;
+  accountName: string;
+  ownerName: string;
+  amount: number;
+  stage: string;
+  closeDate: string;
+  daysSinceUpdate: number;
+  daysUntilClose: number;
+  riskFactors: string[];
+}
+
+/**
+ * Get Executive Priorities — org-wide critical items
+ * Follows getTeamPriorities() pattern but with higher thresholds for exec view
+ */
+export async function getExecutivePriorities(
+  connection: Connection,
+  pool?: Pool
+): Promise<PriorityItem[]> {
+  try {
+    const amountField = pool ? await getAmountFieldName(pool) : 'Amount';
+    const now = new Date();
+    const priorities: PriorityItem[] = [];
+
+    // Get all active users
+    const usersQuery = `SELECT Id, Name FROM User WHERE IsActive = true LIMIT 200`;
+    const usersResult = await connection.query(usersQuery);
+    const allUsers = usersResult.records as any[];
+    const allUserIds = allUsers.map((u: any) => u.Id);
+
+    if (allUserIds.length === 0) {
+      return priorities;
+    }
+
+    // Get all open opportunities org-wide
+    const oppQuery = `
+      SELECT Id, Name, AccountId, Account.Name, StageName, ${amountField}, CloseDate,
+             LastModifiedDate, CreatedDate, OwnerId, Owner.Name,
+             NextStep, Probability
+      FROM Opportunity
+      WHERE OwnerId IN ('${allUserIds.join("','")}')
+        AND IsClosed = false
+      ORDER BY CloseDate ASC
+      LIMIT 500
+    `;
+
+    const oppResult = await connection.query(oppQuery);
+    const opportunities = oppResult.records as any[];
+
+    // Track priorities by rep — cap 2 per rep for diversity
+    const prioritiesByRep = new Map<string, number>();
+
+    // 1. Critical: At-Risk Deals ($100K+ threshold for exec view)
+    opportunities.forEach((opp) => {
+      const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+      const probability = opp.Probability || 0;
+      const isAtRisk = probability < 50 || daysSinceUpdate > 21;
+
+      if (isAtRisk && (opp[amountField] || 0) > 100000) {
+        const repPriorities = prioritiesByRep.get(opp.OwnerId) || 0;
+        if (repPriorities < 2) {
+          priorities.push({
+            id: `at-risk-${opp.Id}`,
+            type: 'deal-risk',
+            title: `${opp.Owner?.Name || 'Unknown'}: ${opp.Name} flagged as At Risk`,
+            description: `${formatCurrency(opp[amountField] || 0)} - ${probability}% probability, ${daysSinceUpdate} days since update`,
+            urgency: 'critical',
+            relatedAccountId: opp.AccountId,
+            relatedAccountName: opp.Account?.Name,
+            relatedOpportunityId: opp.Id,
+            relatedOpportunityName: opp.Name,
+            actionButton: {
+              label: 'Review Deal',
+              action: `/opportunity/${opp.Id}`,
+            },
+          });
+          prioritiesByRep.set(opp.OwnerId, repPriorities + 1);
+        }
+      }
+    });
+
+    // 2. High: Large deals closing this month missing info ($75K+ threshold)
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    opportunities.forEach((opp) => {
+      const closeDate = new Date(opp.CloseDate);
+      const amount = opp[amountField] || 0;
+      if (
+        closeDate.getMonth() === currentMonth &&
+        closeDate.getFullYear() === currentYear &&
+        amount > 75000
+      ) {
+        const missingFields: string[] = [];
+        if (!opp.NextStep || String(opp.NextStep).trim().length === 0) missingFields.push('Next Step');
+        if (!opp.Probability || opp.Probability === 0) missingFields.push('Probability');
+
+        if (missingFields.length > 0) {
+          priorities.push({
+            id: `missing-info-${opp.Id}`,
+            type: 'missing-info',
+            title: `${opp.Owner?.Name || 'Unknown'}: Complete info for ${opp.Name}`,
+            description: `${formatCurrency(amount)} closing ${formatDate(opp.CloseDate)} - Missing: ${missingFields.join(', ')}`,
+            urgency: 'high',
+            relatedAccountId: opp.AccountId,
+            relatedAccountName: opp.Account?.Name,
+            relatedOpportunityId: opp.Id,
+            relatedOpportunityName: opp.Name,
+            actionButton: {
+              label: 'Review',
+              action: `/opportunity/${opp.Id}`,
+            },
+          });
+        }
+      }
+    });
+
+    // 3. High: Deals stuck in stage > 45 days ($75K+ threshold)
+    opportunities.forEach((opp) => {
+      const daysInStage = daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now);
+      if (daysInStage > 45 && (opp[amountField] || 0) > 75000) {
+        const repPriorities = prioritiesByRep.get(opp.OwnerId) || 0;
+        if (repPriorities < 2) {
+          priorities.push({
+            id: `stuck-${opp.Id}`,
+            type: 'stage-stuck',
+            title: `${opp.Owner?.Name || 'Unknown'}: ${opp.Name} stuck ${daysInStage} days`,
+            description: `${formatCurrency(opp[amountField] || 0)} in ${opp.StageName} - Needs intervention`,
+            urgency: 'high',
+            relatedAccountId: opp.AccountId,
+            relatedAccountName: opp.Account?.Name,
+            relatedOpportunityId: opp.Id,
+            relatedOpportunityName: opp.Name,
+            actionButton: {
+              label: 'Review Deal',
+              action: `/opportunity/${opp.Id}`,
+            },
+          });
+          prioritiesByRep.set(opp.OwnerId, repPriorities + 1);
+        }
+      }
+    });
+
+    // 4. Medium: Low qualification on significant deals ($100K+)
+    opportunities.forEach((opp) => {
+      const probability = opp.Probability || 0;
+      const amount = opp[amountField] || 0;
+      if (probability < 50 && amount > 100000 && opp.StageName !== 'Prospecting') {
+        priorities.push({
+          id: `low-qualification-${opp.Id}`,
+          type: 'missing-info',
+          title: `${opp.Owner?.Name || 'Unknown'}: Low qualification on ${opp.Name}`,
+          description: `${formatCurrency(amount)} - ${probability}% probability - Needs attention`,
+          urgency: 'medium',
+          relatedAccountId: opp.AccountId,
+          relatedAccountName: opp.Account?.Name,
+          relatedOpportunityId: opp.Id,
+          relatedOpportunityName: opp.Name,
+          actionButton: {
+            label: 'Review Deal',
+            action: `/opportunity/${opp.Id}`,
+          },
+        });
+      }
+    });
+
+    // Sort by urgency and limit to top 20
+    const urgencyOrder = { critical: 0, high: 1, medium: 2 };
+    priorities.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
+
+    return priorities.slice(0, 20);
+  } catch (error) {
+    console.error('Error fetching executive priorities:', error);
+    return [];
+  }
+}
+
+/**
+ * Get Executive At-Risk Deals — org-wide deals with risk signals
+ */
+export async function getExecutiveAtRiskDeals(
+  connection: Connection,
+  pool?: Pool
+): Promise<ExecutiveAtRiskDeal[]> {
+  try {
+    const amountField = pool ? await getAmountFieldName(pool) : 'Amount';
+    const now = new Date();
+
+    // Get all open opportunities org-wide with sufficient amount
+    const oppQuery = `
+      SELECT Id, Name, AccountId, Account.Name, StageName, ${amountField}, CloseDate,
+             LastModifiedDate, OwnerId, Owner.Name, NextStep, Probability
+      FROM Opportunity
+      WHERE IsClosed = false
+        AND ${amountField} > 25000
+      ORDER BY ${amountField} DESC
+      LIMIT 200
+    `;
+
+    const oppResult = await connection.query(oppQuery);
+    const opportunities = oppResult.records as any[];
+
+    const atRiskDeals: ExecutiveAtRiskDeal[] = [];
+
+    opportunities.forEach((opp) => {
+      const daysSinceUpdate = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+      const closeDate = new Date(opp.CloseDate);
+      const daysUntilClose = Math.ceil((closeDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const probability = opp.Probability || 0;
+
+      const riskFactors: string[] = [];
+
+      if (daysSinceUpdate > 14) riskFactors.push(`Stale ${daysSinceUpdate}d`);
+      if (daysUntilClose < 0) riskFactors.push('Overdue close');
+      if (!opp.NextStep || String(opp.NextStep).trim().length === 0) riskFactors.push('No Next Step');
+      if (probability > 0 && probability < 40) riskFactors.push(`Low prob ${probability}%`);
+
+      if (riskFactors.length > 0) {
+        atRiskDeals.push({
+          id: opp.Id,
+          name: opp.Name,
+          accountName: opp.Account?.Name || 'Unknown',
+          ownerName: opp.Owner?.Name || 'Unknown',
+          amount: opp[amountField] || 0,
+          stage: opp.StageName,
+          closeDate: opp.CloseDate,
+          daysSinceUpdate,
+          daysUntilClose,
+          riskFactors,
+        });
+      }
+    });
+
+    // Sort by amount descending, limit 25
+    atRiskDeals.sort((a, b) => b.amount - a.amount);
+    return atRiskDeals.slice(0, 25);
+  } catch (error) {
+    console.error('Error fetching executive at-risk deals:', error);
+    return [];
   }
 }

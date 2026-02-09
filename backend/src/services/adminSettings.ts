@@ -194,11 +194,13 @@ export class AdminSettingsService {
         sections: [
           { id: 'metrics', name: 'Executive Summary', enabled: true, order: 1 },
           { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
-          { id: 'new-business', name: 'New Business', enabled: true, order: 3 },
-          { id: 'renewals', name: 'Renewals & Retention', enabled: true, order: 4 },
-          { id: 'customer-health', name: 'Customer Health', enabled: true, order: 5 },
-          { id: 'team-performance', name: 'Team Performance', enabled: true, order: 6 },
-          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 7 },
+          { id: 'priorities', name: 'Executive Priorities', enabled: true, order: 3 },
+          { id: 'at-risk-deals', name: 'At-Risk Deals', enabled: true, order: 4 },
+          { id: 'new-business', name: 'New Business', enabled: true, order: 5 },
+          { id: 'renewals', name: 'Renewals & Retention', enabled: true, order: 6 },
+          { id: 'customer-health', name: 'Customer Health', enabled: true, order: 7 },
+          { id: 'team-performance', name: 'Team Performance', enabled: true, order: 8 },
+          { id: 'custom-links', name: 'Quick Links', enabled: true, order: 9 },
         ],
         customLinks: [],
       },
@@ -274,6 +276,19 @@ export class AdminSettingsService {
     // Ensure executive config exists (backward compatibility)
     if (!stored.executive) {
       stored.executive = this.getDefaultHubLayout().executive;
+    } else {
+      // Migrate: append priorities and at-risk-deals if missing from existing executive config
+      const execSections = stored.executive.sections;
+      const sectionIds = execSections.map(s => s.id);
+      const maxOrder = execSections.reduce((max, s) => Math.max(max, s.order), 0);
+
+      if (!sectionIds.includes('priorities')) {
+        execSections.push({ id: 'priorities', name: 'Executive Priorities', enabled: true, order: maxOrder + 1 });
+      }
+      if (!sectionIds.includes('at-risk-deals')) {
+        const newMax = execSections.reduce((max, s) => Math.max(max, s.order), 0);
+        execSections.push({ id: 'at-risk-deals', name: 'At-Risk Deals', enabled: true, order: newMax + 1 });
+      }
     }
     return stored;
   }

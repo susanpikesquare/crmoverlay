@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import PipelineForecastPanel from '../components/PipelineForecastPanel';
 import AIAssistant from '../components/AIAssistant';
+import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
 
 interface ExecutiveMetrics {
   totalPipeline: number;
@@ -66,24 +67,89 @@ interface SalesLeaderData {
   repPerformance: RepPerformance[];
 }
 
-type TabId = 'new-business' | 'renewals' | 'customer-health' | 'team-performance';
+interface PriorityItem {
+  id: string;
+  type: 'deal-risk' | 'missing-info' | 'icp-alert' | 'task-due' | 'no-next-step' | 'stage-stuck';
+  title: string;
+  description: string;
+  urgency: 'critical' | 'high' | 'medium';
+  relatedAccountId?: string;
+  relatedAccountName?: string;
+  relatedOpportunityId?: string;
+  relatedOpportunityName?: string;
+  dueDate?: string;
+  actionButton: {
+    label: string;
+    action: string;
+  };
+}
 
-const tabs: { id: TabId; label: string; icon: string }[] = [
-  { id: 'new-business', label: 'New Business', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
-  { id: 'renewals', label: 'Renewals & Retention', icon: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' },
-  { id: 'customer-health', label: 'Customer Health', icon: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z' },
-  { id: 'team-performance', label: 'Team Performance', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
-];
+interface ExecutiveAtRiskDeal {
+  id: string;
+  name: string;
+  accountName: string;
+  ownerName: string;
+  amount: number;
+  stage: string;
+  closeDate: string;
+  daysSinceUpdate: number;
+  daysUntilClose: number;
+  riskFactors: string[];
+}
+
+interface HubSectionConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  order: number;
+}
+
+interface CustomLink {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  icon?: string;
+}
 
 export default function ExecutiveHub() {
-  const [activeTab, setActiveTab] = useState<TabId>('new-business');
   const [expandedRenewals, setExpandedRenewals] = useState(false);
   const [expandedAtRisk, setExpandedAtRisk] = useState(false);
   const [expandedReps, setExpandedReps] = useState(false);
+  const [expandedDeals, setExpandedDeals] = useState(false);
   const [sortBy, setSortBy] = useState<keyof RepPerformance>('quotaAttainment');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Always load executive metrics
+  // Fetch admin config for hub layout
+  const { data: adminConfig } = useQuery({
+    queryKey: ['adminConfig'],
+    queryFn: async () => {
+      const response = await api.get('/api/admin/config');
+      return response.data.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const hubLayout = adminConfig?.hubLayout?.executive;
+  const sections: HubSectionConfig[] = hubLayout?.sections
+    ? [...hubLayout.sections].sort((a: HubSectionConfig, b: HubSectionConfig) => a.order - b.order)
+    : [
+        { id: 'metrics', name: 'Executive Summary', enabled: true, order: 1 },
+        { id: 'ai-assistant', name: 'AI Assistant', enabled: true, order: 2 },
+        { id: 'priorities', name: 'Executive Priorities', enabled: true, order: 3 },
+        { id: 'at-risk-deals', name: 'At-Risk Deals', enabled: true, order: 4 },
+        { id: 'new-business', name: 'New Business', enabled: true, order: 5 },
+        { id: 'renewals', name: 'Renewals & Retention', enabled: true, order: 6 },
+        { id: 'customer-health', name: 'Customer Health', enabled: true, order: 7 },
+        { id: 'team-performance', name: 'Team Performance', enabled: true, order: 8 },
+        { id: 'custom-links', name: 'Quick Links', enabled: true, order: 9 },
+      ];
+  const customLinks: CustomLink[] = hubLayout?.customLinks || [];
+
+  const isSectionEnabled = (sectionId: string) =>
+    sections.find((s) => s.id === sectionId)?.enabled ?? true;
+
+  // Executive metrics
   const { data: metrics, isLoading: loadingMetrics } = useQuery<ExecutiveMetrics>({
     queryKey: ['executive-metrics'],
     queryFn: async () => {
@@ -92,17 +158,37 @@ export default function ExecutiveHub() {
     },
   });
 
-  // Renewals tab data (lazy)
+  // Priorities
+  const { data: priorities } = useQuery<PriorityItem[]>({
+    queryKey: ['executive-priorities'],
+    queryFn: async () => {
+      const response = await api.get('/api/hub/executive/priorities');
+      return response.data.data;
+    },
+    enabled: isSectionEnabled('priorities'),
+  });
+
+  // At-risk deals
+  const { data: atRiskDeals } = useQuery<ExecutiveAtRiskDeal[]>({
+    queryKey: ['executive-at-risk-deals'],
+    queryFn: async () => {
+      const response = await api.get('/api/hub/executive/at-risk-deals');
+      return response.data.data;
+    },
+    enabled: isSectionEnabled('at-risk-deals'),
+  });
+
+  // Renewals
   const { data: renewals, isLoading: loadingRenewals } = useQuery<RenewalAccount[]>({
     queryKey: ['executive-renewals'],
     queryFn: async () => {
       const response = await api.get('/api/hub/executive/renewals');
       return response.data.data;
     },
-    enabled: activeTab === 'renewals',
+    enabled: isSectionEnabled('renewals'),
   });
 
-  // Customer health tab data (lazy)
+  // Customer health
   const { data: healthData, isLoading: loadingHealth } = useQuery<{
     atRiskAccounts: AtRiskAccount[];
     metrics: CSMMetrics;
@@ -112,17 +198,17 @@ export default function ExecutiveHub() {
       const response = await api.get('/api/hub/executive/customer-health');
       return response.data.data;
     },
-    enabled: activeTab === 'customer-health',
+    enabled: isSectionEnabled('customer-health'),
   });
 
-  // Team performance tab data (lazy) — reuses sales-leader endpoint
+  // Team performance
   const { data: teamData, isLoading: loadingTeam } = useQuery<SalesLeaderData>({
     queryKey: ['executive-team-performance'],
     queryFn: async () => {
       const response = await api.get('/api/dashboard/sales-leader?teamFilter=allUsers&includeAll=true');
       return response.data.data;
     },
-    enabled: activeTab === 'team-performance',
+    enabled: isSectionEnabled('team-performance'),
   });
 
   const formatCurrency = (amount: number) =>
@@ -175,13 +261,131 @@ export default function ExecutiveHub() {
     }
   };
 
-  // ---- Tab renderers ----
+  // ---- Section renderers ----
 
-  const renderNewBusinessTab = () => (
+  const renderMetrics = () => (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {loadingMetrics ? (
+        Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="bg-white rounded-xl shadow-md p-5 animate-pulse">
+            <div className="h-3 bg-gray-200 rounded w-20 mb-3" />
+            <div className="h-7 bg-gray-200 rounded w-16" />
+          </div>
+        ))
+      ) : (
+        <>
+          <div className="bg-white rounded-xl shadow-md p-5">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pipeline</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">
+              {formatCurrency(metrics?.totalPipeline || 0)}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl shadow-md p-5">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Closed Won YTD</p>
+            <p className="text-2xl font-bold text-green-600 mt-1">
+              {formatCurrency(metrics?.closedWonYTD || 0)}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl shadow-md p-5">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Renewals at Risk</p>
+            <p className="text-2xl font-bold text-red-600 mt-1">{metrics?.renewalsAtRisk || 0}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Next 180 days</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-md p-5">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Avg Health Score</p>
+            <p className={`text-2xl font-bold mt-1 ${getHealthColor(metrics?.avgHealthScore || 0)}`}>
+              {metrics?.avgHealthScore || 0}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl shadow-md p-5">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">At-Risk Accounts</p>
+            <p className="text-2xl font-bold text-red-600 mt-1">{metrics?.atRiskAccountCount || 0}</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-md p-5">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Expansion Pipeline</p>
+            <p className="text-2xl font-bold text-purple-600 mt-1">
+              {formatCurrency(metrics?.expansionPipeline || 0)}
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const renderPriorities = () => (
+    <TodaysPrioritiesPanel priorities={priorities || []} />
+  );
+
+  const renderAtRiskDeals = () => {
+    const deals = atRiskDeals || [];
+    const displayLimit = expandedDeals ? deals.length : 8;
+
+    return (
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">
+            At-Risk Deals ({deals.length})
+          </h3>
+          {deals.length > 8 && (
+            <button
+              onClick={() => setExpandedDeals(!expandedDeals)}
+              className="text-sm text-purple-600 hover:text-purple-800 font-medium"
+            >
+              {expandedDeals ? 'Show Less' : 'Show All'}
+            </button>
+          )}
+        </div>
+        {deals.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No at-risk deals found</div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {deals.slice(0, displayLimit).map(deal => (
+              <Link
+                key={deal.id}
+                to={`/opportunity/${deal.id}`}
+                className="block px-6 py-4 hover:bg-gray-50 transition"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900">{deal.name}</p>
+                    <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
+                      <span>{deal.accountName}</span>
+                      <span>Owner: {deal.ownerName}</span>
+                      <span>{deal.stage}</span>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      {deal.riskFactors.map((factor, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 text-xs bg-red-50 text-red-700 rounded border border-red-200"
+                        >
+                          {factor}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-right ml-4">
+                    <p className="text-lg font-bold text-gray-900">{formatCurrency(deal.amount)}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {deal.daysUntilClose > 0
+                        ? `Closes in ${deal.daysUntilClose}d`
+                        : `${Math.abs(deal.daysUntilClose)}d overdue`}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderNewBusiness = () => (
     <PipelineForecastPanel dateRange="thisYear" teamFilter="allUsers" />
   );
 
-  const renderRenewalsTab = () => {
+  const renderRenewals = () => {
     if (loadingRenewals) {
       return (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
@@ -199,7 +403,6 @@ export default function ExecutiveHub() {
 
     return (
       <div className="space-y-6">
-        {/* Renewal summary cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white rounded-xl shadow-md p-5 border-l-4 border-red-500">
             <p className="text-sm text-gray-600">At Risk</p>
@@ -224,7 +427,6 @@ export default function ExecutiveHub() {
           </div>
         </div>
 
-        {/* Renewal accounts list */}
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">
@@ -303,7 +505,7 @@ export default function ExecutiveHub() {
     );
   };
 
-  const renderCustomerHealthTab = () => {
+  const renderCustomerHealth = () => {
     if (loadingHealth) {
       return (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
@@ -319,7 +521,6 @@ export default function ExecutiveHub() {
 
     return (
       <div className="space-y-6">
-        {/* Health summary cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl shadow-md p-5">
             <p className="text-sm text-gray-600">Avg Health Score</p>
@@ -344,7 +545,6 @@ export default function ExecutiveHub() {
           </div>
         </div>
 
-        {/* At-risk accounts list */}
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">
@@ -413,7 +613,7 @@ export default function ExecutiveHub() {
     );
   };
 
-  const renderTeamPerformanceTab = () => {
+  const renderTeamPerformance = () => {
     if (loadingTeam) {
       return (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
@@ -428,7 +628,6 @@ export default function ExecutiveHub() {
 
     return (
       <div className="space-y-6">
-        {/* Team summary cards */}
         {tm && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl shadow-md p-5">
@@ -455,7 +654,6 @@ export default function ExecutiveHub() {
           </div>
         )}
 
-        {/* Rep leaderboard */}
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Rep Performance ({reps.length})</h3>
@@ -538,6 +736,61 @@ export default function ExecutiveHub() {
     );
   };
 
+  const renderCustomLinks = () => {
+    if (customLinks.length === 0) return null;
+
+    return (
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Links</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {customLinks.map(link => (
+            <a
+              key={link.id}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            >
+              <span className="text-2xl">{link.icon || '🔗'}</span>
+              <div>
+                <p className="font-medium text-gray-900">{link.title}</p>
+                {link.description && (
+                  <p className="text-sm text-gray-500 mt-0.5">{link.description}</p>
+                )}
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ---- Section dispatch ----
+  const renderSection = (sectionId: string) => {
+    switch (sectionId) {
+      case 'metrics':
+        return renderMetrics();
+      case 'ai-assistant':
+        return <AIAssistant />;
+      case 'priorities':
+        return renderPriorities();
+      case 'at-risk-deals':
+        return renderAtRiskDeals();
+      case 'new-business':
+        return renderNewBusiness();
+      case 'renewals':
+        return renderRenewals();
+      case 'customer-health':
+        return renderCustomerHealth();
+      case 'team-performance':
+        return renderTeamPerformance();
+      case 'custom-links':
+        return renderCustomLinks();
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-8">
@@ -547,84 +800,14 @@ export default function ExecutiveHub() {
           <p className="text-gray-600 mt-1">Organization-wide performance overview</p>
         </div>
 
-        {/* AI Assistant */}
-        <div className="mb-6">
-          <AIAssistant />
+        {/* Scrollable dashboard — sections rendered in configured order */}
+        <div className="space-y-6">
+          {sections
+            .filter(s => s.enabled)
+            .map(section => (
+              <div key={section.id}>{renderSection(section.id)}</div>
+            ))}
         </div>
-
-        {/* Top Summary Metrics - Always visible */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-          {loadingMetrics ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-xl shadow-md p-5 animate-pulse">
-                <div className="h-3 bg-gray-200 rounded w-20 mb-3" />
-                <div className="h-7 bg-gray-200 rounded w-16" />
-              </div>
-            ))
-          ) : (
-            <>
-              <div className="bg-white rounded-xl shadow-md p-5">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pipeline</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(metrics?.totalPipeline || 0)}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl shadow-md p-5">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Closed Won YTD</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {formatCurrency(metrics?.closedWonYTD || 0)}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl shadow-md p-5">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Renewals at Risk</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">{metrics?.renewalsAtRisk || 0}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Next 180 days</p>
-              </div>
-              <div className="bg-white rounded-xl shadow-md p-5">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Avg Health Score</p>
-                <p className={`text-2xl font-bold mt-1 ${getHealthColor(metrics?.avgHealthScore || 0)}`}>
-                  {metrics?.avgHealthScore || 0}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl shadow-md p-5">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">At-Risk Accounts</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">{metrics?.atRiskAccountCount || 0}</p>
-              </div>
-              <div className="bg-white rounded-xl shadow-md p-5">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Expansion Pipeline</p>
-                <p className="text-2xl font-bold text-purple-600 mt-1">
-                  {formatCurrency(metrics?.expansionPipeline || 0)}
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="flex gap-1 mb-6 border-b border-gray-200">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition flex items-center gap-2 ${
-                activeTab === tab.id
-                  ? 'border-purple-600 text-purple-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
-              </svg>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === 'new-business' && renderNewBusinessTab()}
-        {activeTab === 'renewals' && renderRenewalsTab()}
-        {activeTab === 'customer-health' && renderCustomerHealthTab()}
-        {activeTab === 'team-performance' && renderTeamPerformanceTab()}
       </div>
     </div>
   );
