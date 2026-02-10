@@ -90,6 +90,18 @@ export class GongAISearchService {
       });
 
       console.log(`[Gong AI Search] Filtered to ${scopedCalls.length} calls for ${scope} scope`);
+
+      // Fallback: if opportunity-scoped search found 0 calls, try account-level matching
+      // Gong often associates calls with accounts but not specific opportunities
+      if (scope === 'opportunity' && scopedCalls.length === 0 && accountId) {
+        scopedCalls = extensiveCalls.filter(call => {
+          const crm = call.crmAssociations || {};
+          return (crm.accountIds || []).includes(accountId);
+        });
+        if (scopedCalls.length > 0) {
+          console.log(`[Gong AI Search] Opportunity match found 0 calls, fell back to account-level: ${scopedCalls.length} calls`);
+        }
+      }
     }
 
     // Step 3: Smart-select top 15 calls for transcript fetch
