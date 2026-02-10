@@ -151,7 +151,6 @@ export class GongService {
           callIds,
         },
         contentSelector: {
-          context: 'Extended',
           exposedFields: {
             collaboration: {
               publicComments: true,
@@ -200,7 +199,6 @@ export class GongService {
             toDateTime: now,
           },
           contentSelector: {
-            context: 'Extended',
             exposedFields: {
               collaboration: { publicComments: true },
               content: { topics: true },
@@ -250,7 +248,6 @@ export class GongService {
             toDateTime: now,
           },
           contentSelector: {
-            context: 'Extended',
             exposedFields: {
               collaboration: { publicComments: true },
               content: { topics: true },
