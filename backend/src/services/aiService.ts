@@ -562,15 +562,8 @@ Provide ONLY the JSON response, no additional text.`;
     }
 
     try {
-      // Enrich with Gong context if user asks about a specific opportunity/account
-      let gongContext = '';
-      if (userData?.opportunities?.length > 0) {
-        // Get Gong data for the first opportunity mentioned
-        const firstOpp = userData.opportunities[0];
-        gongContext = await this.getGongContext(firstOpp.Id, firstOpp.AccountId);
-      }
-
-      const prompt = this.buildAssistantPrompt(question, userData) + gongContext;
+      // Gong data is now passed in userData from the API route (across all opps)
+      const prompt = this.buildAssistantPrompt(question, userData);
 
       // In multi-provider mode, prefer external AI (Claude/OpenAI/Gemini) for chat
       // because it's better for general conversation and complex reasoning
@@ -668,7 +661,7 @@ Provide ONLY the JSON response, no additional text.`;
   }
 
   private buildAssistantPrompt(question: string, userData: any): string {
-    const { opportunities, tasks, userName, userRole } = userData;
+    const { opportunities, accounts, tasks, userName, userRole, gongCalls, gongEmails } = userData;
 
     let contextInfo = `You are a helpful sales assistant for ${userName || 'the user'}`;
 
@@ -676,37 +669,139 @@ Provide ONLY the JSON response, no additional text.`;
       contextInfo += `, who is a ${userRole}`;
     }
 
-    contextInfo += `. Answer their question based on the following context:\n\n`;
+    contextInfo += `. Answer their question based ONLY on the data provided below. Do NOT fabricate or guess account names, deal names, metrics, or any other data that is not explicitly listed.\n\n`;
 
+    // --- Opportunities section ---
     if (opportunities && opportunities.length > 0) {
       contextInfo += `**Their Opportunities:**\n`;
       opportunities.forEach((opp: any, idx: number) => {
-        contextInfo += `${idx + 1}. ${opp.Name} - ${opp.Account?.Name || 'Unknown Account'}\n`;
-        contextInfo += `   Stage: ${opp.StageName}, Amount: $${opp.Amount?.toLocaleString() || 0}\n`;
-        contextInfo += `   Close Date: ${opp.CloseDate}, Days in Stage: ${opp.DaysInStage__c || 0}\n`;
-        if (opp.IsAtRisk__c) {
-          contextInfo += `   ⚠️ AT RISK\n`;
+        contextInfo += `${idx + 1}. ${opp.Name} — ${opp.Account?.Name || 'Unknown Account'}\n`;
+        contextInfo += `   Stage: ${opp.StageName} | Amount: $${opp.Amount?.toLocaleString() || 0}`;
+        if (opp.ARR__c) contextInfo += ` | ARR: $${Number(opp.ARR__c).toLocaleString()}`;
+        if (opp.Total_Contract_Value__c) contextInfo += ` | TCV: $${Number(opp.Total_Contract_Value__c).toLocaleString()}`;
+        contextInfo += `\n`;
+        contextInfo += `   Close Date: ${opp.CloseDate || 'N/A'}`;
+        if (opp.DaysInStage__c) contextInfo += ` | Days in Stage: ${opp.DaysInStage__c}`;
+        if (opp.Type) contextInfo += ` | Type: ${opp.Type}`;
+        contextInfo += `\n`;
+        if (opp.IsAtRisk__c) contextInfo += `   ⚠️ AT RISK\n`;
+        if (opp.Risk__c) contextInfo += `   Risk: ${opp.Risk__c}\n`;
+        if (opp.Unresolved_Risks__c) contextInfo += `   Unresolved Risks: ${opp.Unresolved_Risks__c}\n`;
+        // MEDDPICC
+        if (opp.MEDDPICC_Overall_Score__c) contextInfo += `   MEDDPICC Score: ${opp.MEDDPICC_Overall_Score__c}%\n`;
+        const meddpiccFields: [string, string][] = [
+          ['COM_Metrics__c', 'Metrics'], ['MEDDPICCR_Economic_Buyer__c', 'Econ Buyer'],
+          ['MEDDPICCR_Decision_Criteria__c', 'Decision Criteria'], ['MEDDPICCR_Decision_Process__c', 'Decision Process'],
+          ['MEDDPICCR_Paper_Process__c', 'Paper Process'], ['MEDDPICCR_Implicate_Pain__c', 'Implicate Pain'],
+          ['MEDDPICCR_Champion__c', 'Champion'], ['MEDDPICCR_Competition__c', 'Competition'],
+          ['MEDDPICCR_Risks__c', 'Risks'],
+        ];
+        const meddpiccParts = meddpiccFields
+          .filter(([field]) => opp[field])
+          .map(([field, label]) => `${label}: ${opp[field]}`);
+        if (meddpiccParts.length > 0) contextInfo += `   MEDDPICC Detail: ${meddpiccParts.join(' | ')}\n`;
+        if (opp.Economic_Buyer_Name__c) {
+          contextInfo += `   Economic Buyer: ${opp.Economic_Buyer_Name__c}`;
+          if (opp.Economic_Buyer_Title__c) contextInfo += ` (${opp.Economic_Buyer_Title__c})`;
+          contextInfo += `\n`;
         }
-        if (opp.MEDDPICC_Overall_Score__c) {
-          contextInfo += `   MEDDPICC Score: ${opp.MEDDPICC_Overall_Score__c}%\n`;
-        }
+        // Command of Message
+        const comParts: string[] = [];
+        if (opp.Command_Why_Do_Anything__c) comParts.push(`Why Do Anything: ${opp.Command_Why_Do_Anything__c}`);
+        if (opp.Command_Why_Now__c) comParts.push(`Why Now: ${opp.Command_Why_Now__c}`);
+        if (opp.Command_Why_Us__c) comParts.push(`Why Us: ${opp.Command_Why_Us__c}`);
+        if (opp.Command_Overall_Score__c) comParts.push(`Overall: ${opp.Command_Overall_Score__c}`);
+        if (comParts.length > 0) contextInfo += `   Command of Message: ${comParts.join(' | ')}\n`;
+        // Deal details
+        if (opp.NextStep) contextInfo += `   Next Step: ${opp.NextStep}\n`;
+        if (opp.Milestone__c) contextInfo += `   Milestone: ${opp.Milestone__c}\n`;
+        if (opp.License_Seats__c) contextInfo += `   License Seats: ${opp.License_Seats__c}\n`;
+        // Gong SF fields
+        const gongParts: string[] = [];
+        if (opp.Gong_Call_Count__c) gongParts.push(`Calls: ${opp.Gong_Call_Count__c}`);
+        if (opp.Gong_Last_Call_Date__c) gongParts.push(`Last Call: ${opp.Gong_Last_Call_Date__c}`);
+        if (opp.Gong_Sentiment__c) gongParts.push(`Sentiment: ${opp.Gong_Sentiment__c}`);
+        if (opp.Gong_Competitor_Mentions__c) gongParts.push(`Competitors: ${opp.Gong_Competitor_Mentions__c}`);
+        if (gongParts.length > 0) contextInfo += `   Gong: ${gongParts.join(' | ')}\n`;
         contextInfo += `\n`;
       });
     }
 
+    // --- Accounts section ---
+    if (accounts && accounts.length > 0) {
+      contextInfo += `**Accounts:**\n`;
+      accounts.forEach((acct: any, idx: number) => {
+        contextInfo += `${idx + 1}. ${acct.Name}\n`;
+        // 6sense
+        const sixParts: string[] = [];
+        if (acct.accountBuyingStage6sense__c) sixParts.push(`Buying Stage: ${acct.accountBuyingStage6sense__c}`);
+        if (acct.accountIntentScore6sense__c) sixParts.push(`Intent: ${acct.accountIntentScore6sense__c}`);
+        if (acct.accountProfileFit6sense__c) sixParts.push(`Fit: ${acct.accountProfileFit6sense__c}`);
+        if (sixParts.length > 0) contextInfo += `   6sense: ${sixParts.join(' | ')}\n`;
+        // Clay
+        const clayParts: string[] = [];
+        if (acct.Clay_Industry__c) clayParts.push(`Industry: ${acct.Clay_Industry__c}`);
+        if (acct.Clay_Employee_Count__c) clayParts.push(`Employees: ${acct.Clay_Employee_Count__c}`);
+        if (acct.Clay_Revenue__c) clayParts.push(`Revenue: $${Number(acct.Clay_Revenue__c).toLocaleString()}`);
+        if (clayParts.length > 0) contextInfo += `   Firmographic: ${clayParts.join(' | ')}\n`;
+        // Health
+        if (acct.Customer_Stage__c) contextInfo += `   Customer Stage: ${acct.Customer_Stage__c}\n`;
+        if (acct.Risk__c) contextInfo += `   Account Risk: ${acct.Risk__c}\n`;
+        if (acct.Total_ARR__c) contextInfo += `   Total ARR: $${Number(acct.Total_ARR__c).toLocaleString()}\n`;
+        if (acct.Current_Gainsight_Score__c) contextInfo += `   Gainsight Score: ${acct.Current_Gainsight_Score__c}\n`;
+        if (acct.Agreement_Expiry_Date__c) contextInfo += `   Agreement Expiry: ${acct.Agreement_Expiry_Date__c}\n`;
+        if (acct.Last_QBR__c) contextInfo += `   Last QBR: ${acct.Last_QBR__c}\n`;
+        if (acct.Last_Exec_Check_In__c) contextInfo += `   Last Exec Check-In: ${acct.Last_Exec_Check_In__c}\n`;
+        // Usage
+        const usageParts: string[] = [];
+        if (acct.Contract_Total_License_Seats__c) usageParts.push(`Seats: ${acct.Contract_Total_License_Seats__c}`);
+        if (acct.Total_Active_Users__c) usageParts.push(`Active: ${acct.Total_Active_Users__c}`);
+        if (acct.License_Utilization_Max__c) usageParts.push(`Util(Max): ${acct.License_Utilization_Max__c}%`);
+        if (acct.License_Utilization_Learn__c) usageParts.push(`Util(Learn): ${acct.License_Utilization_Learn__c}%`);
+        if (acct.License_Utilization_Comms__c) usageParts.push(`Util(Comms): ${acct.License_Utilization_Comms__c}%`);
+        if (acct.License_Utilization_Tasks__c) usageParts.push(`Util(Tasks): ${acct.License_Utilization_Tasks__c}%`);
+        if (usageParts.length > 0) contextInfo += `   Usage: ${usageParts.join(' | ')}\n`;
+        if (acct.Max_Usage_Trend__c) contextInfo += `   Usage Trend: ${acct.Max_Usage_Trend__c}\n`;
+        contextInfo += `\n`;
+      });
+    }
+
+    // --- Tasks section ---
     if (tasks && tasks.length > 0) {
-      contextInfo += `**Their Upcoming Tasks:**\n`;
+      contextInfo += `**Upcoming Tasks:**\n`;
       tasks.forEach((task: any, idx: number) => {
-        contextInfo += `${idx + 1}. ${task.subject} - Due: ${task.dueDate || 'No date'}\n`;
-        if (task.priority === 'High') {
-          contextInfo += `   🔴 High Priority\n`;
-        }
+        contextInfo += `${idx + 1}. ${task.subject} — Due: ${task.dueDate || 'No date'}`;
+        if (task.priority === 'High') contextInfo += ` [HIGH]`;
+        contextInfo += `\n`;
       });
       contextInfo += `\n`;
     }
 
+    // --- Gong Insights section ---
+    if (gongCalls && gongCalls.length > 0) {
+      contextInfo += `**Gong Call Insights (recent across all deals):**\n`;
+      gongCalls.forEach((call: any, idx: number) => {
+        contextInfo += `${idx + 1}. "${call.title}"`;
+        if (call.opportunityName) contextInfo += ` (${call.opportunityName})`;
+        contextInfo += ` — ${call.started ? new Date(call.started).toLocaleDateString() : 'Unknown date'}`;
+        if (call.duration) contextInfo += ` (${Math.round(call.duration / 60)} min)`;
+        if (call.topics && call.topics.length > 0) contextInfo += ` | Topics: ${call.topics.join(', ')}`;
+        if (call.sentiment) contextInfo += ` | Sentiment: ${call.sentiment}`;
+        contextInfo += `\n`;
+      });
+      contextInfo += `\n`;
+    }
+
+    if (gongEmails && gongEmails.length > 0) {
+      contextInfo += `**Gong Email Activity (last 30 days):**\n`;
+      contextInfo += `Total tracked emails: ${gongEmails.length}\n`;
+      const replied = gongEmails.filter((e: any) => e.replied).length;
+      const bounced = gongEmails.filter((e: any) => e.bounced).length;
+      contextInfo += `Replied: ${replied} | Bounced: ${bounced}\n\n`;
+    }
+
     contextInfo += `**User's Question:** ${question}\n\n`;
-    contextInfo += `Provide a helpful, concise answer (2-4 sentences). Be specific and actionable. If suggesting they focus on something, explain why.`;
+    contextInfo += `Provide a helpful, concise answer (2-4 sentences). Be specific and actionable. If suggesting they focus on something, explain why. IMPORTANT: Only reference opportunities, accounts, and data that appear above — do not invent or guess names or metrics.`;
 
     return contextInfo;
   }

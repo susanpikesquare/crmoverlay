@@ -1833,8 +1833,49 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
     const userInfo = await connection.identity();
     const userName = userInfo.display_name || userInfo.username;
 
-    // Get user's opportunities (using only standard fields)
-    const oppResult = await connection.query(`
+    // Helper: try enriched query first, fall back to standard fields on INVALID_FIELD
+    async function safeQuery<T>(primaryQuery: string, fallbackQuery: string): Promise<T[]> {
+      try {
+        const result = await connection!.query<T>(primaryQuery);
+        return result.records || [];
+      } catch (error: any) {
+        if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+          console.warn('[AI Ask] Custom fields not found, using fallback query:', error.message);
+          try {
+            const result = await connection!.query<T>(fallbackQuery);
+            return result.records || [];
+          } catch (fallbackError: any) {
+            console.error('[AI Ask] Fallback query also failed:', fallbackError.message);
+            return [];
+          }
+        }
+        throw error;
+      }
+    }
+
+    // Get user's opportunities — enriched with custom fields
+    const enrichedOppQuery = `
+      SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
+             Probability, LastModifiedDate, CreatedDate,
+             COM_Metrics__c, MEDDPICCR_Economic_Buyer__c, Economic_Buyer_Name__c,
+             Economic_Buyer_Title__c, MEDDPICCR_Decision_Criteria__c,
+             MEDDPICCR_Decision_Process__c, MEDDPICCR_Paper_Process__c,
+             MEDDPICCR_Implicate_Pain__c, MEDDPICCR_Champion__c,
+             MEDDPICCR_Competition__c, MEDDPICCR_Risks__c,
+             Command_Why_Do_Anything__c, Command_Why_Now__c, Command_Why_Us__c,
+             Command_Overall_Score__c,
+             Risk__c, Unresolved_Risks__c, ARR__c, Total_Contract_Value__c,
+             License_Seats__c, NextStep, Description, Type,
+             DaysInStage__c, IsAtRisk__c, MEDDPICC_Overall_Score__c, Milestone__c,
+             Gong_Call_Count__c, Gong_Last_Call_Date__c, Gong_Sentiment__c,
+             Gong_Competitor_Mentions__c
+      FROM Opportunity
+      WHERE OwnerId = '${userInfo.user_id}'
+        AND IsClosed = false
+      ORDER BY CloseDate ASC
+      LIMIT 10
+    `;
+    const fallbackOppQuery = `
       SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
              Probability, LastModifiedDate, CreatedDate
       FROM Opportunity
@@ -1842,7 +1883,37 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
         AND IsClosed = false
       ORDER BY CloseDate ASC
       LIMIT 10
-    `);
+    `;
+    const opportunities = await safeQuery<any>(enrichedOppQuery, fallbackOppQuery);
+
+    // Get unique account IDs from opportunities for account enrichment
+    const accountIds = [...new Set(opportunities.map((o: any) => o.AccountId).filter(Boolean))] as string[];
+
+    // Get account data with custom fields
+    let accounts: any[] = [];
+    if (accountIds.length > 0) {
+      const idList = accountIds.map(id => `'${id}'`).join(',');
+      const enrichedAcctQuery = `
+        SELECT Id, Name,
+               accountBuyingStage6sense__c, accountIntentScore6sense__c,
+               accountProfileFit6sense__c,
+               Clay_Employee_Count__c, Clay_Revenue__c, Clay_Industry__c,
+               Customer_Stage__c, Risk__c, Total_ARR__c, Current_Gainsight_Score__c,
+               Agreement_Expiry_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
+               Contract_Total_License_Seats__c, Total_Active_Users__c,
+               License_Utilization_Max__c, License_Utilization_Learn__c,
+               License_Utilization_Comms__c, License_Utilization_Tasks__c,
+               Max_Usage_Trend__c
+        FROM Account
+        WHERE Id IN (${idList})
+      `;
+      const fallbackAcctQuery = `
+        SELECT Id, Name
+        FROM Account
+        WHERE Id IN (${idList})
+      `;
+      accounts = await safeQuery<any>(enrichedAcctQuery, fallbackAcctQuery);
+    }
 
     // Get user's tasks
     const taskResult = await connection.query(`
@@ -1855,16 +1926,50 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
       LIMIT 10
     `);
 
+    // Gather Gong data across all opportunities (not just first)
+    let gongCalls: any[] = [];
+    let gongEmails: any[] = [];
+    try {
+      const { createGongServiceFromDB } = await import('../services/gongService');
+      const gongService = await createGongServiceFromDB();
+      if (gongService) {
+        // Fetch calls for all opportunities, collect up to 10 most recent
+        const allCalls: any[] = [];
+        for (const opp of opportunities.slice(0, 10)) {
+          try {
+            const calls = await gongService.getCallsForOpportunity(opp.Id);
+            allCalls.push(...calls.map((c: any) => ({ ...c, opportunityName: opp.Name, accountName: opp.Account?.Name })));
+          } catch { /* skip individual opp errors */ }
+        }
+        // Sort by date descending, take 10 most recent
+        gongCalls = allCalls
+          .sort((a: any, b: any) => new Date(b.started || 0).getTime() - new Date(a.started || 0).getTime())
+          .slice(0, 10);
+
+        // Fetch email activity (last 30 days, capped at 20)
+        try {
+          const fromDateTime = new Date(Date.now() - 30 * 86400000).toISOString();
+          const emails = await gongService.getEmailActivity({ fromDateTime });
+          gongEmails = emails.slice(0, 20);
+        } catch { /* email activity not available */ }
+      }
+    } catch {
+      // Gong not configured — continue without it
+    }
+
     const userData = {
       userName,
       userRole: (req.session as any)?.userRole || 'User',
-      opportunities: oppResult.records,
+      opportunities,
+      accounts,
       tasks: taskResult.records.map((task: any) => ({
         subject: task.Subject,
         dueDate: task.ActivityDate,
         priority: task.Priority,
         status: task.Status,
       })),
+      gongCalls,
+      gongEmails,
     };
 
     // Set Salesforce connection for Agentforce provider
