@@ -65,7 +65,10 @@ export class GongAISearchService {
     const allCalls = await this.gongService.getCallsPaginated({ fromDateTime, toDateTime });
     console.log(`[Gong AI Search] Fetched ${allCalls.length} calls from paginated endpoint`);
 
-    // Step 2: Filter by scope (account/opportunity CRM associations)
+    // Step 2: Filter by scope
+    // For opportunity scope, search at the account level for call discovery — Gong
+    // rarely links calls to specific opportunities but does link to accounts.
+    // The opportunity context is still passed to the AI prompt for deal-focused analysis.
     let scopedCalls = allCalls;
     if (scope !== 'global' && allCalls.length > 0) {
       // Get extensive data with CRM associations
@@ -78,54 +81,42 @@ export class GongAISearchService {
         extensiveCalls.push(...extensiveResult);
       }
 
-      scopedCalls = extensiveCalls.filter(call => {
-        const crm = call.crmAssociations || {};
-        if (scope === 'opportunity' && opportunityId) {
-          return (crm.opportunityIds || []).includes(opportunityId);
-        }
-        if (scope === 'account' && accountId) {
-          return (crm.accountIds || []).includes(accountId);
-        }
-        return false;
-      });
-
-      console.log(`[Gong AI Search] Filtered to ${scopedCalls.length} calls for ${scope} scope`);
-
-      // Fallback 1: if opportunity-scoped search found 0 calls, try account-level CRM matching
-      // Gong often associates calls with accounts but not specific opportunities
-      if (scope === 'opportunity' && scopedCalls.length === 0 && accountId) {
+      // For both opportunity and account scope, match by account CRM association
+      if (accountId) {
         scopedCalls = extensiveCalls.filter(call => {
           const crm = call.crmAssociations || {};
           return (crm.accountIds || []).includes(accountId);
         });
-        if (scopedCalls.length > 0) {
-          console.log(`[Gong AI Search] Opportunity match found 0 calls, fell back to account-level CRM: ${scopedCalls.length} calls`);
-        }
+        console.log(`[Gong AI Search] Account CRM filter: ${scopedCalls.length} calls for accountId ${accountId}`);
       }
 
-      // Fallback 2: if CRM matching returned 0, try name-based matching on call title/participants
-      // This handles cases where Gong has no CRM associations at all
+      // Fallback: if CRM matching returned 0, try name-based matching on call title/participants
+      // This handles cases where Gong has no CRM associations configured
       if (scopedCalls.length === 0) {
-        const matchName = (accountName || opportunityName || '').toLowerCase();
+        const matchName = (accountName || '').toLowerCase();
         if (matchName && matchName.length >= 3) {
-          // Extract core company name (first 2-3 significant words) for matching
-          const nameTokens = matchName.split(/\s+/).filter(t => t.length > 2).slice(0, 3);
+          const nameTokens = matchName.split(/\s+/).filter(t => t.length > 2);
+          // Require at least 2 tokens to match to avoid false positives on short/generic words
+          const minMatches = Math.min(2, nameTokens.length);
           scopedCalls = extensiveCalls.filter(call => {
             const titleLower = (call.title || '').toLowerCase();
-            // Match if any significant name token appears in the call title
-            if (nameTokens.some(token => titleLower.includes(token))) return true;
-            // Also check participant names/emails
+            const titleMatches = nameTokens.filter(token => titleLower.includes(token)).length;
+            if (titleMatches >= minMatches) return true;
+            // Also check participant email domains (e.g., @navyfederal.org)
             if (call.parties) {
               const partiesStr = call.parties.map(p => `${p.name || ''} ${p.emailAddress || ''}`).join(' ').toLowerCase();
-              if (nameTokens.some(token => partiesStr.includes(token))) return true;
+              const partyMatches = nameTokens.filter(token => partiesStr.includes(token)).length;
+              if (partyMatches >= minMatches) return true;
             }
             return false;
           });
           if (scopedCalls.length > 0) {
-            console.log(`[Gong AI Search] CRM matching found 0 calls, fell back to name-based: ${scopedCalls.length} calls matching "${nameTokens.join(', ')}"`);
+            console.log(`[Gong AI Search] CRM returned 0, name-based fallback: ${scopedCalls.length} calls matching "${nameTokens.join(', ')}"`);
           }
         }
       }
+
+      console.log(`[Gong AI Search] Final: ${scopedCalls.length} scoped calls for ${scope}`);
     }
 
     // Step 3: Smart-select top 15 calls for transcript fetch
