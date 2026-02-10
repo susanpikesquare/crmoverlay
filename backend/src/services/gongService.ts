@@ -151,6 +151,7 @@ export class GongService {
           callIds,
         },
         contentSelector: {
+          context: 'Extended',
           exposedFields: {
             collaboration: {
               publicComments: true,
@@ -199,6 +200,7 @@ export class GongService {
             toDateTime: now,
           },
           contentSelector: {
+            context: 'Extended',
             exposedFields: {
               collaboration: { publicComments: true },
               content: { topics: true },
@@ -210,13 +212,11 @@ export class GongService {
 
       const extensiveData: any = await extensiveResponse.json();
       const calls = (extensiveData.calls || [])
-        .filter((call: any) => {
-          // Filter by CRM opportunity association
-          const crmData = call.metaData?.crmAssociations || call.crmAssociations || {};
-          const oppIds = crmData.opportunityIds || [];
-          return oppIds.includes(opportunityId);
-        })
-        .map(this.mapCall);
+        .map(this.mapCall)
+        .filter((call: GongCall) => {
+          const crm = call.crmAssociations || {};
+          return (crm.opportunityIds || []).includes(opportunityId);
+        });
 
       return calls;
     } catch (error) {
@@ -250,6 +250,7 @@ export class GongService {
             toDateTime: now,
           },
           contentSelector: {
+            context: 'Extended',
             exposedFields: {
               collaboration: { publicComments: true },
               content: { topics: true },
@@ -261,12 +262,11 @@ export class GongService {
 
       const extensiveData: any = await extensiveResponse.json();
       const calls = (extensiveData.calls || [])
-        .filter((call: any) => {
-          const crmData = call.metaData?.crmAssociations || call.crmAssociations || {};
-          const accIds = crmData.accountIds || [];
-          return accIds.includes(accountId);
-        })
-        .map(this.mapCall);
+        .map(this.mapCall)
+        .filter((call: GongCall) => {
+          const crm = call.crmAssociations || {};
+          return (crm.accountIds || []).includes(accountId);
+        });
 
       return calls;
     } catch (error) {
@@ -411,6 +411,25 @@ export class GongService {
    */
   private mapCall = (call: any): GongCall => {
     const metaData = call.metaData || call;
+
+    // Parse CRM associations from Gong's context array format
+    let crmAssociations = metaData.crmAssociations || call.crmAssociations;
+    if (!crmAssociations && Array.isArray(call.context)) {
+      const opportunityIds: string[] = [];
+      const accountIds: string[] = [];
+      const contactIds: string[] = [];
+      for (const ctx of call.context) {
+        for (const obj of (ctx.objects || [])) {
+          if (obj.objectType === 'Opportunity') opportunityIds.push(obj.objectId);
+          else if (obj.objectType === 'Account') accountIds.push(obj.objectId);
+          else if (obj.objectType === 'Contact' || obj.objectType === 'Lead') contactIds.push(obj.objectId);
+        }
+      }
+      if (opportunityIds.length > 0 || accountIds.length > 0 || contactIds.length > 0) {
+        crmAssociations = { opportunityIds, accountIds, contactIds };
+      }
+    }
+
     return {
       id: metaData.id || call.id,
       title: metaData.title || call.title || 'Untitled Call',
@@ -426,7 +445,7 @@ export class GongService {
         affiliation: p.affiliation,
       })),
       url: metaData.url || metaData.media?.audioUrl,
-      crmAssociations: metaData.crmAssociations || call.crmAssociations,
+      crmAssociations,
       topics: call.content?.topics?.map((t: any) => t.name) || [],
       sentiment: call.content?.sentiment || undefined,
     };

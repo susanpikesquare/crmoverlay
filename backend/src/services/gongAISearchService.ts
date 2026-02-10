@@ -91,7 +91,7 @@ export class GongAISearchService {
 
       console.log(`[Gong AI Search] Filtered to ${scopedCalls.length} calls for ${scope} scope`);
 
-      // Fallback: if opportunity-scoped search found 0 calls, try account-level matching
+      // Fallback 1: if opportunity-scoped search found 0 calls, try account-level CRM matching
       // Gong often associates calls with accounts but not specific opportunities
       if (scope === 'opportunity' && scopedCalls.length === 0 && accountId) {
         scopedCalls = extensiveCalls.filter(call => {
@@ -99,7 +99,31 @@ export class GongAISearchService {
           return (crm.accountIds || []).includes(accountId);
         });
         if (scopedCalls.length > 0) {
-          console.log(`[Gong AI Search] Opportunity match found 0 calls, fell back to account-level: ${scopedCalls.length} calls`);
+          console.log(`[Gong AI Search] Opportunity match found 0 calls, fell back to account-level CRM: ${scopedCalls.length} calls`);
+        }
+      }
+
+      // Fallback 2: if CRM matching returned 0, try name-based matching on call title/participants
+      // This handles cases where Gong has no CRM associations at all
+      if (scopedCalls.length === 0) {
+        const matchName = (accountName || opportunityName || '').toLowerCase();
+        if (matchName && matchName.length >= 3) {
+          // Extract core company name (first 2-3 significant words) for matching
+          const nameTokens = matchName.split(/\s+/).filter(t => t.length > 2).slice(0, 3);
+          scopedCalls = extensiveCalls.filter(call => {
+            const titleLower = (call.title || '').toLowerCase();
+            // Match if any significant name token appears in the call title
+            if (nameTokens.some(token => titleLower.includes(token))) return true;
+            // Also check participant names/emails
+            if (call.parties) {
+              const partiesStr = call.parties.map(p => `${p.name || ''} ${p.emailAddress || ''}`).join(' ').toLowerCase();
+              if (nameTokens.some(token => partiesStr.includes(token))) return true;
+            }
+            return false;
+          });
+          if (scopedCalls.length > 0) {
+            console.log(`[Gong AI Search] CRM matching found 0 calls, fell back to name-based: ${scopedCalls.length} calls matching "${nameTokens.join(', ')}"`);
+          }
         }
       }
     }
