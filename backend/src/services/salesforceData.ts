@@ -268,7 +268,7 @@ async function safeQuery<T>(
  */
 export async function getHighPriorityAccounts(
   connection: Connection,
-  userId: string
+  _userId: string
 ): Promise<Account[]> {
   const primaryQuery = `
     SELECT Id, Name, Industry, OwnerId,
@@ -277,8 +277,7 @@ export async function getHighPriorityAccounts(
            accountReachScore6sense__c, X6Sense_Segments__c,
            CreatedDate, LastModifiedDate
     FROM Account
-    WHERE OwnerId = '${userId}'
-      AND accountIntentScore6sense__c >= 70
+    WHERE accountIntentScore6sense__c >= 70
     ORDER BY accountIntentScore6sense__c DESC
     LIMIT 10
   `;
@@ -286,7 +285,6 @@ export async function getHighPriorityAccounts(
   const fallbackQuery = `
     SELECT Id, Name, Industry, OwnerId, CreatedDate, LastModifiedDate
     FROM Account
-    WHERE OwnerId = '${userId}'
     ORDER BY CreatedDate DESC
     LIMIT 10
   `;
@@ -311,11 +309,11 @@ export async function getHighPriorityAccounts(
 }
 
 /**
- * Get all accounts owned by current user
+ * Get all accounts visible to the current user (Salesforce sharing rules apply)
  */
 export async function getAllAccounts(
   connection: Connection,
-  userId: string
+  _userId: string
 ): Promise<Account[]> {
   const primaryQuery = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
@@ -325,7 +323,6 @@ export async function getAllAccounts(
            accountReachScore6sense__c, X6Sense_Segments__c,
            CreatedDate, LastModifiedDate
     FROM Account
-    WHERE OwnerId = '${userId}'
     ORDER BY LastModifiedDate DESC
     LIMIT 200
   `;
@@ -333,7 +330,6 @@ export async function getAllAccounts(
   const fallbackQuery = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees, ParentId, CreatedDate, LastModifiedDate
     FROM Account
-    WHERE OwnerId = '${userId}'
     ORDER BY LastModifiedDate DESC
     LIMIT 200
   `;
@@ -422,7 +418,7 @@ export async function getAccountById(
  */
 export async function getAtRiskOpportunities(
   connection: Connection,
-  userId: string
+  _userId: string
 ): Promise<Opportunity[]> {
   const primaryQuery = `
     SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
@@ -432,8 +428,7 @@ export async function getAtRiskOpportunities(
            Command_Last_Updated__c,
            CreatedDate, LastModifiedDate
     FROM Opportunity
-    WHERE OwnerId = '${userId}'
-      AND IsClosed = false
+    WHERE IsClosed = false
       AND (IsAtRisk__c = true
            OR MEDDPICC_Overall_Score__c < 60
            OR Command_Overall_Score__c < 70)
@@ -446,8 +441,7 @@ export async function getAtRiskOpportunities(
            Probability, CloseDate, OwnerId,
            CreatedDate, LastModifiedDate
     FROM Opportunity
-    WHERE OwnerId = '${userId}'
-      AND IsClosed = false
+    WHERE IsClosed = false
     ORDER BY LastModifiedDate ASC
     LIMIT 10
   `;
@@ -463,11 +457,11 @@ export async function getAtRiskOpportunities(
 }
 
 /**
- * Get all opportunities owned by current user
+ * Get all opportunities visible to the current user (Salesforce sharing rules apply)
  */
 export async function getAllOpportunities(
   connection: Connection,
-  userId: string
+  _userId: string
 ): Promise<Opportunity[]> {
   const primaryQuery = `
     SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
@@ -476,7 +470,6 @@ export async function getAllOpportunities(
            MEDDPICC_Overall_Score__c,
            CreatedDate, LastModifiedDate
     FROM Opportunity
-    WHERE OwnerId = '${userId}'
     ORDER BY CloseDate DESC
     LIMIT 200
   `;
@@ -486,7 +479,6 @@ export async function getAllOpportunities(
            Probability, CloseDate, OwnerId,
            CreatedDate, LastModifiedDate
     FROM Opportunity
-    WHERE OwnerId = '${userId}'
     ORDER BY CloseDate DESC
     LIMIT 200
   `;
@@ -782,38 +774,34 @@ export async function getAccountPlanData(
  */
 export async function getDashboardStats(
   connection: Connection,
-  userId: string
+  _userId: string
 ): Promise<DashboardStats> {
   try {
-    // Get account counts using standard queries
+    // Get account counts — no OwnerId filter, Salesforce sharing rules apply
     const accountsQuery = `
       SELECT Id
       FROM Account
-      WHERE OwnerId = '${userId}'
     `;
 
     // Get recently modified accounts as "high priority"
     const highPriorityAccountQuery = `
       SELECT Id
       FROM Account
-      WHERE OwnerId = '${userId}'
-        AND LastModifiedDate = LAST_N_DAYS:30
+      WHERE LastModifiedDate = LAST_N_DAYS:30
     `;
 
     // Get opportunity counts and values
     const opportunitiesQuery = `
       SELECT Id, Amount
       FROM Opportunity
-      WHERE OwnerId = '${userId}'
-        AND IsClosed = false
+      WHERE IsClosed = false
     `;
 
     // Get stale opportunities (more than 14 days without activity)
     const atRiskOppQuery = `
       SELECT Id
       FROM Opportunity
-      WHERE OwnerId = '${userId}'
-        AND IsClosed = false
+      WHERE IsClosed = false
         AND LastModifiedDate < LAST_N_DAYS:14
     `;
 
