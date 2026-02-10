@@ -459,8 +459,13 @@ router.get('/opportunities', isAuthenticated, async (req: Request, res: Response
 
     let opportunities = await SFData.getAllOpportunities(connection, userId);
 
-    // Apply client-side filters
-    const { stage, atRisk } = req.query;
+    // If includeClosed=true, also fetch closed opportunities and merge
+    const { stage, atRisk, includeClosed } = req.query;
+
+    if (includeClosed === 'true') {
+      const closedOpps = await SFData.getClosedOpportunities(connection, userId);
+      opportunities = [...opportunities, ...closedOpps];
+    }
 
     if (stage) {
       opportunities = opportunities.filter(opp => opp.StageName === stage);

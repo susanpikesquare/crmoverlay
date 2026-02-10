@@ -182,6 +182,7 @@ export default function Account360() {
   };
 
   const getPriorityBadgeColor = (tier: string) => {
+    if (!tier) return 'bg-gray-100 text-gray-800 border-gray-300';
     if (tier.includes('🔥')) return 'bg-red-100 text-red-800 border-red-300';
     if (tier.includes('🔶')) return 'bg-orange-100 text-orange-800 border-orange-300';
     return 'bg-blue-100 text-blue-800 border-blue-300';
@@ -259,26 +260,30 @@ export default function Account360() {
             <div className="flex-1">
               <div className="flex items-center gap-4 mb-3">
                 <h1 className="text-3xl font-bold text-gray-900">{account.Name}</h1>
-                <span
-                  className={`px-4 py-1.5 rounded-full text-sm font-semibold border ${getPriorityBadgeColor(
-                    account.Priority_Tier__c
-                  )}`}
-                >
-                  {account.Priority_Tier__c}
-                </span>
+                {account.Priority_Tier__c && (
+                  <span
+                    className={`px-4 py-1.5 rounded-full text-sm font-semibold border ${getPriorityBadgeColor(
+                      account.Priority_Tier__c
+                    )}`}
+                  >
+                    {account.Priority_Tier__c}
+                  </span>
+                )}
               </div>
               <p className="text-gray-600 mb-4">{account.Industry}</p>
               <div className="flex items-center gap-6 text-sm text-gray-600">
                 <div>
                   <span className="font-medium">Priority Score:</span>{' '}
                   <span className="text-gray-900 font-semibold">
-                    {account.Priority_Score__c}/100
+                    {account.Priority_Score__c != null ? `${account.Priority_Score__c}/100` : 'N/A'}
                   </span>
                 </div>
-                <div>
-                  <span className="font-medium">Last Updated:</span>{' '}
-                  {formatDate(account.LastModifiedDate)}
-                </div>
+                {account.LastModifiedDate && (
+                  <div>
+                    <span className="font-medium">Last Updated:</span>{' '}
+                    {formatDate(account.LastModifiedDate)}
+                  </div>
+                )}
               </div>
             </div>
 

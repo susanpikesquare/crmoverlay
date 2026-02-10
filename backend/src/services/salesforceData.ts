@@ -457,7 +457,7 @@ export async function getAtRiskOpportunities(
 }
 
 /**
- * Get all opportunities visible to the current user (Salesforce sharing rules apply)
+ * Get all open opportunities visible to the current user (Salesforce sharing rules apply)
  */
 export async function getAllOpportunities(
   connection: Connection,
@@ -465,22 +465,24 @@ export async function getAllOpportunities(
 ): Promise<Opportunity[]> {
   const primaryQuery = `
     SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
-           Probability, CloseDate, OwnerId,
+           Probability, CloseDate, OwnerId, Owner.Name, Type, IsClosed,
            DaysInStage__c, IsAtRisk__c,
            MEDDPICC_Overall_Score__c,
            CreatedDate, LastModifiedDate
     FROM Opportunity
-    ORDER BY CloseDate DESC
-    LIMIT 200
+    WHERE IsClosed = false
+    ORDER BY CloseDate ASC
+    LIMIT 500
   `;
 
   const fallbackQuery = `
     SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
-           Probability, CloseDate, OwnerId,
+           Probability, CloseDate, OwnerId, Owner.Name, Type,
            CreatedDate, LastModifiedDate
     FROM Opportunity
-    ORDER BY CloseDate DESC
-    LIMIT 200
+    WHERE IsClosed = false
+    ORDER BY CloseDate ASC
+    LIMIT 500
   `;
 
   const opportunities = await safeQuery<Opportunity>(connection, primaryQuery, fallbackQuery);
@@ -489,6 +491,49 @@ export async function getAllOpportunities(
     ...opp,
     Account: {
       Name: opp.Account?.Name || 'Unknown Account',
+    },
+    Owner: {
+      Name: opp.Owner?.Name || 'Unknown Owner',
+    },
+  }));
+}
+
+/**
+ * Get closed opportunities (Won + Lost) for the "Won" and "All" tabs
+ */
+export async function getClosedOpportunities(
+  connection: Connection,
+  _userId: string
+): Promise<Opportunity[]> {
+  const primaryQuery = `
+    SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
+           Probability, CloseDate, OwnerId, Owner.Name, Type, IsClosed,
+           CreatedDate, LastModifiedDate
+    FROM Opportunity
+    WHERE IsClosed = true
+    ORDER BY CloseDate DESC
+    LIMIT 100
+  `;
+
+  const fallbackQuery = `
+    SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
+           Probability, CloseDate, OwnerId, Owner.Name, Type,
+           CreatedDate, LastModifiedDate
+    FROM Opportunity
+    WHERE IsClosed = true
+    ORDER BY CloseDate DESC
+    LIMIT 100
+  `;
+
+  const opportunities = await safeQuery<Opportunity>(connection, primaryQuery, fallbackQuery);
+
+  return opportunities.map(opp => ({
+    ...opp,
+    Account: {
+      Name: opp.Account?.Name || 'Unknown Account',
+    },
+    Owner: {
+      Name: opp.Owner?.Name || 'Unknown Owner',
     },
   }));
 }
