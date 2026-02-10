@@ -6,6 +6,7 @@ import ActivityTimeline from '../components/ActivityTimeline';
 import AIDealSummary from '../components/AIDealSummary';
 import AIAssistant from '../components/AIAssistant';
 import GongCallInsights from '../components/GongCallInsights';
+import GongAISearch from '../components/GongAISearch';
 
 interface DetailField {
   label: string;
@@ -469,6 +470,15 @@ export default function OpportunityDetail() {
 
           {/* Gong Call Insights */}
           <GongCallInsights opportunityId={opportunity.Id} accountId={opportunity.AccountId} />
+
+          {/* Gong AI Search */}
+          <GongAISearch
+            scope="opportunity"
+            opportunityId={opportunity.Id}
+            opportunityName={opportunity.Name}
+            accountId={opportunity.AccountId}
+            accountName={opportunity.Account?.Name}
+          />
 
           {/* Activity Timeline */}
           <ActivityTimeline activities={timelineData || []} />

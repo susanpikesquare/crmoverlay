@@ -5,6 +5,8 @@ import apiClient from '../services/api';
 import api from '../services/api';
 import EditableField from '../components/EditableField';
 import AIAssistant from '../components/AIAssistant';
+import GongCallInsights from '../components/GongCallInsights';
+import GongAISearch from '../components/GongAISearch';
 
 interface Account {
   Id: string;
@@ -752,6 +754,18 @@ export default function Account360() {
             </div>
           </div>
         )}
+
+        {/* Gong Call Insights */}
+        <GongCallInsights accountId={id} />
+
+        {/* Gong AI Search */}
+        <div className="mt-6">
+          <GongAISearch
+            scope="account"
+            accountId={id}
+            accountName={account?.Name}
+          />
+        </div>
 
         {/* AI Assistant */}
         <div className="mt-8">

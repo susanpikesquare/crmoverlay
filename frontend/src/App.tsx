@@ -18,6 +18,7 @@ import AdminPanel from './pages/AdminPanel';
 import AccountPlansList from './pages/AccountPlansList';
 import AccountPlan from './pages/AccountPlan';
 import AccountPlanNew from './pages/AccountPlanNew';
+import GongAISearchPage from './pages/GongAISearchPage';
 import Navigation from './components/Navigation';
 import ImpersonationBanner from './components/ImpersonationBanner';
 
@@ -77,6 +78,7 @@ function App() {
             <Route path="/account-plans" element={<AccountPlansList />} />
             <Route path="/account-plan/new/:accountId" element={<AccountPlanNew />} />
             <Route path="/account-plan/:id" element={<AccountPlan />} />
+            <Route path="/gong-search" element={<GongAISearchPage />} />
             <Route path="/admin" element={<AdminPanel />} />
           </Routes>
         </Layout>

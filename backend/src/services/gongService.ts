@@ -333,6 +333,80 @@ export class GongService {
   }
 
   /**
+   * Get calls with cursor pagination for large date ranges.
+   * Handles Gong's cursor-based pagination, caps at maxCalls total.
+   */
+  async getCallsPaginated(filters: {
+    fromDateTime?: string;
+    toDateTime?: string;
+  } = {}, maxCalls: number = 1000): Promise<GongCall[]> {
+    const allCalls: GongCall[] = [];
+    let cursor: string | undefined;
+
+    while (allCalls.length < maxCalls) {
+      const params = new URLSearchParams();
+      if (filters.fromDateTime) params.set('fromDateTime', filters.fromDateTime);
+      if (filters.toDateTime) params.set('toDateTime', filters.toDateTime);
+      if (cursor) params.set('cursor', cursor);
+
+      const url = `${this.baseUrl}/calls?${params.toString()}`;
+      const response = await this.throttledFetch(url, { method: 'GET' });
+      const data: any = await response.json();
+
+      const calls = (data.calls || []).map(this.mapCall);
+      allCalls.push(...calls);
+
+      // Check for next page
+      if (data.records?.cursor) {
+        cursor = data.records.cursor;
+      } else {
+        break;
+      }
+
+      // Safety: stop if we got fewer than a full page
+      if (calls.length < 100) break;
+    }
+
+    return allCalls.slice(0, maxCalls);
+  }
+
+  /**
+   * Batch fetch transcripts for multiple call IDs in a single API request.
+   * Gong's /calls/transcript endpoint accepts an array of callIds.
+   * Returns a Map of callId -> GongTranscript.
+   */
+  async getTranscriptsBatch(callIds: string[]): Promise<Map<string, GongTranscript>> {
+    const result = new Map<string, GongTranscript>();
+    if (callIds.length === 0) return result;
+
+    // Batch up to 100 per request
+    for (let i = 0; i < callIds.length; i += 100) {
+      const batch = callIds.slice(i, i + 100);
+
+      try {
+        const response = await this.throttledFetch(`${this.baseUrl}/calls/transcript`, {
+          method: 'POST',
+          body: JSON.stringify({
+            filter: { callIds: batch },
+          }),
+        });
+
+        const data: any = await response.json();
+        for (const ct of (data.callTranscripts || [])) {
+          result.set(ct.callId, {
+            callId: ct.callId,
+            transcript: ct.transcript || [],
+          });
+        }
+      } catch (error) {
+        console.error(`[Gong] Error fetching transcript batch (${batch.length} calls):`, error);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Map raw Gong API call data to our GongCall interface
    */
   private mapCall = (call: any): GongCall => {

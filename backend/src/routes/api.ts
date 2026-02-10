@@ -2163,4 +2163,89 @@ router.get('/gong/emails', isAuthenticated, async (req: Request, res: Response) 
   }
 });
 
+/**
+ * POST /api/gong/ai-search
+ * AI-powered search across Gong call transcripts, emails, and Salesforce data
+ */
+router.post('/gong/ai-search', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { query, scope, accountId, opportunityId, accountName, opportunityName } = req.body;
+
+    // Validate inputs
+    if (!query || typeof query !== 'string' || query.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Query must be at least 3 characters',
+      });
+    }
+
+    const validScopes = ['account', 'opportunity', 'global'];
+    if (!scope || !validScopes.includes(scope)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Scope must be one of: account, opportunity, global',
+      });
+    }
+
+    // Get Gong service
+    const { createGongServiceFromDB } = await import('../services/gongService');
+    const gongService = await createGongServiceFromDB();
+
+    if (!gongService) {
+      return res.json({
+        success: true,
+        data: {
+          answer: 'Gong integration is not configured. Please ask your administrator to set up Gong API credentials in Admin Settings.',
+          sources: [],
+          metadata: {
+            callsAnalyzed: 0,
+            transcriptsFetched: 0,
+            emailsAnalyzed: 0,
+            lookbackDays: 0,
+            generatedAt: new Date().toISOString(),
+          },
+        },
+      });
+    }
+
+    // Get Salesforce connection if available
+    const session = req.session as any;
+    let sfConnection: any = undefined;
+    if (session?.accessToken && session?.instanceUrl) {
+      const jsforce = await import('jsforce');
+      sfConnection = new jsforce.Connection({
+        instanceUrl: session.instanceUrl,
+        accessToken: session.accessToken,
+      });
+    }
+
+    // Run the search
+    const { GongAISearchService } = await import('../services/gongAISearchService');
+    const searchService = new GongAISearchService(gongService, sfConnection);
+
+    const result = await searchService.search({
+      scope,
+      query: query.trim(),
+      accountId,
+      opportunityId,
+      accountName,
+      opportunityName,
+    });
+
+    console.log(`[Gong AI Search] Complete: ${result.metadata.callsAnalyzed} calls, ${result.metadata.transcriptsFetched} transcripts, ${result.metadata.emailsAnalyzed} emails`);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('[Gong AI Search] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process Gong AI search',
+      message: error.message,
+    });
+  }
+});
+
 export default router;

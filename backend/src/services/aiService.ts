@@ -809,6 +809,53 @@ Provide ONLY the JSON response, no additional text.`;
   }
 
   /**
+   * Ask the AI with a pre-built prompt and configurable max_tokens.
+   * Used by GongAISearchService for scope-specific prompts.
+   */
+  async askWithContext(prompt: string, maxTokens: number = 2000): Promise<string> {
+    await this.ensureInitialized();
+
+    if (!this.anthropicClient && !this.openaiClient && !this.geminiClient && !this.agentforceConfig?.enabled) {
+      return 'AI is not configured. Please contact your administrator to set up an AI provider.';
+    }
+
+    const chatProvider = this.secondaryProvider !== 'none' ? this.secondaryProvider : this.provider;
+
+    switch (chatProvider) {
+      case 'anthropic': {
+        if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
+        const message = await this.anthropicClient.messages.create({
+          model: this.model || 'claude-3-7-sonnet-20250219',
+          max_tokens: maxTokens,
+          messages: [{ role: 'user', content: prompt }],
+        });
+        return message.content[0].type === 'text' ? message.content[0].text : '';
+      }
+      case 'openai': {
+        if (!this.openaiClient) throw new Error('OpenAI client not initialized');
+        const completion = await this.openaiClient.chat.completions.create({
+          model: this.model || 'gpt-4-turbo-preview',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: maxTokens,
+          temperature: 0.7,
+        });
+        return completion.choices[0]?.message?.content || '';
+      }
+      case 'gemini': {
+        if (!this.geminiClient) throw new Error('Gemini client not initialized');
+        const model = this.geminiClient.getGenerativeModel({ model: this.model || 'gemini-pro' });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+      }
+      case 'agentforce':
+        return await this.askWithAgentforce(prompt);
+      default:
+        return 'AI is not configured.';
+    }
+  }
+
+  /**
    * Reinitialize the AI service from database config.
    * Called when admin saves/deletes an API key so the running
    * singleton picks up the new configuration without a restart.
