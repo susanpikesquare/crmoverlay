@@ -1852,10 +1852,45 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
       }
     }
 
-    // Get user's opportunities — enriched with custom fields
+    // Determine owner filter based on role — leaders/execs see team opps
+    const userRole = (req.session as any)?.userRole || 'ae';
+    let ownerFilter = `OwnerId = '${userInfo.user_id}'`;
+
+    if (userRole === 'sales-leader' || userRole === 'executive') {
+      // Get direct reports (and include self)
+      try {
+        const teamResult = await connection.query(`
+          SELECT Id FROM User
+          WHERE (ManagerId = '${userInfo.user_id}' OR Id = '${userInfo.user_id}')
+            AND IsActive = true
+          LIMIT 50
+        `);
+        const teamIds = (teamResult.records as any[]).map((u: any) => u.Id);
+        if (teamIds.length === 0) {
+          teamIds.push(userInfo.user_id);
+        }
+        // If executive or no direct reports found, widen to all active users
+        if (userRole === 'executive' || teamIds.length <= 1) {
+          const allUsersResult = await connection.query(`
+            SELECT Id FROM User WHERE IsActive = true LIMIT 200
+          `);
+          const allIds = (allUsersResult.records as any[]).map((u: any) => u.Id);
+          if (allIds.length > 0) {
+            ownerFilter = `OwnerId IN ('${allIds.join("','")}')`;
+          }
+        } else {
+          ownerFilter = `OwnerId IN ('${teamIds.join("','")}')`;
+        }
+        console.log(`[AI Ask] Role: ${userRole}, querying opps for ${ownerFilter.includes('IN') ? 'team/org' : 'self'}`);
+      } catch (err: any) {
+        console.warn(`[AI Ask] Team query failed, falling back to self: ${err.message}`);
+      }
+    }
+
+    // Get opportunities — enriched with custom fields
     const enrichedOppQuery = `
       SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
-             Probability, LastModifiedDate, CreatedDate,
+             Probability, LastModifiedDate, CreatedDate, OwnerId, Owner.Name,
              COM_Metrics__c, MEDDPICCR_Economic_Buyer__c, Economic_Buyer_Name__c,
              Economic_Buyer_Title__c, MEDDPICCR_Decision_Criteria__c,
              MEDDPICCR_Decision_Process__c, MEDDPICCR_Paper_Process__c,
@@ -1869,19 +1904,19 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
              Gong_Call_Count__c, Gong_Last_Call_Date__c, Gong_Sentiment__c,
              Gong_Competitor_Mentions__c
       FROM Opportunity
-      WHERE OwnerId = '${userInfo.user_id}'
+      WHERE ${ownerFilter}
         AND IsClosed = false
       ORDER BY CloseDate ASC
-      LIMIT 10
+      LIMIT 25
     `;
     const fallbackOppQuery = `
       SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
-             Probability, LastModifiedDate, CreatedDate
+             Probability, LastModifiedDate, CreatedDate, OwnerId, Owner.Name
       FROM Opportunity
-      WHERE OwnerId = '${userInfo.user_id}'
+      WHERE ${ownerFilter}
         AND IsClosed = false
       ORDER BY CloseDate ASC
-      LIMIT 10
+      LIMIT 25
     `;
     const opportunities = await safeQuery<any>('Opportunities', enrichedOppQuery, fallbackOppQuery);
 

@@ -673,9 +673,11 @@ Provide ONLY the JSON response, no additional text.`;
 
     // --- Opportunities section ---
     if (opportunities && opportunities.length > 0) {
-      contextInfo += `**Their Opportunities:**\n`;
+      contextInfo += `**Opportunities:**\n`;
       opportunities.forEach((opp: any, idx: number) => {
-        contextInfo += `${idx + 1}. ${opp.Name} — ${opp.Account?.Name || 'Unknown Account'}\n`;
+        contextInfo += `${idx + 1}. ${opp.Name} — ${opp.Account?.Name || 'Unknown Account'}`;
+        if (opp.Owner?.Name) contextInfo += ` (Owner: ${opp.Owner.Name})`;
+        contextInfo += `\n`;
         contextInfo += `   Stage: ${opp.StageName} | Amount: $${opp.Amount?.toLocaleString() || 0}`;
         if (opp.ARR__c) contextInfo += ` | ARR: $${Number(opp.ARR__c).toLocaleString()}`;
         if (opp.Total_Contract_Value__c) contextInfo += ` | TCV: $${Number(opp.Total_Contract_Value__c).toLocaleString()}`;
