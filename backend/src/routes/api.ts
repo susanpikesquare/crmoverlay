@@ -1852,42 +1852,20 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
       }
     }
 
-    // Determine owner filter based on role — leaders/execs see team opps
+    // Determine owner filter based on role — leaders/execs see all visible opps
     const userRole = (req.session as any)?.userRole || 'ae';
     let ownerFilter = `OwnerId = '${userInfo.user_id}'`;
+    console.log(`[AI Ask] User: ${userName}, userId: ${userInfo.user_id}, role: ${userRole}`);
 
     if (userRole === 'sales-leader' || userRole === 'executive') {
-      // Get direct reports (and include self)
-      try {
-        const teamResult = await connection.query(`
-          SELECT Id FROM User
-          WHERE (ManagerId = '${userInfo.user_id}' OR Id = '${userInfo.user_id}')
-            AND IsActive = true
-          LIMIT 50
-        `);
-        const teamIds = (teamResult.records as any[]).map((u: any) => u.Id);
-        if (teamIds.length === 0) {
-          teamIds.push(userInfo.user_id);
-        }
-        // If executive or no direct reports found, widen to all active users
-        if (userRole === 'executive' || teamIds.length <= 1) {
-          const allUsersResult = await connection.query(`
-            SELECT Id FROM User WHERE IsActive = true LIMIT 200
-          `);
-          const allIds = (allUsersResult.records as any[]).map((u: any) => u.Id);
-          if (allIds.length > 0) {
-            ownerFilter = `OwnerId IN ('${allIds.join("','")}')`;
-          }
-        } else {
-          ownerFilter = `OwnerId IN ('${teamIds.join("','")}')`;
-        }
-        console.log(`[AI Ask] Role: ${userRole}, querying opps for ${ownerFilter.includes('IN') ? 'team/org' : 'self'}`);
-      } catch (err: any) {
-        console.warn(`[AI Ask] Team query failed, falling back to self: ${err.message}`);
-      }
+      // For leaders/execs, remove OwnerId filter entirely — Salesforce sharing
+      // rules will automatically limit visibility to what this user can see
+      ownerFilter = '';
+      console.log(`[AI Ask] Role ${userRole}: querying all visible opps (no OwnerId filter)`);
     }
 
     // Get opportunities — enriched with custom fields
+    const ownerWhere = ownerFilter ? `${ownerFilter} AND` : '';
     const enrichedOppQuery = `
       SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
              Probability, LastModifiedDate, CreatedDate, OwnerId, Owner.Name,
@@ -1904,8 +1882,7 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
              Gong_Call_Count__c, Gong_Last_Call_Date__c, Gong_Sentiment__c,
              Gong_Competitor_Mentions__c
       FROM Opportunity
-      WHERE ${ownerFilter}
-        AND IsClosed = false
+      WHERE ${ownerWhere} IsClosed = false
       ORDER BY CloseDate ASC
       LIMIT 25
     `;
@@ -1913,8 +1890,7 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
       SELECT Id, Name, AccountId, Account.Name, StageName, Amount, CloseDate,
              Probability, LastModifiedDate, CreatedDate, OwnerId, Owner.Name
       FROM Opportunity
-      WHERE ${ownerFilter}
-        AND IsClosed = false
+      WHERE ${ownerWhere} IsClosed = false
       ORDER BY CloseDate ASC
       LIMIT 25
     `;
