@@ -1833,23 +1833,22 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
     const userInfo = await connection.identity();
     const userName = userInfo.display_name || userInfo.username;
 
-    // Helper: try enriched query first, fall back to standard fields on INVALID_FIELD
-    async function safeQuery<T>(primaryQuery: string, fallbackQuery: string): Promise<T[]> {
+    // Helper: try enriched query first, fall back to standard fields on query errors
+    async function safeQuery<T>(label: string, primaryQuery: string, fallbackQuery: string): Promise<T[]> {
       try {
         const result = await connection!.query<T>(primaryQuery);
+        console.log(`[AI Ask] ${label} enriched query returned ${result.records?.length ?? 0} records`);
         return result.records || [];
       } catch (error: any) {
-        if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
-          console.warn('[AI Ask] Custom fields not found, using fallback query:', error.message);
-          try {
-            const result = await connection!.query<T>(fallbackQuery);
-            return result.records || [];
-          } catch (fallbackError: any) {
-            console.error('[AI Ask] Fallback query also failed:', fallbackError.message);
-            return [];
-          }
+        console.warn(`[AI Ask] ${label} enriched query failed (${error.errorCode || 'unknown'}): ${error.message}`);
+        try {
+          const result = await connection!.query<T>(fallbackQuery);
+          console.log(`[AI Ask] ${label} fallback query returned ${result.records?.length ?? 0} records`);
+          return result.records || [];
+        } catch (fallbackError: any) {
+          console.error(`[AI Ask] ${label} fallback query also failed: ${fallbackError.message}`);
+          return [];
         }
-        throw error;
       }
     }
 
@@ -1884,7 +1883,7 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
       ORDER BY CloseDate ASC
       LIMIT 10
     `;
-    const opportunities = await safeQuery<any>(enrichedOppQuery, fallbackOppQuery);
+    const opportunities = await safeQuery<any>('Opportunities', enrichedOppQuery, fallbackOppQuery);
 
     // Get unique account IDs from opportunities for account enrichment
     const accountIds = [...new Set(opportunities.map((o: any) => o.AccountId).filter(Boolean))] as string[];
@@ -1912,7 +1911,7 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
         FROM Account
         WHERE Id IN (${idList})
       `;
-      accounts = await safeQuery<any>(enrichedAcctQuery, fallbackAcctQuery);
+      accounts = await safeQuery<any>('Accounts', enrichedAcctQuery, fallbackAcctQuery);
     }
 
     // Get user's tasks
@@ -1955,6 +1954,11 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
       }
     } catch {
       // Gong not configured — continue without it
+    }
+
+    console.log(`[AI Ask] Data gathered — Opps: ${opportunities.length}, Accounts: ${accounts.length}, Tasks: ${taskResult.records.length}, Gong calls: ${gongCalls.length}, Gong emails: ${gongEmails.length}`);
+    if (opportunities.length > 0) {
+      console.log(`[AI Ask] First opp: ${(opportunities[0] as any).Name} (${(opportunities[0] as any).StageName})`);
     }
 
     const userData = {
