@@ -19,8 +19,13 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'Not authenticated' });
     }
 
+    const where: any = { salesforceUserId: userId };
+    if (req.query.accountId) {
+      where.salesforceAccountId = req.query.accountId as string;
+    }
+
     const plans = await AccountPlan.findAll({
-      where: { salesforceUserId: userId },
+      where,
       order: [['updatedAt', 'DESC']],
       attributes: [
         'id', 'salesforceAccountId', 'planName', 'status', 'planDate',
