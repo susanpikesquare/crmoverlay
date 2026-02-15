@@ -91,6 +91,16 @@ export interface OpportunityDetailConfig {
   sections: OpportunityDetailSection[];
 }
 
+export interface AccountTierOverride {
+  accountId: string;
+  tier: 'hot' | 'warm' | 'cool' | 'cold' | null;
+  overriddenBy: string;
+  overriddenAt: string;
+  reason?: string;
+}
+
+export type AccountTierOverrides = Record<string, AccountTierOverride>;
+
 export interface AdminSettings {
   aiProvider: AIProviderConfig;
   salesforceFields: SalesforceFieldConfig;
@@ -480,6 +490,49 @@ export class AdminSettingsService {
        DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
       ['app_config', JSON.stringify(config), userId]
     );
+  }
+
+  async getAccountTierOverrides(): Promise<AccountTierOverrides> {
+    const result = await this.pool.query(
+      'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
+      ['account_tier_overrides']
+    );
+
+    if (result.rows.length === 0) {
+      return {};
+    }
+
+    return result.rows[0].setting_value as AccountTierOverrides;
+  }
+
+  async setAccountTierOverride(
+    accountId: string,
+    override: { tier: 'hot' | 'warm' | 'cool' | 'cold' | null; reason?: string },
+    userId: string
+  ): Promise<AccountTierOverrides> {
+    const overrides = await this.getAccountTierOverrides();
+
+    if (override.tier === null) {
+      delete overrides[accountId];
+    } else {
+      overrides[accountId] = {
+        accountId,
+        tier: override.tier,
+        overriddenBy: userId,
+        overriddenAt: new Date().toISOString(),
+        reason: override.reason,
+      };
+    }
+
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
+      ['account_tier_overrides', JSON.stringify(overrides), userId]
+    );
+
+    return overrides;
   }
 
   async getAllSettings(userId: string): Promise<AdminSettings> {

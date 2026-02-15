@@ -144,6 +144,9 @@ export default function RiskRulesTab({ config, onSave }: Props) {
   const [rules, setRules] = useState<RiskRule[]>(config.riskRules || []);
   const [editingRule, setEditingRule] = useState<RiskRule | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [nlRuleInput, setNlRuleInput] = useState('');
+  const [isParsingRule, setIsParsingRule] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   // Fetch available Salesforce fields
   const { data: sfFieldsData } = useQuery({
@@ -252,6 +255,26 @@ export default function RiskRulesTab({ config, onSave }: Props) {
     setEditingRule({ ...editingRule, conditions: newConditions });
   };
 
+  const handleParseNLRule = async () => {
+    if (!nlRuleInput.trim()) return;
+    setIsParsingRule(true);
+    setParseError(null);
+    try {
+      const response = await api.post('/api/admin/config/risk-rules/parse', {
+        description: nlRuleInput.trim(),
+      });
+      if (response.data.success && response.data.data) {
+        setEditingRule(response.data.data as RiskRule);
+        setIsCreating(true);
+        setNlRuleInput('');
+      }
+    } catch (error: any) {
+      setParseError(error.response?.data?.message || 'Failed to parse rule. Try rephrasing.');
+    } finally {
+      setIsParsingRule(false);
+    }
+  };
+
   const getFlagColor = (flag: string) => {
     return FLAG_OPTIONS.find(f => f.value === flag)?.color || 'bg-gray-100 text-gray-800';
   };
@@ -295,6 +318,40 @@ export default function RiskRulesTab({ config, onSave }: Props) {
           Loading Salesforce fields... Field names can still be typed manually.
         </div>
       )}
+
+      {/* Natural Language Rule Input */}
+      <div className="mb-6 p-4 rounded-lg border-2 border-transparent bg-gradient-to-r from-purple-50 to-blue-50"
+        style={{ borderImage: 'linear-gradient(135deg, #8B5CF6, #3B82F6) 1' }}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-sm font-semibold text-gray-800">Create Rule with AI</span>
+          <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">Beta</span>
+        </div>
+        <p className="text-xs text-gray-600 mb-3">
+          Describe a rule in plain English and AI will convert it to a structured rule for you to review.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={nlRuleInput}
+            onChange={(e) => setNlRuleInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !isParsingRule) handleParseNLRule(); }}
+            placeholder="e.g., Flag as critical when close date is past and stage is not Closed Won"
+            className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            disabled={isParsingRule}
+          />
+          <button
+            onClick={handleParseNLRule}
+            disabled={isParsingRule || !nlRuleInput.trim()}
+            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+          >
+            {isParsingRule ? 'Parsing...' : 'Create Rule'}
+          </button>
+        </div>
+        {parseError && (
+          <div className="mt-2 text-sm text-red-600">{parseError}</div>
+        )}
+      </div>
 
       {/* Rules List */}
       <div className="space-y-4">

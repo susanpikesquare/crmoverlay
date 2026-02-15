@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface PriorityAccount {
   Id: string;
   Name: string;
-  priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool';
+  priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool' | '🥶 Cold';
   employeeCount: number;
   employeeGrowthPct: number;
   intentScore: number;
@@ -12,16 +12,70 @@ interface PriorityAccount {
   techStack: string;
   topSignal: string;
   aiRecommendation: string;
+  isOverridden?: boolean;
   isGroup?: boolean;
   groupCount?: number;
   groupedAccounts?: any[];
 }
 
-interface Props {
-  accounts: PriorityAccount[];
+const TIER_OPTIONS = [
+  { value: 'hot', label: '🔥 Hot', color: 'text-red-600 hover:bg-red-50' },
+  { value: 'warm', label: '🔶 Warm', color: 'text-orange-600 hover:bg-orange-50' },
+  { value: 'cool', label: '🔵 Cool', color: 'text-blue-600 hover:bg-blue-50' },
+  { value: 'cold', label: '🥶 Cold', color: 'text-cyan-600 hover:bg-cyan-50' },
+  { value: null, label: '⟳ Auto', color: 'text-gray-600 hover:bg-gray-50' },
+] as const;
+
+function TierToggle({ accountId, onTierOverride }: { accountId: string; onTierOverride: (accountId: string, tier: string | null) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div className="relative inline-block" ref={dropdownRef}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+        className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded border border-gray-200"
+        title="Override tier"
+      >
+        Tier ▾
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 z-20 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          {TIER_OPTIONS.map((option) => (
+            <button
+              key={option.value ?? 'auto'}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTierOverride(accountId, option.value);
+                setIsOpen(false);
+              }}
+              className={`w-full px-3 py-1.5 text-sm text-left ${option.color}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
-export default function PriorityActionsTable({ accounts }: Props) {
+interface Props {
+  accounts: PriorityAccount[];
+  onTierOverride?: (accountId: string, tier: string | null) => void;
+}
+
+export default function PriorityActionsTable({ accounts, onTierOverride }: Props) {
   const navigate = useNavigate();
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'priority' | 'intent' | 'employees' | 'stage'>('priority');
@@ -57,6 +111,7 @@ export default function PriorityActionsTable({ accounts }: Props) {
   const getPriorityIcon = (tier: string) => {
     if (tier.includes('🔥')) return { icon: '🔥', color: 'text-red-600', bg: 'bg-red-50' };
     if (tier.includes('🔶')) return { icon: '🔶', color: 'text-orange-600', bg: 'bg-orange-50' };
+    if (tier.includes('🥶')) return { icon: '🥶', color: 'text-cyan-600', bg: 'bg-cyan-50' };
     return { icon: '🔵', color: 'text-blue-600', bg: 'bg-blue-50' };
   };
 
@@ -179,6 +234,9 @@ export default function PriorityActionsTable({ accounts }: Props) {
                         <div className={`flex items-center gap-2 ${priority.color}`}>
                           <span className="text-lg">{priority.icon}</span>
                           <span className="font-bold text-lg">{account.intentScore}</span>
+                          {account.isOverridden && (
+                            <span className="text-xs text-gray-400" title="Tier manually pinned">📌</span>
+                          )}
                         </div>
                       </td>
 
@@ -229,12 +287,17 @@ export default function PriorityActionsTable({ accounts }: Props) {
 
                       {/* Actions */}
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={(e) => handleViewAccount(account.Id, e)}
-                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                          View Details →
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          {onTierOverride && (
+                            <TierToggle accountId={account.Id} onTierOverride={onTierOverride} />
+                          )}
+                          <button
+                            onClick={(e) => handleViewAccount(account.Id, e)}
+                            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            View Details →
+                          </button>
+                        </div>
                       </td>
                     </tr>
 

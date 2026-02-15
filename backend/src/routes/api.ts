@@ -1058,7 +1058,9 @@ router.get('/hub/ae/priority-accounts', isAuthenticated, async (req: Request, re
     }
 
     console.log(`[API] Fetching priority accounts for user: ${userId}`);
-    const accounts = await HubData.getPriorityAccounts(connection, userId);
+    const adminSettings = new AdminSettingsService(pool);
+    const overrides = await adminSettings.getAccountTierOverrides();
+    const accounts = await HubData.getPriorityAccounts(connection, userId, overrides);
     console.log(`[API] getPriorityAccounts returned ${accounts.length} accounts`);
 
     if (accounts.length > 0) {
@@ -1081,6 +1083,41 @@ router.get('/hub/ae/priority-accounts', isAuthenticated, async (req: Request, re
       error: 'Failed to fetch priority accounts',
       message: error.message,
     });
+  }
+});
+
+/**
+ * GET /api/accounts/tier-overrides
+ * Get all account tier overrides
+ */
+router.get('/accounts/tier-overrides', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const adminSettings = new AdminSettingsService(pool);
+    const overrides = await adminSettings.getAccountTierOverrides();
+    res.json({ success: true, data: overrides });
+  } catch (error: any) {
+    console.error('Error fetching tier overrides:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch tier overrides', message: error.message });
+  }
+});
+
+/**
+ * PUT /api/accounts/:id/tier-override
+ * Set or remove a tier override for an account
+ */
+router.put('/accounts/:id/tier-override', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { tier, reason } = req.body;
+    const session = req.session as any;
+    const userId = session.userInfo?.name || session.userId || 'Unknown';
+
+    const adminSettings = new AdminSettingsService(pool);
+    const overrides = await adminSettings.setAccountTierOverride(id, { tier, reason }, userId);
+    res.json({ success: true, data: overrides });
+  } catch (error: any) {
+    console.error('Error setting tier override:', error);
+    res.status(500).json({ success: false, error: 'Failed to set tier override', message: error.message });
   }
 });
 

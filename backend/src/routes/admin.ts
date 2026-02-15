@@ -109,6 +109,91 @@ router.put('/config/risk-rules', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/admin/config/risk-rules/parse
+ * Parse a natural language description into a structured RiskRule using AI
+ */
+router.post('/config/risk-rules/parse', async (req: Request, res: Response) => {
+  try {
+    const { description } = req.body;
+
+    if (!description || typeof description !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'A description string is required',
+      });
+    }
+
+    // Optionally fetch available SF field names to give AI context
+    let fieldContext = '';
+    try {
+      const session = req.session as any;
+      if (session.accessToken && session.instanceUrl) {
+        const { createConnection } = await import('../config/salesforce');
+        const connection = createConnection(session.accessToken, session.instanceUrl, session.refreshToken);
+        const accountDescribe = await connection.sobject('Account').describe();
+        const oppDescribe = await connection.sobject('Opportunity').describe();
+
+        const accountFieldNames = accountDescribe.fields.map((f: any) => `${f.name} (${f.label})`).join(', ');
+        const oppFieldNames = oppDescribe.fields.map((f: any) => `${f.name} (${f.label})`).join(', ');
+        fieldContext = `\n\nAvailable Account fields: ${accountFieldNames}\n\nAvailable Opportunity fields: ${oppFieldNames}`;
+      }
+    } catch {
+      // Field context is best-effort, proceed without it
+    }
+
+    const prompt = `You are a CRM configuration assistant. Convert the following natural language rule description into a structured JSON risk rule.
+
+The JSON must match this exact schema:
+{
+  "name": "string - short descriptive name for the rule",
+  "objectType": "Account" or "Opportunity",
+  "conditions": [
+    {
+      "field": "Salesforce API field name (e.g. Current_Gainsight_Score__c, Amount, StageName)",
+      "operator": "=" | "!=" | "<" | ">" | "<=" | ">=" | "IN" | "NOT IN" | "contains",
+      "value": "the value to compare against (use numbers for numeric fields, strings for text)"
+    }
+  ],
+  "logic": "AND" or "OR",
+  "flag": "at-risk" | "critical" | "warning",
+  "active": true
+}
+${fieldContext}
+
+User's rule description: "${description}"
+
+Return ONLY the JSON object, no explanation or markdown.`;
+
+    const aiResponse = await aiService.askWithContext(prompt, 1000);
+
+    // Strip markdown code blocks if present
+    let cleaned = aiResponse.trim();
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+
+    const parsed = JSON.parse(cleaned);
+
+    // Add an ID and timestamp
+    const rule = {
+      id: `rule_${Date.now()}`,
+      ...parsed,
+      active: parsed.active !== false,
+    };
+
+    res.json({
+      success: true,
+      data: rule,
+    });
+  } catch (error: any) {
+    console.error('Error parsing NL risk rule:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to parse rule description',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * PUT /api/admin/config/priority-scoring
  * Update priority scoring configuration
  */

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useRef, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
@@ -19,7 +19,7 @@ interface AEMetrics {
 interface PriorityAccount {
   Id: string;
   Name: string;
-  priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool';
+  priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool' | '🥶 Cold';
   employeeCount: number;
   employeeGrowthPct: number;
   intentScore: number;
@@ -27,6 +27,7 @@ interface PriorityAccount {
   techStack: string;
   topSignal: string;
   aiRecommendation: string;
+  isOverridden?: boolean;
 }
 
 interface AtRiskDeal {
@@ -41,10 +42,81 @@ interface AtRiskDeal {
   aiRecommendation: string;
 }
 
+const TIER_OPTIONS = [
+  { value: 'hot', label: '🔥 Hot', color: 'text-red-600 hover:bg-red-50' },
+  { value: 'warm', label: '🔶 Warm', color: 'text-orange-600 hover:bg-orange-50' },
+  { value: 'cool', label: '🔵 Cool', color: 'text-blue-600 hover:bg-blue-50' },
+  { value: 'cold', label: '🥶 Cold', color: 'text-cyan-600 hover:bg-cyan-50' },
+  { value: null, label: '⟳ Auto', color: 'text-gray-600 hover:bg-gray-50' },
+] as const;
+
+function InlineTierToggle({ accountId, onOverride }: { accountId: string; onOverride: (accountId: string, tier: string | null) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setIsOpen(false);
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsOpen(!isOpen); }}
+        className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded border border-gray-200"
+        title="Override tier"
+      >
+        Tier ▾
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 z-20 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          {TIER_OPTIONS.map((option) => (
+            <button
+              key={option.value ?? 'auto'}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOverride(accountId, option.value);
+                setIsOpen(false);
+              }}
+              className={`w-full px-3 py-1.5 text-sm text-left ${option.color}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AEHub() {
+  const queryClient = useQueryClient();
   const [timeframe, setTimeframe] = useState<'annual' | 'quarterly'>('annual');
   const [expandedPriority, setExpandedPriority] = useState(false);
   const [expandedAtRisk, setExpandedAtRisk] = useState(false);
+
+  // Tier override mutation
+  const tierOverrideMutation = useMutation({
+    mutationFn: async ({ accountId, tier }: { accountId: string; tier: string | null }) => {
+      const response = await axios.put(
+        `${API_URL}/api/accounts/${accountId}/tier-override`,
+        { tier },
+        { withCredentials: true }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ae-priority-accounts'] });
+    },
+  });
+
+  const handleTierOverride = (accountId: string, tier: string | null) => {
+    tierOverrideMutation.mutate({ accountId, tier });
+  };
 
   // Fetch metrics
   const { data: metricsData } = useQuery<{
@@ -194,12 +266,14 @@ export default function AEHub() {
   const getTierColor = (tier: string) => {
     if (tier === '🔥 Hot') return 'bg-red-50 border-red-200 hover:bg-red-100';
     if (tier === '🔶 Warm') return 'bg-orange-50 border-orange-200 hover:bg-orange-100';
+    if (tier === '🥶 Cold') return 'bg-cyan-50 border-cyan-200 hover:bg-cyan-100';
     return 'bg-blue-50 border-blue-200 hover:bg-blue-100';
   };
 
   const getTierBadgeColor = (tier: string) => {
     if (tier === '🔥 Hot') return 'bg-red-100 text-red-800';
     if (tier === '🔶 Warm') return 'bg-orange-100 text-orange-800';
+    if (tier === '🥶 Cold') return 'bg-cyan-100 text-cyan-800';
     return 'bg-blue-100 text-blue-800';
   };
 
@@ -341,10 +415,18 @@ export default function AEHub() {
                     className={`block p-4 rounded-lg transition-colors border ${getTierColor(account.priorityTier)}`}
                   >
                     <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-semibold text-slate-900 text-sm">{account.Name}</h3>
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getTierBadgeColor(account.priorityTier)}`}>
-                        {account.priorityTier}
-                      </span>
+                      <h3 className="font-semibold text-slate-900 text-sm">
+                        {account.Name}
+                        {account.isOverridden && (
+                          <span className="ml-1 text-xs text-gray-400" title="Tier manually pinned">📌</span>
+                        )}
+                      </h3>
+                      <div className="flex items-center gap-1">
+                        <InlineTierToggle accountId={account.Id} onOverride={handleTierOverride} />
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getTierBadgeColor(account.priorityTier)}`}>
+                          {account.priorityTier}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-slate-600 mb-2">

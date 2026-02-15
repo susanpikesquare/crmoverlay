@@ -9,7 +9,7 @@ import { Pool } from 'pg';
 import { Account, Opportunity } from './salesforceData';
 import * as agentforce from './agentforceService';
 import { getQuotaFieldName } from './configService';
-import { AdminSettingsService } from './adminSettings';
+import { AdminSettingsService, AccountTierOverrides } from './adminSettings';
 
 /**
  * AE Hub Metrics
@@ -44,7 +44,7 @@ export interface CSMMetrics {
  * Priority Account (for AE hub)
  */
 export interface PriorityAccount extends Account {
-  priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool';
+  priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool' | '🥶 Cold';
   employeeCount: number;
   employeeGrowthPct: number;
   intentScore: number;
@@ -52,6 +52,7 @@ export interface PriorityAccount extends Account {
   techStack: string;
   topSignal: string;
   aiRecommendation: string;
+  isOverridden?: boolean;
   // Grouping fields
   isGroup?: boolean;
   groupCount?: number;
@@ -434,7 +435,8 @@ export async function getAEMetrics(
  */
 export async function getPriorityAccounts(
   connection: Connection,
-  userId: string
+  userId: string,
+  overrides?: AccountTierOverrides
 ): Promise<PriorityAccount[]> {
   // Query high-value accounts WITHOUT open opportunities (potential new business)
   // These are priority accounts to target for new deals
@@ -491,13 +493,29 @@ export async function getPriorityAccounts(
       const intentScore = Math.min(100, score);
 
       // Determine priority tier based on intent score
-      let priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool';
+      let priorityTier: '🔥 Hot' | '🔶 Warm' | '🔵 Cool' | '🥶 Cold';
       if (intentScore >= 75) {
         priorityTier = '🔥 Hot';
       } else if (intentScore >= 60) {
         priorityTier = '🔶 Warm';
       } else {
         priorityTier = '🔵 Cool';
+      }
+
+      // Apply tier override if one exists
+      let isOverridden = false;
+      if (overrides && overrides[account.Id]) {
+        const override = overrides[account.Id];
+        if (override.tier) {
+          const tierMap: Record<string, '🔥 Hot' | '🔶 Warm' | '🔵 Cool' | '🥶 Cold'> = {
+            hot: '🔥 Hot',
+            warm: '🔶 Warm',
+            cool: '🔵 Cool',
+            cold: '🥶 Cold',
+          };
+          priorityTier = tierMap[override.tier] || priorityTier;
+          isOverridden = true;
+        }
       }
 
       // Log scoring details for first 3 accounts
@@ -529,6 +547,7 @@ export async function getPriorityAccounts(
         buyingStage,
         techStack: account.Industry || 'Unknown',
         topSignal: `${buyingStage !== 'Active' ? buyingStage + ' • ' : ''}${daysSinceUpdate < 7 ? 'Recently active' : 'Last updated ' + daysSinceUpdate + ' days ago'}`,
+        isOverridden,
       };
     });
 

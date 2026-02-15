@@ -1,8 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import apiClient from '../services/api';
 import api from '../services/api';
+
+interface AccountTierOverride {
+  accountId: string;
+  tier: 'hot' | 'warm' | 'cool' | 'cold' | null;
+  overriddenBy: string;
+  overriddenAt: string;
+  reason?: string;
+}
 import Account360Tab from '../components/account/Account360Tab';
 import ExecSummaryTab from '../components/account/ExecSummaryTab';
 import AccountPlanTab from '../components/account/AccountPlanTab';
@@ -87,6 +95,87 @@ const TABS: { id: TabId; label: string }[] = [
 
 const VALID_TAB_IDS = new Set(TABS.map(t => t.id));
 
+const TIER_CHOICES = [
+  { value: 'hot', label: '🔥 Hot', badgeClass: 'bg-red-100 text-red-800 border-red-300' },
+  { value: 'warm', label: '🔶 Warm', badgeClass: 'bg-orange-100 text-orange-800 border-orange-300' },
+  { value: 'cool', label: '🔵 Cool', badgeClass: 'bg-blue-100 text-blue-800 border-blue-300' },
+  { value: 'cold', label: '🥶 Cold', badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+  { value: null, label: '⟳ Auto (calculated)', badgeClass: 'bg-gray-100 text-gray-800 border-gray-300' },
+] as const;
+
+function TierBadgeDropdown({
+  currentTier,
+  override,
+  onOverride,
+  getBadgeColor,
+}: {
+  currentTier: string;
+  override?: AccountTierOverride;
+  onOverride: (tier: string | null) => void;
+  getBadgeColor: (tier: string) => string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setIsOpen(false);
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const displayTier = override ? TIER_CHOICES.find(t => t.value === override.tier)?.label || currentTier : currentTier;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`px-4 py-1.5 rounded-full text-sm font-semibold border cursor-pointer hover:opacity-80 transition-opacity ${
+          override ? getBadgeColor(displayTier) : getBadgeColor(currentTier)
+        }`}
+        title="Click to override tier"
+      >
+        {override ? displayTier : currentTier || 'No tier'}
+        {override && <span className="ml-1">📌</span>}
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 z-20 mt-2 w-52 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          {TIER_CHOICES.map((option) => (
+            <button
+              key={option.value ?? 'auto'}
+              onClick={() => {
+                onOverride(option.value);
+                setIsOpen(false);
+              }}
+              className={`w-full px-4 py-2 text-sm text-left hover:bg-gray-50 ${
+                (override?.tier === option.value) || (!override && option.value === null)
+                  ? 'font-semibold bg-gray-50'
+                  : ''
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+
+          {override && (
+            <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">
+              Pinned by {override.overriddenBy}
+              <button
+                onClick={() => { onOverride(null); setIsOpen(false); }}
+                className="ml-2 text-red-500 hover:text-red-700 font-medium"
+              >
+                Remove
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Account360() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -139,6 +228,28 @@ export default function Account360() {
     },
   });
 
+  // Tier override query & mutation
+  const { data: tierOverrides } = useQuery<Record<string, AccountTierOverride>>({
+    queryKey: ['tier-overrides'],
+    queryFn: async () => {
+      const response = await api.get('/api/accounts/tier-overrides');
+      return response.data.data;
+    },
+  });
+
+  const tierOverrideMutation = useMutation({
+    mutationFn: async ({ tier }: { tier: string | null }) => {
+      const response = await api.put(`/api/accounts/${id}/tier-override`, { tier });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tier-overrides'] });
+      queryClient.invalidateQueries({ queryKey: ['ae-priority-accounts'] });
+    },
+  });
+
+  const currentOverride = id && tierOverrides ? tierOverrides[id] : undefined;
+
   const handleFieldSave = async (fieldName: string, value: any) => {
     await updateAccountMutation.mutateAsync({ fieldName, value });
   };
@@ -178,8 +289,9 @@ export default function Account360() {
 
   const getPriorityBadgeColor = (tier: string) => {
     if (!tier) return 'bg-gray-100 text-gray-800 border-gray-300';
-    if (tier.includes('\uD83D\uDD25')) return 'bg-red-100 text-red-800 border-red-300';
-    if (tier.includes('\uD83D\uDD36')) return 'bg-orange-100 text-orange-800 border-orange-300';
+    if (tier.includes('\uD83D\uDD25') || tier.includes('Hot')) return 'bg-red-100 text-red-800 border-red-300';
+    if (tier.includes('\uD83D\uDD36') || tier.includes('Warm')) return 'bg-orange-100 text-orange-800 border-orange-300';
+    if (tier.includes('\uD83E\uDD76') || tier.includes('Cold')) return 'bg-cyan-100 text-cyan-800 border-cyan-300';
     return 'bg-blue-100 text-blue-800 border-blue-300';
   };
 
@@ -255,15 +367,12 @@ export default function Account360() {
             <div className="flex-1">
               <div className="flex items-center gap-4 mb-3">
                 <h1 className="text-3xl font-bold text-gray-900">{account.Name}</h1>
-                {account.Priority_Tier__c && (
-                  <span
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold border ${getPriorityBadgeColor(
-                      account.Priority_Tier__c
-                    )}`}
-                  >
-                    {account.Priority_Tier__c}
-                  </span>
-                )}
+                <TierBadgeDropdown
+                  currentTier={account.Priority_Tier__c}
+                  override={currentOverride}
+                  onOverride={(tier) => tierOverrideMutation.mutate({ tier })}
+                  getBadgeColor={getPriorityBadgeColor}
+                />
               </div>
               <p className="text-gray-600 mb-4">{account.Industry}</p>
               <div className="flex items-center gap-6 text-sm text-gray-600">
