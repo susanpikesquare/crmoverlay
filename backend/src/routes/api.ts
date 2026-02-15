@@ -2174,7 +2174,7 @@ router.get('/gong/emails', isAuthenticated, async (req: Request, res: Response) 
  */
 router.post('/gong/ai-search', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const { query, scope, accountId, opportunityId, accountName, opportunityName } = req.body;
+    const { query, scope, accountId, opportunityId, accountName, opportunityName, filters } = req.body;
 
     // Validate inputs
     if (!query || typeof query !== 'string' || query.trim().length < 3) {
@@ -2235,6 +2235,7 @@ router.post('/gong/ai-search', isAuthenticated, async (req: Request, res: Respon
       opportunityId,
       accountName,
       opportunityName,
+      filters,
     });
 
     console.log(`[Gong AI Search] Complete: ${result.metadata.callsAnalyzed} calls, ${result.metadata.transcriptsFetched} transcripts, ${result.metadata.emailsAnalyzed} emails`);

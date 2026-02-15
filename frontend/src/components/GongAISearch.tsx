@@ -57,9 +57,29 @@ const SCOPE_PLACEHOLDERS: Record<string, string> = {
   global: 'Search for trends across all deals (last 6 months)...',
 };
 
+const OPP_TYPE_OPTIONS = ['New Business', 'Renewal', 'Expansion', 'Upsell'];
+
 export default function GongAISearch({ scope, accountId, accountName, opportunityId, opportunityName }: Props) {
   const [query, setQuery] = useState('');
   const [showSources, setShowSources] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [timeRange, setTimeRange] = useState('default');
+  const [participantType, setParticipantType] = useState('all');
+  const [selectedOppTypes, setSelectedOppTypes] = useState<string[]>([]);
+
+  const filtersActive = timeRange !== 'default' || participantType !== 'all' || selectedOppTypes.length > 0;
+
+  const clearFilters = () => {
+    setTimeRange('default');
+    setParticipantType('all');
+    setSelectedOppTypes([]);
+  };
+
+  const toggleOppType = (type: string) => {
+    setSelectedOppTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    );
+  };
 
   const searchMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
@@ -70,6 +90,11 @@ export default function GongAISearch({ scope, accountId, accountName, opportunit
         opportunityId,
         accountName,
         opportunityName,
+        filters: {
+          timeRange: timeRange !== 'default' ? timeRange : undefined,
+          participantType: participantType !== 'all' ? participantType : undefined,
+          opportunityTypes: selectedOppTypes.length > 0 ? selectedOppTypes : undefined,
+        },
       });
       return response.data.data as SearchResult;
     },
@@ -98,7 +123,7 @@ export default function GongAISearch({ scope, accountId, accountName, opportunit
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
-        <div>
+        <div className="flex-1">
           <h2 className="text-xl font-bold text-gray-900">Gong AI Search</h2>
           <p className="text-xs text-gray-500">
             {scope === 'global' ? 'Search across all deals (6 months)' :
@@ -106,7 +131,85 @@ export default function GongAISearch({ scope, accountId, accountName, opportunit
              `Search calls for ${opportunityName || 'this deal'} (2 years)`}
           </p>
         </div>
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+          title="Toggle filters"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          {filtersActive && (
+            <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-purple-500 rounded-full"></span>
+          )}
+        </button>
       </div>
+
+      {/* Filter Bar */}
+      {showFilters && (
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-medium text-gray-600">Time Range</label>
+              <select
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value)}
+                className="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value="default">Default</option>
+                <option value="last30">Last Month</option>
+                <option value="last90">Last 3 Months</option>
+                <option value="last180">Last 6 Months</option>
+                <option value="last365">Last Year</option>
+                <option value="all">All Time</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-medium text-gray-600">Participants</label>
+              <select
+                value={participantType}
+                onChange={(e) => setParticipantType(e.target.value)}
+                className="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value="all">All</option>
+                <option value="external-only">External/Customer Calls</option>
+                <option value="internal-only">Internal Only</option>
+              </select>
+            </div>
+
+            {scope !== 'global' && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-gray-600">Opp Type</label>
+                <div className="flex flex-wrap gap-1">
+                  {OPP_TYPE_OPTIONS.map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => toggleOppType(type)}
+                      className={`text-xs px-2 py-1 rounded-md border transition ${
+                        selectedOppTypes.includes(type)
+                          ? 'bg-purple-100 border-purple-400 text-purple-700'
+                          : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {filtersActive && (
+              <button
+                onClick={clearFilters}
+                className="text-xs text-purple-600 hover:text-purple-800 underline ml-auto"
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Search Input */}
       <div className="flex gap-2 mb-4">
@@ -229,6 +332,12 @@ export default function GongAISearch({ scope, accountId, accountName, opportunit
             {searchMutation.data.metadata.emailsAnalyzed} emails
             {' '}&middot;{' '}
             {searchMutation.data.metadata.lookbackDays}-day lookback
+            {participantType !== 'all' && (
+              <>{' '}&middot;{' '}{participantType === 'external-only' ? 'External only' : 'Internal only'}</>
+            )}
+            {selectedOppTypes.length > 0 && (
+              <>{' '}&middot;{' '}{selectedOppTypes.join(', ')}</>
+            )}
           </div>
         </div>
       )}

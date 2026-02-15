@@ -14,6 +14,12 @@ import { GongService, GongCall, GongTranscript, GongEmailActivity } from './gong
 import { aiService } from './aiService';
 import { Connection } from 'jsforce';
 
+export interface GongSearchFilters {
+  timeRange?: 'last30' | 'last90' | 'last180' | 'last365' | 'all';
+  participantType?: 'all' | 'external-only' | 'internal-only';
+  opportunityTypes?: string[];
+}
+
 export interface GongSearchRequest {
   scope: 'account' | 'opportunity' | 'global';
   query: string;
@@ -21,6 +27,7 @@ export interface GongSearchRequest {
   opportunityId?: string;
   accountName?: string;
   opportunityName?: string;
+  filters?: GongSearchFilters;
 }
 
 export interface GongSearchSource {
@@ -53,13 +60,13 @@ export class GongAISearchService {
   }
 
   async search(request: GongSearchRequest): Promise<GongSearchResponse> {
-    const { scope, query, accountId, opportunityId, accountName, opportunityName } = request;
+    const { scope, query, accountId, opportunityId, accountName, opportunityName, filters } = request;
 
-    const lookbackDays = scope === 'global' ? 180 : 730;
+    const lookbackDays = this.calculateLookbackDays(scope, filters?.timeRange);
     const fromDateTime = new Date(Date.now() - lookbackDays * 86400000).toISOString();
     const toDateTime = new Date().toISOString();
 
-    console.log(`[Gong AI Search] scope=${scope}, query="${query}", lookback=${lookbackDays}d`);
+    console.log(`[Gong AI Search] scope=${scope}, query="${query}", lookback=${lookbackDays}d, filters=${JSON.stringify(filters || {})}`);
 
     // Step 1: Fetch all calls in the date range
     const allCalls = await this.gongService.getCallsPaginated({ fromDateTime, toDateTime });
@@ -70,8 +77,12 @@ export class GongAISearchService {
     // rarely links calls to specific opportunities but does link to accounts.
     // The opportunity context is still passed to the AI prompt for deal-focused analysis.
     let scopedCalls = allCalls;
-    if (scope !== 'global' && allCalls.length > 0) {
-      // Get extensive data with CRM associations
+    const needsExtensiveData = scope !== 'global' ||
+      (filters?.participantType && filters.participantType !== 'all') ||
+      (filters?.opportunityTypes && filters.opportunityTypes.length > 0);
+
+    if (needsExtensiveData && allCalls.length > 0) {
+      // Get extensive data with CRM associations and party affiliations
       const callIds = allCalls.map(c => c.id);
       const batchSize = 100;
       const extensiveCalls: GongCall[] = [];
@@ -81,42 +92,67 @@ export class GongAISearchService {
         extensiveCalls.push(...extensiveResult);
       }
 
-      // For both opportunity and account scope, match by account CRM association
-      if (accountId) {
-        scopedCalls = extensiveCalls.filter(call => {
-          const crm = call.crmAssociations || {};
-          return (crm.accountIds || []).includes(accountId);
-        });
-        console.log(`[Gong AI Search] Account CRM filter: ${scopedCalls.length} calls for accountId ${accountId}`);
-      }
-
-      // Fallback: if CRM matching returned 0, try name-based matching on call title/participants
-      // This handles cases where Gong has no CRM associations configured
-      if (scopedCalls.length === 0) {
-        const matchName = (accountName || '').toLowerCase();
-        if (matchName && matchName.length >= 3) {
-          const nameTokens = matchName.split(/\s+/).filter(t => t.length > 2);
-          // Require at least 2 tokens to match to avoid false positives on short/generic words
-          const minMatches = Math.min(2, nameTokens.length);
+      if (scope !== 'global') {
+        // For both opportunity and account scope, match by account CRM association
+        if (accountId) {
           scopedCalls = extensiveCalls.filter(call => {
-            const titleLower = (call.title || '').toLowerCase();
-            const titleMatches = nameTokens.filter(token => titleLower.includes(token)).length;
-            if (titleMatches >= minMatches) return true;
-            // Also check participant email domains (e.g., @navyfederal.org)
-            if (call.parties) {
-              const partiesStr = call.parties.map(p => `${p.name || ''} ${p.emailAddress || ''}`).join(' ').toLowerCase();
-              const partyMatches = nameTokens.filter(token => partiesStr.includes(token)).length;
-              if (partyMatches >= minMatches) return true;
-            }
-            return false;
+            const crm = call.crmAssociations || {};
+            return (crm.accountIds || []).includes(accountId);
           });
-          if (scopedCalls.length > 0) {
-            console.log(`[Gong AI Search] CRM returned 0, name-based fallback: ${scopedCalls.length} calls matching "${nameTokens.join(', ')}"`);
+          console.log(`[Gong AI Search] Account CRM filter: ${scopedCalls.length} calls for accountId ${accountId}`);
+        }
+
+        // Fallback: if CRM matching returned 0, try name-based matching on call title/participants
+        // This handles cases where Gong has no CRM associations configured
+        if (scopedCalls.length === 0) {
+          const matchName = (accountName || '').toLowerCase();
+          if (matchName && matchName.length >= 3) {
+            const nameTokens = matchName.split(/\s+/).filter(t => t.length > 2);
+            // Require at least 2 tokens to match to avoid false positives on short/generic words
+            const minMatches = Math.min(2, nameTokens.length);
+            scopedCalls = extensiveCalls.filter(call => {
+              const titleLower = (call.title || '').toLowerCase();
+              const titleMatches = nameTokens.filter(token => titleLower.includes(token)).length;
+              if (titleMatches >= minMatches) return true;
+              // Also check participant email domains (e.g., @navyfederal.org)
+              if (call.parties) {
+                const partiesStr = call.parties.map(p => `${p.name || ''} ${p.emailAddress || ''}`).join(' ').toLowerCase();
+                const partyMatches = nameTokens.filter(token => partiesStr.includes(token)).length;
+                if (partyMatches >= minMatches) return true;
+              }
+              return false;
+            });
+            if (scopedCalls.length > 0) {
+              console.log(`[Gong AI Search] CRM returned 0, name-based fallback: ${scopedCalls.length} calls matching "${nameTokens.join(', ')}"`);
+            }
           }
         }
+      } else {
+        // Global scope with filters — use extensive data for filtering
+        scopedCalls = extensiveCalls;
       }
 
       console.log(`[Gong AI Search] Final: ${scopedCalls.length} scoped calls for ${scope}`);
+    }
+
+    // Step 2b: Apply participant type filter
+    if (filters?.participantType && filters.participantType !== 'all') {
+      const before = scopedCalls.length;
+      if (filters.participantType === 'external-only') {
+        scopedCalls = scopedCalls.filter(call =>
+          call.parties?.some(p => p.affiliation === 'External')
+        );
+      } else if (filters.participantType === 'internal-only') {
+        scopedCalls = scopedCalls.filter(call =>
+          !call.parties?.some(p => p.affiliation === 'External')
+        );
+      }
+      console.log(`[Gong AI Search] Participant filter (${filters.participantType}): ${before} → ${scopedCalls.length} calls`);
+    }
+
+    // Step 2c: Apply opportunity type filter
+    if (filters?.opportunityTypes && filters.opportunityTypes.length > 0 && this.sfConnection) {
+      scopedCalls = await this.filterByOpportunityType(scopedCalls, filters.opportunityTypes);
     }
 
     // Step 3: Smart-select top 15 calls for transcript fetch
@@ -251,6 +287,61 @@ export class GongAISearchService {
 
   private getQuarterKey(date: Date): string {
     return `${date.getFullYear()}-Q${Math.floor(date.getMonth() / 3) + 1}`;
+  }
+
+  private calculateLookbackDays(scope: string, timeRange?: string): number {
+    if (timeRange) {
+      switch (timeRange) {
+        case 'last30': return 30;
+        case 'last90': return 90;
+        case 'last180': return 180;
+        case 'last365': return 365;
+        case 'all': return 3650;
+      }
+    }
+    return scope === 'global' ? 180 : 730;
+  }
+
+  private async filterByOpportunityType(calls: GongCall[], oppTypes: string[]): Promise<GongCall[]> {
+    if (!this.sfConnection) return calls;
+
+    // Collect all opportunity IDs from calls
+    const allOppIds = new Set<string>();
+    for (const call of calls) {
+      const ids = call.crmAssociations?.opportunityIds || [];
+      ids.forEach(id => allOppIds.add(id));
+    }
+
+    if (allOppIds.size === 0) {
+      console.log(`[Gong AI Search] Opp type filter: no opportunity associations found, returning 0 calls`);
+      return [];
+    }
+
+    try {
+      // Query Salesforce for opportunity types
+      const oppIdList = Array.from(allOppIds).map(id => `'${id}'`).join(',');
+      const result = await this.sfConnection.query<{ Id: string; Type: string }>(
+        `SELECT Id, Type FROM Opportunity WHERE Id IN (${oppIdList})`
+      );
+
+      const matchingOppIds = new Set(
+        result.records
+          .filter(r => r.Type && oppTypes.includes(r.Type))
+          .map(r => r.Id)
+      );
+
+      const before = calls.length;
+      const filtered = calls.filter(call => {
+        const ids = call.crmAssociations?.opportunityIds || [];
+        return ids.some(id => matchingOppIds.has(id));
+      });
+
+      console.log(`[Gong AI Search] Opp type filter (${oppTypes.join(', ')}): ${before} → ${filtered.length} calls`);
+      return filtered;
+    } catch (error) {
+      console.warn('[Gong AI Search] Opportunity type filter query failed:', error);
+      return calls;
+    }
   }
 
   /**
