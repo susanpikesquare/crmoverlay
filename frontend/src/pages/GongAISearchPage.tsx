@@ -7,7 +7,7 @@ export default function GongAISearchPage() {
       <div className="max-w-4xl mx-auto px-8">
         {/* Back Link */}
         <Link
-          to="/"
+          to="/dashboard"
           className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 mb-6"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

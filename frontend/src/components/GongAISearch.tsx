@@ -62,7 +62,7 @@ const OPP_TYPE_OPTIONS = ['New Business', 'Renewal', 'Expansion', 'Upsell'];
 export default function GongAISearch({ scope, accountId, accountName, opportunityId, opportunityName }: Props) {
   const [query, setQuery] = useState('');
   const [showSources, setShowSources] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [timeRange, setTimeRange] = useState('default');
   const [participantType, setParticipantType] = useState('all');
   const [selectedOppTypes, setSelectedOppTypes] = useState<string[]>([]);
