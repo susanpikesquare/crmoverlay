@@ -1,8 +1,12 @@
+// Load environment variables BEFORE any other imports
+// (encryption.ts reads ENCRYPTION_KEY at module load time)
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { Express } from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
-import dotenv from 'dotenv';
 import path from 'path';
 import { Pool } from 'pg';
 import routes from './routes';
@@ -12,9 +16,6 @@ import adminRoutes from './routes/admin';
 import superadminRoutes from './routes/superadmin';
 import accountPlanRoutes from './routes/accountPlans';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-
-// Load environment variables
-dotenv.config();
 
 // Create Express app
 const app: Express = express();
