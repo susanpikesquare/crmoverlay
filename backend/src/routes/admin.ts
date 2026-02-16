@@ -1004,16 +1004,12 @@ router.post('/config/buying-signals/test', async (req: Request, res: Response) =
     const config = await adminSettings.getBuyingSignalConfig();
     const { searchNewsForAccount } = await import('../services/newsSignalService');
 
-    // Build prompt from config
+    // Build concise prompt from config (minimize tokens for rate-limited APIs)
+    const categories = (config.signalCategories || []).filter(c => c.active);
+    const categoryNames = categories.map(c => c.name).join(', ');
     let prompt = config.newsPromptTemplate || '';
-    const activeCategories = (config.signalCategories || []).filter(c => c.active);
-    if (activeCategories.length > 0) {
-      prompt += '\n\nSpecifically look for:\n';
-      for (const cat of activeCategories) {
-        prompt += `- ${cat.name}: ${cat.description}`;
-        if (cat.keywords?.length > 0) prompt += ` (keywords: ${cat.keywords.join(', ')})`;
-        prompt += '\n';
-      }
+    if (categoryNames) {
+      prompt += (prompt ? '. ' : '') + `Signal types: ${categoryNames}`;
     }
 
     // Generate a job ID and start the search in the background

@@ -915,6 +915,10 @@ Provide ONLY the JSON response, no additional text.`;
       return { text, citations };
     } catch (error: any) {
       console.error('[AIService] Web search error:', error.message || error);
+      const status = error?.status || error?.statusCode;
+      if (status === 429 || (error.message && error.message.includes('rate_limit'))) {
+        return { text: 'Rate limit reached. Your Anthropic API plan limits input tokens per minute. Please wait 1-2 minutes and try again, or contact Anthropic to increase your rate limit.', citations: [] };
+      }
       return { text: `Web search failed: ${error.message}`, citations: [] };
     }
   }

@@ -46,29 +46,17 @@ export async function searchNewsForAccount(
   adminPrompt: string,
   _pool: Pool
 ): Promise<NewsSearchResult> {
-  const prompt = `Search for recent news about "${accountName}" that could indicate buying signals for a B2B sales team.
+  // Build a concise prompt to minimize input tokens (rate-limited APIs)
+  const signalHint = adminPrompt
+    ? `Focus on: ${adminPrompt.substring(0, 500)}`
+    : 'Focus on: expansions, executive hires, funding, partnerships, product launches';
 
-${adminPrompt || DEFAULT_NEWS_PROMPT}
+  const prompt = `Search recent news about "${accountName}". ${signalHint}
 
-Return ONLY a JSON object with no extra text:
-{
-  "signals": [
-    {
-      "type": "news",
-      "category": "store-opening|executive-hire|expansion|funding|partnership|product-launch|restructuring|other",
-      "headline": "The news headline",
-      "summary": "Brief relevant summary (1-2 sentences)",
-      "url": "Source URL if available",
-      "relevance": "high|medium|low",
-      "publishedDate": "ISO date if available"
-    }
-  ],
-  "summary": "One sentence overall assessment of buying signal strength"
-}
+Return JSON only: {"signals":[{"type":"news","category":"string","headline":"string","summary":"string","url":"string","relevance":"high|medium|low"}],"summary":"one sentence"}
+If nothing found: {"signals":[],"summary":"No signals."}`;
 
-If no relevant news is found, return: {"signals": [], "summary": "No recent buying signals detected."}`;
-
-  const { text, citations } = await aiService.askWithWebSearch(prompt, 2000);
+  const { text, citations } = await aiService.askWithWebSearch(prompt, 1024);
 
   // Check if the AI service returned an error/info message (not JSON)
   if (text.startsWith('Web search requires') || text.startsWith('Web search failed')) {
