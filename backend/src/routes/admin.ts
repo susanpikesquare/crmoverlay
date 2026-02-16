@@ -15,19 +15,14 @@ const adminSettings = new AdminSettingsService(pool);
 router.use(isAuthenticated);
 router.use(isAdmin);
 
-// Track whether in-memory config has been hydrated from the database
-let configHydrated = false;
-
-// Ensure in-memory config is up-to-date with DB before persisting,
-// so a save on one section doesn't overwrite DB values for other sections
+// Hydrate in-memory config from the database.
+// Always reads fresh from DB to ensure saved changes are reflected.
 async function hydrateConfigFromDB(): Promise<void> {
-  if (configHydrated) return;
   try {
     const dbAppConfig = await adminSettings.getAppConfig();
     if (dbAppConfig) {
       configService.updateConfig(dbAppConfig, dbAppConfig.lastModified?.by || 'system');
     }
-    configHydrated = true;
   } catch (err) {
     console.error('Failed to hydrate config from database:', err);
   }
