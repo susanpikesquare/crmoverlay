@@ -9,6 +9,9 @@
 import { Pool } from 'pg';
 import { aiService } from './aiService';
 import { getAccountNameCache, upsertSignals, StoredSignal } from './signalStore';
+
+/** Default staleness threshold: skip accounts searched within this many days */
+const STALENESS_DAYS = 3;
 import { AdminSettingsService, BuyingSignalConfig } from './adminSettings';
 import { searchBraveNews, formatArticlesForAnalysis } from './braveSearchService';
 
@@ -191,7 +194,22 @@ If no relevant signals: {"signals":[],"summary":"No signals found."}`;
 }
 
 /**
+ * Get account IDs that have been searched for news within the staleness window.
+ * These accounts will be skipped during batch processing.
+ */
+async function getRecentlySearchedAccountIds(pool: Pool, stalenessDays: number): Promise<Set<string>> {
+  const cutoff = new Date(Date.now() - stalenessDays * 24 * 60 * 60 * 1000).toISOString();
+  const result = await pool.query(
+    `SELECT DISTINCT account_id FROM buying_signals
+     WHERE source = 'news' AND updated_at > $1`,
+    [cutoff]
+  );
+  return new Set(result.rows.map((r: any) => r.account_id));
+}
+
+/**
  * Run batch news search for all cached accounts.
+ * Skips accounts that were searched within the staleness window (default 3 days).
  * Called by the nightly scheduler.
  */
 export async function runNewsBatch(pool: Pool): Promise<number> {
@@ -219,9 +237,20 @@ export async function runNewsBatch(pool: Pool): Promise<number> {
     return 0;
   }
 
+  // Filter out accounts searched within the staleness window
+  const recentlySearched = await getRecentlySearchedAccountIds(pool, STALENESS_DAYS);
+  const staleAccounts = accounts.filter(a => !recentlySearched.has(a.accountId));
+
+  console.log(`[NewsSignals] ${accounts.length} total accounts, ${recentlySearched.size} recently searched, ${staleAccounts.length} stale/new accounts to process`);
+
+  if (staleAccounts.length === 0) {
+    console.log('[NewsSignals] All accounts have fresh signals — skipping batch');
+    return 0;
+  }
+
   // Limit per run
   const maxAccounts = config.maxAccountsPerRun || 30;
-  const accountsToProcess = accounts.slice(0, maxAccounts);
+  const accountsToProcess = staleAccounts.slice(0, maxAccounts);
 
   const signalsToStore: StoredSignal[] = [];
 
@@ -240,7 +269,7 @@ export async function runNewsBatch(pool: Pool): Promise<number> {
             citations: result.citations,
             searchedAt: new Date().toISOString(),
           },
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          expiresAt: new Date(Date.now() + STALENESS_DAYS * 24 * 60 * 60 * 1000).toISOString(),
         });
       }
 
