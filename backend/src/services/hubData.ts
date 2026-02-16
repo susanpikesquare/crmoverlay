@@ -432,16 +432,35 @@ export async function getAEMetrics(
 
 /**
  * Get priority accounts for AE (recently active accounts)
+ * Enhanced with 6sense intent, profile fit, and Clay enrichment signals
  */
 export async function getPriorityAccounts(
   connection: Connection,
   userId: string,
   overrides?: AccountTierOverrides
 ): Promise<PriorityAccount[]> {
-  // Query high-value accounts WITHOUT open opportunities (potential new business)
-  // These are priority accounts to target for new deals
-  // Note: Not using Rating field as it may not exist in all Salesforce orgs
-  const query = `
+  // Try enriched query with 6sense + Clay fields first
+  const enrichedQuery = `
+    SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
+           Type, AnnualRevenue,
+           CreatedDate, LastModifiedDate,
+           accountIntentScore6sense__c, accountBuyingStage6sense__c, accountProfileFit6sense__c,
+           Clay_Employee_Growth_Pct__c, Clay_Active_Signals__c,
+           Clay_Last_Funding_Round__c, Clay_Last_Funding_Amount__c,
+           (SELECT Id, Name FROM Opportunities WHERE IsClosed = false LIMIT 1)
+    FROM Account
+    WHERE Id NOT IN (
+      SELECT AccountId FROM Opportunity WHERE IsClosed = false
+    )
+    AND (
+      NumberOfEmployees > 500
+      OR AnnualRevenue > 1000000
+    )
+    ORDER BY AnnualRevenue DESC NULLS LAST, NumberOfEmployees DESC NULLS LAST, LastModifiedDate DESC
+    LIMIT 50
+  `;
+
+  const fallbackQuery = `
     SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
            Type, AnnualRevenue,
            CreatedDate, LastModifiedDate,
@@ -459,29 +478,44 @@ export async function getPriorityAccounts(
   `;
 
   try {
-    const result = await connection.query<Account>(query);
-    const accounts = result.records || [];
+    let accounts: Account[] = [];
+    let hasEnrichedFields = false;
 
-    console.log(`[DEBUG] getPriorityAccounts - Query returned ${accounts.length} accounts`);
+    try {
+      const result = await connection.query<Account>(enrichedQuery);
+      accounts = result.records || [];
+      hasEnrichedFields = true;
+      console.log(`[DEBUG] getPriorityAccounts - Enriched query returned ${accounts.length} accounts`);
+    } catch (error: any) {
+      if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+        console.warn('[DEBUG] getPriorityAccounts - 6sense/Clay fields not found, using fallback query');
+        const result = await connection.query<Account>(fallbackQuery);
+        accounts = result.records || [];
+      } else {
+        throw error;
+      }
+    }
 
     if (accounts.length > 0) {
-      // Log first account for debugging
-      const sample = accounts[0];
+      const sample = accounts[0] as any;
       console.log(`[DEBUG] Sample account:`, {
         Name: sample.Name,
         NumberOfEmployees: sample.NumberOfEmployees,
         AnnualRevenue: sample.AnnualRevenue,
-        Type: sample.Type
+        Type: sample.Type,
+        intentScore6sense: sample.accountIntentScore6sense__c,
+        profileFit: sample.accountProfileFit6sense__c,
       });
     }
 
-    // Transform accounts with data calculated from standard fields
+    // Transform accounts with enhanced scoring
     const transformedAccounts = accounts.map((account, index) => {
-      const employeeCount = account.NumberOfEmployees || 0;
-      const revenue = account.AnnualRevenue || 0;
+      const acc = account as any;
+      const employeeCount = acc.NumberOfEmployees || 0;
+      const revenue = acc.AnnualRevenue || 0;
 
-      // Calculate score from employee count and revenue only
-      let score = 50; // base score
+      // Baseline score from employee count and revenue
+      let score = 50;
       if (employeeCount > 1000) score += 20;
       else if (employeeCount > 500) score += 15;
       else if (employeeCount > 100) score += 10;
@@ -489,6 +523,24 @@ export async function getPriorityAccounts(
       if (revenue > 10000000) score += 15;
       else if (revenue > 1000000) score += 10;
       else if (revenue > 100000) score += 5;
+
+      // Enhanced scoring from 6sense + Clay fields
+      const sixSenseIntent = acc.accountIntentScore6sense__c || 0;
+      const profileFit = acc.accountProfileFit6sense__c || '';
+      const buyingStageRaw = acc.accountBuyingStage6sense__c || '';
+      const clayGrowth = acc.Clay_Employee_Growth_Pct__c || 0;
+      const clayFunding = acc.Clay_Last_Funding_Round__c || '';
+
+      if (hasEnrichedFields) {
+        if (sixSenseIntent >= 80) score += 25;
+        else if (sixSenseIntent >= 60) score += 15;
+
+        if (profileFit === 'Strong') score += 15;
+        else if (profileFit === 'Moderate') score += 10;
+
+        if (clayGrowth > 20) score += 10;
+        if (clayFunding) score += 10;
+      }
 
       const intentScore = Math.min(100, score);
 
@@ -518,35 +570,46 @@ export async function getPriorityAccounts(
         }
       }
 
-      // Log scoring details for first 3 accounts
       if (index < 3) {
         console.log(`[DEBUG] Account #${index + 1} scoring:`, {
           name: account.Name,
           employeeCount,
           revenue,
+          sixSenseIntent,
+          profileFit,
+          clayGrowth,
           calculatedScore: score,
           intentScore,
           priorityTier
         });
       }
 
-      // Use Type for buying stage
-      const buyingStage = account.Type || 'Prospect';
-
-      // Calculate days since last activity
+      // Determine best topSignal from enrichment data
+      const buyingStage = buyingStageRaw || acc.Type || 'Prospect';
       const daysSinceUpdate = account.LastModifiedDate
         ? daysBetween(account.LastModifiedDate, new Date().toISOString())
         : 999;
+
+      let topSignal = '';
+      if (hasEnrichedFields && buyingStageRaw && buyingStageRaw !== 'No Activity') {
+        topSignal = `6sense: ${buyingStageRaw}`;
+      } else if (hasEnrichedFields && clayFunding) {
+        topSignal = `Recent funding: ${clayFunding}`;
+      } else if (hasEnrichedFields && clayGrowth > 10) {
+        topSignal = `Hiring surge: +${clayGrowth}% headcount growth`;
+      } else {
+        topSignal = `${buyingStage !== 'Active' ? buyingStage + ' • ' : ''}${daysSinceUpdate < 7 ? 'Recently active' : 'Last updated ' + daysSinceUpdate + ' days ago'}`;
+      }
 
       return {
         ...account,
         priorityTier,
         employeeCount,
-        employeeGrowthPct: 0, // Not available from standard fields
+        employeeGrowthPct: clayGrowth,
         intentScore,
         buyingStage,
         techStack: account.Industry || 'Unknown',
-        topSignal: `${buyingStage !== 'Active' ? buyingStage + ' • ' : ''}${daysSinceUpdate < 7 ? 'Recently active' : 'Last updated ' + daysSinceUpdate + ' days ago'}`,
+        topSignal,
         isOverridden,
       };
     });
@@ -557,20 +620,14 @@ export async function getPriorityAccounts(
     // Add AI recommendations to grouped accounts
     const priorityAccounts = await Promise.all(
       groupedAccounts.map(async account => {
-        // Get AI recommendation for the representative account
         const aiRecommendation = await generateAccountRecommendation(connection, account);
-
-        return {
-          ...account,
-          aiRecommendation,
-        };
+        return { ...account, aiRecommendation };
       })
     );
 
     // Sort by intent score descending
     const sortedAccounts = priorityAccounts.sort((a, b) => (b.intentScore || 0) - (a.intentScore || 0));
 
-    // Log final distribution
     const tierCounts = sortedAccounts.reduce((acc, account) => {
       acc[account.priorityTier] = (acc[account.priorityTier] || 0) + 1;
       return acc;
@@ -1828,7 +1885,7 @@ function getEmptySalesLeaderDashboard(): SalesLeaderDashboard {
  */
 export interface PriorityItem {
   id: string;
-  type: 'deal-risk' | 'missing-info' | 'icp-alert' | 'task-due' | 'no-next-step' | 'stage-stuck';
+  type: 'deal-risk' | 'missing-info' | 'icp-alert' | 'task-due' | 'no-next-step' | 'stage-stuck' | 'at-risk-deal';
   title: string;
   description: string;
   urgency: 'critical' | 'high' | 'medium';
@@ -1836,11 +1893,76 @@ export interface PriorityItem {
   relatedAccountName?: string;
   relatedOpportunityId?: string;
   relatedOpportunityName?: string;
+  dealAmount?: number;
   dueDate?: string;
   actionButton: {
     label: string;
     action: string;
   };
+}
+
+/**
+ * AE Signal (expansion or new-business)
+ */
+export interface AESignal {
+  id: string;
+  accountId: string;
+  accountName: string;
+  signalType: 'expansion' | 'new-business';
+  headline: string;
+  details: string;
+  score: number;
+  category: string;
+  actionRecommendation: string;
+  metrics: {
+    intentScore?: number;
+    profileFit?: string;
+    buyingStage?: string;
+    employeeGrowthPct?: number;
+    fundingRound?: string;
+    fundingAmount?: number;
+    utilizationPct?: number;
+    healthScore?: number;
+    daysToRenewal?: number;
+  };
+}
+
+/**
+ * Manager Alert (self-coaching)
+ */
+export interface ManagerAlert {
+  id: string;
+  category: 'stuck-deal' | 'low-meddpicc' | 'cold-account' | 'pipeline-gap' | 'large-deal-risk';
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  description: string;
+  metric?: number;
+  benchmark?: number;
+  dealId?: string;
+  dealName?: string;
+  accountId?: string;
+  accountName?: string;
+  amount?: number;
+}
+
+/**
+ * What-If Deal for quota modeler
+ */
+export interface WhatIfDeal {
+  id: string;
+  name: string;
+  accountName: string;
+  amount: number;
+  stage: string;
+  probability: number;
+  closeDate: string;
+  forecastCategory?: string;
+}
+
+export interface WhatIfData {
+  deals: WhatIfDeal[];
+  quotaTarget: number;
+  closedWon: number;
 }
 
 /**
@@ -2056,11 +2178,39 @@ export async function getTodaysPriorities(
       console.error('Error fetching tasks:', taskError);
     }
 
-    // Sort by urgency and limit to top 15
+    // 7. At-risk deals (stale >14 days, not in early stages) — merged inline
+    const staleOpps = opportunities.filter(opp => {
+      const daysSinceActivity = daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now);
+      return daysSinceActivity >= 14 && opp.StageName !== 'Prospecting' && opp.StageName !== 'Qualification';
+    });
+
+    staleOpps.forEach((opp) => {
+      const daysSinceActivity = daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now);
+      // Don't duplicate if already flagged as at-risk above
+      if (opp.IsAtRisk__c) return;
+      priorities.push({
+        id: `at-risk-stale-${opp.Id}`,
+        type: 'at-risk-deal',
+        title: `${opp.Name} — ${daysSinceActivity} days stale`,
+        description: `No activity in ${daysSinceActivity} days. Stage: ${opp.StageName}`,
+        urgency: daysSinceActivity > 30 ? 'critical' : 'high',
+        relatedAccountId: opp.AccountId,
+        relatedAccountName: opp.Account?.Name,
+        relatedOpportunityId: opp.Id,
+        relatedOpportunityName: opp.Name,
+        dealAmount: opp.Amount || 0,
+        actionButton: {
+          label: 'Review Deal',
+          action: `/opportunity/${opp.Id}`,
+        },
+      });
+    });
+
+    // Sort by urgency and limit to top 20
     const urgencyOrder = { critical: 0, high: 1, medium: 2 };
     priorities.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
 
-    return priorities.slice(0, 15);
+    return priorities.slice(0, 20);
   } catch (error) {
     console.error('Error fetching priorities:', error);
     return [];
@@ -3306,6 +3456,488 @@ export async function getExpansionOpportunityAccounts(
   } catch (error) {
     console.error('Error fetching expansion opportunity accounts:', error);
     return [];
+  }
+}
+
+// ============================================================================
+// AE HUB — NEW ENDPOINTS (Signals, Manager Alerts, What-If)
+// ============================================================================
+
+/**
+ * Get AE Signals — combines expansion + new-business signals
+ * Expansion: existing customers with high utilization, healthy scores, approaching renewal
+ * New-business: non-customers with 6sense intent, Clay enrichment, ICP fit
+ */
+export async function getAESignals(
+  connection: Connection,
+  userId: string
+): Promise<AESignal[]> {
+  const signals: AESignal[] = [];
+
+  // --- Expansion signals (existing customers) ---
+  try {
+    const expansionQuery = `
+      SELECT Id, Name, Customer_Stage__c,
+             Contract_Total_License_Seats__c, Total_Active_Users__c,
+             License_Utilization_Max__c, Current_Gainsight_Score__c,
+             Agreement_Expiry_Date__c, Total_ARR__c
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND Customer_Stage__c = 'Customer'
+        AND Contract_Total_License_Seats__c > 0
+      ORDER BY License_Utilization_Max__c DESC NULLS LAST
+      LIMIT 20
+    `;
+
+    const fallbackExpansionQuery = `
+      SELECT Id, Name, Customer_Stage__c, Total_ARR__c, Agreement_Expiry_Date__c,
+             Current_Gainsight_Score__c
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND (Type = 'Customer' OR Customer_Stage__c = 'Customer')
+      ORDER BY LastModifiedDate DESC
+      LIMIT 20
+    `;
+
+    let expansionAccounts: any[] = [];
+    try {
+      const result = await connection.query(expansionQuery);
+      expansionAccounts = result.records as any[];
+    } catch (error: any) {
+      if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+        const result = await connection.query(fallbackExpansionQuery);
+        expansionAccounts = result.records as any[];
+      }
+    }
+
+    const now = new Date();
+    expansionAccounts.forEach(acc => {
+      const utilization = acc.License_Utilization_Max__c || 0;
+      const healthScore = acc.Current_Gainsight_Score__c || 0;
+      const daysToRenewal = acc.Agreement_Expiry_Date__c
+        ? Math.ceil((new Date(acc.Agreement_Expiry_Date__c).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      // Score expansion signal: high utilization + healthy + approaching renewal
+      let score = 0;
+      if (utilization >= 90) score += 35;
+      else if (utilization >= 80) score += 25;
+      if (healthScore >= 80) score += 25;
+      else if (healthScore >= 60) score += 15;
+      if (daysToRenewal !== null && daysToRenewal <= 90) score += 25;
+      else if (daysToRenewal !== null && daysToRenewal <= 180) score += 15;
+      if ((acc.Total_ARR__c || 0) > 100000) score += 15;
+
+      if (score >= 30) {
+        let headline = '';
+        if (utilization >= 90) headline = `${utilization}% license utilization — expansion ready`;
+        else if (daysToRenewal !== null && daysToRenewal <= 90) headline = `Renewal in ${daysToRenewal} days — upsell window`;
+        else headline = `Healthy account (${healthScore} health score) with growth potential`;
+
+        signals.push({
+          id: `expansion-${acc.Id}`,
+          accountId: acc.Id,
+          accountName: acc.Name,
+          signalType: 'expansion',
+          headline,
+          details: `ARR: ${formatCurrency(acc.Total_ARR__c || 0)} | Utilization: ${utilization}% | Health: ${healthScore}`,
+          score: Math.min(100, score),
+          category: utilization >= 80 ? 'High Utilization' : 'Renewal Opportunity',
+          actionRecommendation: utilization >= 90
+            ? 'Schedule expansion conversation — usage indicates need for additional seats/modules'
+            : 'Review account health and prepare renewal + expansion proposal',
+          metrics: {
+            utilizationPct: utilization,
+            healthScore,
+            daysToRenewal: daysToRenewal ?? undefined,
+          },
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching expansion signals:', error);
+  }
+
+  // --- New-business signals (non-customers with intent) ---
+  try {
+    const enrichedQuery = `
+      SELECT Id, Name, Industry, NumberOfEmployees, AnnualRevenue,
+             accountIntentScore6sense__c, accountBuyingStage6sense__c, accountProfileFit6sense__c,
+             Clay_Employee_Growth_Pct__c, Clay_Active_Signals__c,
+             Clay_Last_Funding_Round__c, Clay_Last_Funding_Amount__c,
+             Customer_Stage__c
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND (Customer_Stage__c != 'Customer' OR Customer_Stage__c = null)
+      ORDER BY accountIntentScore6sense__c DESC NULLS LAST
+      LIMIT 30
+    `;
+
+    const fallbackNewBizQuery = `
+      SELECT Id, Name, Industry, NumberOfEmployees, AnnualRevenue, Customer_Stage__c
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND (Customer_Stage__c != 'Customer' OR Customer_Stage__c = null)
+      ORDER BY LastModifiedDate DESC
+      LIMIT 30
+    `;
+
+    let newBizAccounts: any[] = [];
+    let hasEnriched = false;
+    try {
+      const result = await connection.query(enrichedQuery);
+      newBizAccounts = result.records as any[];
+      hasEnriched = true;
+    } catch (error: any) {
+      if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+        console.warn('[AESignals] 6sense/Clay fields not available, using fallback');
+        const result = await connection.query(fallbackNewBizQuery);
+        newBizAccounts = result.records as any[];
+      }
+    }
+
+    newBizAccounts.forEach(acc => {
+      const intentScore = acc.accountIntentScore6sense__c || 0;
+      const profileFit = acc.accountProfileFit6sense__c || '';
+      const buyingStage = acc.accountBuyingStage6sense__c || '';
+      const growth = acc.Clay_Employee_Growth_Pct__c || 0;
+      const funding = acc.Clay_Last_Funding_Round__c || '';
+      const fundingAmount = acc.Clay_Last_Funding_Amount__c || 0;
+
+      // Filter: must have at least one strong signal
+      if (!hasEnriched) return;
+      if (intentScore < 60 && profileFit !== 'Strong' && profileFit !== 'Moderate' && growth <= 10 && !funding) return;
+
+      // Composite signal score: 6sense intent (35%) + ICP fit (25%) + Clay signals (20%) + engagement (20%)
+      let score = 0;
+      score += Math.min(35, (intentScore / 100) * 35);
+      if (profileFit === 'Strong') score += 25;
+      else if (profileFit === 'Moderate') score += 15;
+      if (growth > 20) score += 20;
+      else if (growth > 10) score += 10;
+      if (funding) score += 10;
+      // Engagement proxy: employee count / revenue as basic engagement marker
+      if ((acc.NumberOfEmployees || 0) > 500) score += 10;
+      else if ((acc.NumberOfEmployees || 0) > 100) score += 5;
+
+      let headline = '';
+      if (intentScore >= 80) headline = `High intent (${intentScore}) — ${buyingStage || 'Active interest'}`;
+      else if (funding) headline = `Recent ${funding} funding${fundingAmount ? ` ($${(fundingAmount / 1000000).toFixed(1)}M)` : ''}`;
+      else if (growth > 20) headline = `Rapid growth: +${growth}% headcount`;
+      else if (profileFit === 'Strong') headline = `Strong ICP fit — ${acc.Industry || 'Target segment'}`;
+      else headline = `Intent signal detected (score: ${intentScore})`;
+
+      let actionRec = '';
+      if (intentScore >= 80) actionRec = 'High-priority outreach — research key contacts and schedule discovery call this week';
+      else if (funding) actionRec = 'Funding signals growth plans — reach out with relevant case study';
+      else if (growth > 20) actionRec = 'Rapid hiring indicates expansion — position solution for scaling challenges';
+      else actionRec = 'Monitor intent signals and prepare targeted outreach sequence';
+
+      signals.push({
+        id: `newbiz-${acc.Id}`,
+        accountId: acc.Id,
+        accountName: acc.Name,
+        signalType: 'new-business',
+        headline,
+        details: `Intent: ${intentScore} | Fit: ${profileFit || 'N/A'} | Stage: ${buyingStage || 'N/A'} | Growth: ${growth ? '+' + growth + '%' : 'N/A'}`,
+        score: Math.min(100, Math.round(score)),
+        category: intentScore >= 80 ? 'High Intent' : funding ? 'Funding Event' : growth > 20 ? 'Hiring Surge' : 'ICP Match',
+        actionRecommendation: actionRec,
+        metrics: {
+          intentScore,
+          profileFit: profileFit || undefined,
+          buyingStage: buyingStage || undefined,
+          employeeGrowthPct: growth || undefined,
+          fundingRound: funding || undefined,
+          fundingAmount: fundingAmount || undefined,
+        },
+      });
+    });
+  } catch (error) {
+    console.error('Error fetching new-business signals:', error);
+  }
+
+  // Sort all signals by score descending
+  signals.sort((a, b) => b.score - a.score);
+  return signals;
+}
+
+/**
+ * Get Manager Alerts for AE self-coaching
+ * Reuses coaching logic from getSalesLeaderDashboard but scoped to this IC's deals
+ */
+export async function getManagerAlerts(
+  connection: Connection,
+  userId: string,
+  pool: Pool
+): Promise<ManagerAlert[]> {
+  const alerts: ManagerAlert[] = [];
+  const amountField = await getAmountFieldName(pool);
+  const now = new Date();
+
+  try {
+    // Query this user's open opportunities
+    const oppQuery = `
+      SELECT Id, Name, AccountId, Account.Name, ${amountField}, StageName,
+             CloseDate, LastModifiedDate, CreatedDate, Probability, NextStep
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+      ORDER BY ${amountField} DESC NULLS LAST
+      LIMIT 50
+    `;
+
+    const oppResult = await connection.query(oppQuery);
+    const opportunities = oppResult.records as any[];
+
+    // 1. Stuck deals (30+ days in stage)
+    opportunities.forEach(opp => {
+      const daysInStage = daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now);
+      if (daysInStage > 30 && opp.StageName !== 'Prospecting') {
+        alerts.push({
+          id: `stuck-${opp.Id}`,
+          category: 'stuck-deal',
+          severity: daysInStage > 60 ? 'critical' : 'warning',
+          title: `${opp.Name} stuck in ${opp.StageName}`,
+          description: `${daysInStage} days in current stage (benchmark: <30 days). No recent progress detected.`,
+          metric: daysInStage,
+          benchmark: 30,
+          dealId: opp.Id,
+          dealName: opp.Name,
+          accountId: opp.AccountId,
+          accountName: opp.Account?.Name,
+          amount: opp[amountField] || 0,
+        });
+      }
+    });
+
+    // 2. Low MEDDPICC scores (< 60%)
+    opportunities.forEach(opp => {
+      if (!opp.Probability || opp.Probability <= 0) return;
+      const meddpiccScore = calculateMEDDPICCScore(opp);
+      if (meddpiccScore < 60 && opp.StageName !== 'Prospecting' && opp.StageName !== 'Qualification') {
+        alerts.push({
+          id: `low-meddpicc-${opp.Id}`,
+          category: 'low-meddpicc',
+          severity: meddpiccScore < 40 ? 'critical' : 'warning',
+          title: `Low qualification: ${opp.Name}`,
+          description: `MEDDPICC score ${meddpiccScore}% (target: 60%+). Review and strengthen qualification criteria.`,
+          metric: meddpiccScore,
+          benchmark: 60,
+          dealId: opp.Id,
+          dealName: opp.Name,
+          accountId: opp.AccountId,
+          accountName: opp.Account?.Name,
+          amount: opp[amountField] || 0,
+        });
+      }
+    });
+
+    // 3. Cold accounts (no activity 30+ days)
+    const coldAccountQuery = `
+      SELECT Id, Name, LastActivityDate, LastModifiedDate
+      FROM Account
+      WHERE OwnerId = '${userId}'
+        AND Id IN (
+          SELECT AccountId FROM Opportunity WHERE OwnerId = '${userId}' AND IsClosed = false
+        )
+      ORDER BY LastActivityDate ASC NULLS FIRST
+      LIMIT 20
+    `;
+
+    try {
+      const coldResult = await connection.query(coldAccountQuery);
+      const coldAccounts = coldResult.records as any[];
+
+      coldAccounts.forEach(acc => {
+        const lastActivity = acc.LastActivityDate || acc.LastModifiedDate;
+        if (!lastActivity) {
+          alerts.push({
+            id: `cold-${acc.Id}`,
+            category: 'cold-account',
+            severity: 'warning',
+            title: `No recorded activity: ${acc.Name}`,
+            description: `No activity date found. Ensure engagement is being logged.`,
+            accountId: acc.Id,
+            accountName: acc.Name,
+          });
+        } else {
+          const daysSince = daysBetween(lastActivity, now);
+          if (daysSince > 30) {
+            alerts.push({
+              id: `cold-${acc.Id}`,
+              category: 'cold-account',
+              severity: daysSince > 60 ? 'critical' : 'warning',
+              title: `${acc.Name} — ${daysSince} days since last activity`,
+              description: `No logged activity in ${daysSince} days (benchmark: at least monthly). Schedule touchpoint.`,
+              metric: daysSince,
+              benchmark: 30,
+              accountId: acc.Id,
+              accountName: acc.Name,
+            });
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching cold accounts for manager alerts:', error);
+    }
+
+    // 4. Pipeline coverage gap
+    const currentYear = now.getFullYear();
+    const quotaType: 'annual' | 'quarterly' | 'monthly' = 'quarterly';
+    const quotaFieldName = getQuotaFieldName(quotaType);
+    let quota = 250000; // Default
+
+    try {
+      const userQuery = `SELECT Id, ${quotaFieldName} FROM User WHERE Id = '${userId}' LIMIT 1`;
+      const userResult = await connection.query(userQuery);
+      if (userResult.records?.[0]) {
+        const userQuota = (userResult.records[0] as any)[quotaFieldName];
+        if (userQuota && userQuota > 0) quota = userQuota;
+      }
+    } catch { /* use default */ }
+
+    // Get closed won this quarter
+    const currentQuarter = Math.floor(now.getMonth() / 3);
+    const qStart = new Date(currentYear, currentQuarter * 3, 1).toISOString().split('T')[0];
+    const qEnd = new Date(currentYear, currentQuarter * 3 + 3, 0).toISOString().split('T')[0];
+
+    const closedWonQuery = `
+      SELECT SUM(${amountField}) total FROM Opportunity
+      WHERE OwnerId = '${userId}' AND IsWon = true
+        AND CloseDate >= ${qStart} AND CloseDate <= ${qEnd}
+    `;
+    const closedWonResult = await connection.query(closedWonQuery);
+    const closedWon = (closedWonResult.records[0] as any)?.total || 0;
+
+    const totalPipeline = opportunities.reduce((sum, opp) => sum + (opp[amountField] || 0), 0);
+    const remaining = Math.max(0, quota - closedWon);
+    const coverage = remaining > 0 ? totalPipeline / remaining : 99;
+
+    if (coverage < 3) {
+      alerts.push({
+        id: 'pipeline-gap',
+        category: 'pipeline-gap',
+        severity: coverage < 2 ? 'critical' : 'warning',
+        title: `Pipeline coverage: ${coverage.toFixed(1)}x`,
+        description: `Pipeline coverage is ${coverage.toFixed(1)}x remaining quota (target: 3x+). Need ${formatCurrency(remaining * 3 - totalPipeline)} more pipeline.`,
+        metric: Math.round(coverage * 10) / 10,
+        benchmark: 3,
+      });
+    }
+
+    // 5. Large deal risks ($100K+ with stale activity)
+    opportunities
+      .filter(opp => (opp[amountField] || 0) >= 100000)
+      .forEach(opp => {
+        const daysSinceActivity = daysBetween(opp.LastModifiedDate || now.toISOString(), now);
+        if (daysSinceActivity > 14) {
+          alerts.push({
+            id: `large-risk-${opp.Id}`,
+            category: 'large-deal-risk',
+            severity: daysSinceActivity > 30 ? 'critical' : 'warning',
+            title: `${formatCurrency(opp[amountField])} deal at risk: ${opp.Name}`,
+            description: `${formatCurrency(opp[amountField])} deal with no activity in ${daysSinceActivity} days. High-value deals need weekly engagement.`,
+            metric: daysSinceActivity,
+            benchmark: 14,
+            dealId: opp.Id,
+            dealName: opp.Name,
+            accountId: opp.AccountId,
+            accountName: opp.Account?.Name,
+            amount: opp[amountField] || 0,
+          });
+        }
+      });
+
+    // Sort: critical first, then warning, then info
+    const severityOrder = { critical: 0, warning: 1, info: 2 };
+    alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+    return alerts;
+  } catch (error) {
+    console.error('Error fetching manager alerts:', error);
+    return [];
+  }
+}
+
+/**
+ * Get What-If deals for quota modeler
+ * Returns open deals + quota target + closed-won totals for client-side toggling
+ */
+export async function getWhatIfDeals(
+  connection: Connection,
+  userId: string,
+  pool: Pool
+): Promise<WhatIfData> {
+  const amountField = await getAmountFieldName(pool);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  try {
+    // Get quota
+    const quotaType: 'annual' | 'quarterly' | 'monthly' = 'quarterly';
+    const quotaFieldName = getQuotaFieldName(quotaType);
+    let quotaTarget = 250000;
+
+    try {
+      const userQuery = `SELECT Id, ${quotaFieldName} FROM User WHERE Id = '${userId}' LIMIT 1`;
+      const userResult = await connection.query(userQuery);
+      if (userResult.records?.[0]) {
+        const val = (userResult.records[0] as any)[quotaFieldName];
+        if (val && val > 0) quotaTarget = val;
+      }
+    } catch { /* use default */ }
+
+    // Get closed-won this quarter
+    const currentQuarter = Math.floor(now.getMonth() / 3);
+    const qStart = new Date(currentYear, currentQuarter * 3, 1).toISOString().split('T')[0];
+    const qEnd = new Date(currentYear, currentQuarter * 3 + 3, 0).toISOString().split('T')[0];
+
+    const closedWonQuery = `
+      SELECT SUM(${amountField}) total FROM Opportunity
+      WHERE OwnerId = '${userId}' AND IsWon = true
+        AND CloseDate >= ${qStart} AND CloseDate <= ${qEnd}
+    `;
+
+    // Get open deals
+    let forecastCategoryField: string;
+    try {
+      forecastCategoryField = await getForecastCategoryFieldName(pool);
+    } catch {
+      forecastCategoryField = 'ForecastCategory';
+    }
+
+    const dealsQuery = `
+      SELECT Id, Name, AccountId, Account.Name, ${amountField}, StageName,
+             Probability, CloseDate, ${forecastCategoryField}
+      FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+      ORDER BY ${amountField} DESC NULLS LAST
+      LIMIT 50
+    `;
+
+    const [closedWonResult, dealsResult] = await Promise.all([
+      connection.query(closedWonQuery),
+      connection.query(dealsQuery),
+    ]);
+
+    const closedWon = (closedWonResult.records[0] as any)?.total || 0;
+    const deals: WhatIfDeal[] = (dealsResult.records as any[]).map(opp => ({
+      id: opp.Id,
+      name: opp.Name,
+      accountName: opp.Account?.Name || 'Unknown',
+      amount: opp[amountField] || 0,
+      stage: opp.StageName || '',
+      probability: opp.Probability || 0,
+      closeDate: opp.CloseDate || '',
+      forecastCategory: opp[forecastCategoryField] || undefined,
+    }));
+
+    return { deals, quotaTarget, closedWon };
+  } catch (error) {
+    console.error('Error fetching what-if deals:', error);
+    return { deals: [], quotaTarget: 0, closedWon: 0 };
   }
 }
 

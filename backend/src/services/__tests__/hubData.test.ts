@@ -1229,7 +1229,7 @@ describe('getTodaysPriorities', () => {
 
     const result = await getTodaysPriorities(conn, 'u1');
 
-    expect(result.length).toBeLessThanOrEqual(15);
+    expect(result.length).toBeLessThanOrEqual(20);
   });
 
   it('returns empty array when no opportunities', async () => {

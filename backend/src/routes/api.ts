@@ -1281,6 +1281,107 @@ router.get('/hub/ae/priorities', isAuthenticated, async (req: Request, res: Resp
 });
 
 /**
+ * GET /api/hub/ae/signals
+ * Get expansion + new-business signals for AE
+ */
+router.get('/hub/ae/signals', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const signals = await HubData.getAESignals(connection, userId);
+
+    res.json({
+      success: true,
+      data: signals,
+      count: signals.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching AE signals:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch AE signals',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/ae/manager-alerts
+ * Get manager-would-flag alerts for AE self-coaching
+ */
+router.get('/hub/ae/manager-alerts', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const alerts = await HubData.getManagerAlerts(connection, userId, pool);
+
+    res.json({
+      success: true,
+      data: alerts,
+      count: alerts.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching manager alerts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch manager alerts',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/ae/whatif-deals
+ * Get open deals + quota data for what-if modeler
+ */
+router.get('/hub/ae/whatif-deals', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const data = await HubData.getWhatIfDeals(connection, userId, pool);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error: any) {
+    console.error('Error fetching what-if deals:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch what-if deals',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/hub/ae/pipeline-forecast
  * Get pipeline and forecast data for AE
  */
