@@ -11,6 +11,7 @@ import * as agentforce from './agentforceService';
 import { getQuotaFieldName } from './configService';
 import { AdminSettingsService, AccountTierOverrides } from './adminSettings';
 import { getGongBuyingSignals, GongDealSignal } from './gongSignalService';
+import { cacheAccountNames } from './signalStore';
 
 /**
  * AE Hub Metrics
@@ -3718,6 +3719,30 @@ export async function getAESignals(
     } catch (error) {
       console.error('[AESignals] Error fetching Gong signals:', error);
       // Gracefully skip Gong signals
+    }
+  }
+
+  // Cache account names for nightly batch processing
+  if (pool) {
+    try {
+      const uniqueAccounts = new Map<string, string>();
+      for (const s of signals) {
+        if (s.accountId && s.accountName) {
+          uniqueAccounts.set(s.accountId, s.accountName);
+        }
+      }
+      const accountsToCache = Array.from(uniqueAccounts.entries()).map(([accountId, accountName]) => ({
+        accountId,
+        accountName,
+      }));
+      if (accountsToCache.length > 0) {
+        // Fire-and-forget — don't block the response
+        cacheAccountNames(pool, accountsToCache).catch(err =>
+          console.error('[AESignals] Error caching account names:', err)
+        );
+      }
+    } catch {
+      // Caching is best-effort
     }
   }
 

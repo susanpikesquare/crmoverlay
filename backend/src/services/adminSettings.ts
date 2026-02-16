@@ -102,6 +102,23 @@ export interface AccountTierOverride {
 
 export type AccountTierOverrides = Record<string, AccountTierOverride>;
 
+export interface BuyingSignalConfig {
+  enabled: boolean;
+  newsSearchEnabled: boolean;
+  schedule: string;                    // cron expression, default '0 2 * * *'
+  maxAccountsPerRun: number;           // default 30
+  newsPromptTemplate: string;          // Admin-authored prompt for news search
+  signalCategories: Array<{
+    id: string;
+    name: string;                      // e.g., 'New Store Openings'
+    description: string;               // What to look for
+    keywords: string[];                // Search keywords
+    active: boolean;
+  }>;
+  lastRunAt?: string;                  // ISO timestamp of last batch run
+  lastRunStatus?: string;              // 'success' | 'partial' | 'error'
+}
+
 export interface AdminSettings {
   aiProvider: AIProviderConfig;
   salesforceFields: SalesforceFieldConfig;
@@ -535,6 +552,48 @@ export class AdminSettingsService {
     );
 
     return overrides;
+  }
+
+  async getBuyingSignalConfig(): Promise<BuyingSignalConfig> {
+    const result = await this.pool.query(
+      'SELECT setting_value FROM admin_settings WHERE setting_key = $1',
+      ['buying_signal_config']
+    );
+
+    const defaults: BuyingSignalConfig = {
+      enabled: true,
+      newsSearchEnabled: false,
+      schedule: '0 2 * * *',
+      maxAccountsPerRun: 30,
+      newsPromptTemplate: '',
+      signalCategories: [],
+    };
+
+    if (result.rows.length === 0) {
+      return defaults;
+    }
+
+    const config = result.rows[0].setting_value as Partial<BuyingSignalConfig>;
+    return {
+      enabled: config.enabled ?? defaults.enabled,
+      newsSearchEnabled: config.newsSearchEnabled ?? defaults.newsSearchEnabled,
+      schedule: config.schedule ?? defaults.schedule,
+      maxAccountsPerRun: config.maxAccountsPerRun ?? defaults.maxAccountsPerRun,
+      newsPromptTemplate: config.newsPromptTemplate ?? defaults.newsPromptTemplate,
+      signalCategories: config.signalCategories ?? defaults.signalCategories,
+      lastRunAt: config.lastRunAt,
+      lastRunStatus: config.lastRunStatus,
+    };
+  }
+
+  async setBuyingSignalConfig(config: BuyingSignalConfig, userId: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO admin_settings (setting_key, setting_value, updated_by, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $2, updated_by = $3, updated_at = NOW()`,
+      ['buying_signal_config', JSON.stringify(config), userId]
+    );
   }
 
   async getAllSettings(userId: string): Promise<AdminSettings> {

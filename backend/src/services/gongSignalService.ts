@@ -10,6 +10,7 @@ import { Pool } from 'pg';
 import { createGongServiceFromDB, GongTranscript } from './gongService';
 import { aiService } from './aiService';
 import { metadataCache } from './sessionMetadataCache';
+import { getSignalsForOpportunities, StoredSignal } from './signalStore';
 
 // --- Types ---
 
@@ -35,17 +36,44 @@ const GONG_SIGNALS_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
  * Get Gong buying signals with caching.
- * Returns cached results if available, otherwise runs analysis.
+ * Checks persistent DB store first, then in-memory cache, then runs on-demand analysis.
  */
 export async function getGongBuyingSignals(
   connection: Connection,
   userId: string,
   pool: Pool
 ): Promise<GongDealSignal[]> {
-  // Use userId as both userId and orgId for cache key (orgId not easily available here)
+  // Check in-memory cache first
   const cached = metadataCache.get<GongDealSignal[]>(userId, 'default', GONG_SIGNALS_NAMESPACE);
   if (cached) {
     return cached;
+  }
+
+  // Check persistent store for fresh (non-expired) results
+  try {
+    // Get user's open opportunity IDs to look up stored signals
+    const oppResult = await connection.query(`
+      SELECT Id FROM Opportunity
+      WHERE OwnerId = '${userId}'
+        AND IsClosed = false
+        AND StageName NOT IN ('Prospecting', 'Qualification')
+      LIMIT 20
+    `);
+    const oppIds = (oppResult.records as any[]).map(r => r.Id);
+
+    if (oppIds.length > 0) {
+      const storedSignals = await getSignalsForOpportunities(pool, oppIds);
+      const gongStored = storedSignals.filter(s => s.source === 'gong');
+
+      if (gongStored.length > 0) {
+        const results = gongStored.map(s => s.signalData as GongDealSignal);
+        metadataCache.set(userId, 'default', GONG_SIGNALS_NAMESPACE, results, GONG_SIGNALS_TTL_MS);
+        return results;
+      }
+    }
+  } catch (error) {
+    console.error('[GongSignals] Error checking persistent store:', error);
+    // Fall through to on-demand analysis
   }
 
   const results = await analyzeDealsForBuyingSignals(connection, userId, pool);
@@ -155,8 +183,9 @@ async function analyzeDealsForBuyingSignals(
 
 /**
  * Analyze transcripts for a single deal using Claude.
+ * Exported for use by the nightly batch scheduler.
  */
-async function analyzeDealTranscripts(
+export async function analyzeDealTranscripts(
   opportunityId: string,
   opportunityName: string,
   accountId: string,

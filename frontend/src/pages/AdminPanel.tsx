@@ -15,8 +15,9 @@ import AIConfigTab from '../components/admin/AIConfigTab';
 import OpportunityStagesTab from '../components/admin/OpportunityStagesTab';
 import ForecastSettingsTab from '../components/admin/ForecastSettingsTab';
 import OpportunityDetailTab from '../components/admin/OpportunityDetailTab';
+import BuyingSignalConfigTab from '../components/admin/BuyingSignalConfigTab';
 
-type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'opportunity-detail' | 'forecast-settings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
+type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'opportunity-detail' | 'forecast-settings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'buying-signals' | 'config-management';
 
 interface TabConfig {
   id: TabType;
@@ -68,6 +69,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     tabs: [
       { id: 'role-mappings', label: 'User Roles', icon: '👥' },
       { id: 'ai-config', label: 'AI Configuration', icon: '🤖' },
+      { id: 'buying-signals', label: 'Buying Signals', icon: '📡' },
     ],
   },
   {
@@ -350,6 +352,12 @@ export default function AdminPanel() {
               />
             )}
             {activeTab === 'ai-config' && <AIConfigTab />}
+            {activeTab === 'buying-signals' && (
+              <BuyingSignalConfigTab
+                config={configData}
+                onSave={(status) => setSaveStatus(status)}
+              />
+            )}
             {activeTab === 'config-management' && (
               <ConfigManagementTab
                 config={configData}

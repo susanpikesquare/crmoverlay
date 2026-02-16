@@ -1349,6 +1349,62 @@ router.get('/hub/ae/gong-signals', isAuthenticated, async (req: Request, res: Re
 });
 
 /**
+ * POST /api/hub/ae/gong-signals/refresh
+ * Refresh buying signals for the current user (clears cache, re-analyzes)
+ */
+router.post('/hub/ae/gong-signals/refresh', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    // Clear in-memory cache for this user
+    const { metadataCache } = await import('../services/sessionMetadataCache');
+    metadataCache.invalidate(userId, 'default', 'gong-signals');
+
+    // Clear persistent signals for this user's opportunities
+    const { clearSignals, getSignalsForAccounts } = await import('../services/signalStore');
+    const oppResult = await connection.query(`
+      SELECT Id, AccountId FROM Opportunity
+      WHERE OwnerId = '${userId}' AND IsClosed = false
+      LIMIT 20
+    `);
+    const opps = oppResult.records as any[];
+    for (const opp of opps) {
+      await clearSignals(pool, 'gong', opp.Id);
+    }
+
+    // Collect unique account IDs for news signal fetch
+    const accountIds = [...new Set(opps.map((o: any) => o.AccountId).filter(Boolean))];
+
+    // Re-fetch fresh Gong signals (will trigger on-demand analysis)
+    const gongData = await getGongBuyingSignals(connection, userId, pool);
+
+    // Also fetch any stored news signals for user's accounts
+    let newsData: any[] = [];
+    if (accountIds.length > 0) {
+      const storedNews = await getSignalsForAccounts(pool, accountIds as string[]);
+      newsData = storedNews.filter(s => s.source === 'news').map(s => s.signalData);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        gongSignals: gongData,
+        newsSignals: newsData,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error refreshing signals:', error);
+    res.status(500).json({ success: false, error: 'Failed to refresh signals', message: error.message });
+  }
+});
+
+/**
  * GET /api/hub/ae/manager-alerts
  * Get manager-would-flag alerts for AE self-coaching
  */

@@ -16,6 +16,8 @@ import adminRoutes from './routes/admin';
 import superadminRoutes from './routes/superadmin';
 import accountPlanRoutes from './routes/accountPlans';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { pool } from './config/database';
+import { initializeScheduler } from './services/signalScheduler';
 
 // Create Express app
 const app: Express = express();
@@ -122,6 +124,11 @@ app.listen(PORT, () => {
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
   console.log('=================================');
+
+  // Initialize signal scheduler (nightly Gong + News batch)
+  initializeScheduler(pool).catch(err =>
+    console.error('[Server] Error initializing signal scheduler:', err)
+  );
 });
 
 export default app;

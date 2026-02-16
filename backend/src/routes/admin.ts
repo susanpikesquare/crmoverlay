@@ -56,6 +56,7 @@ router.get('/config', async (_req: Request, res: Response) => {
     const hubLayout = await adminSettings.getHubLayoutConfig();
     const forecastConfig = await adminSettings.getForecastConfig();
     const opportunityDetailConfig = await adminSettings.getOpportunityDetailConfig();
+    const buyingSignalConfig = await adminSettings.getBuyingSignalConfig();
 
     res.json({
       success: true,
@@ -65,6 +66,7 @@ router.get('/config', async (_req: Request, res: Response) => {
         hubLayout,
         forecastConfig,
         opportunityDetailConfig,
+        buyingSignalConfig,
       },
     });
   } catch (error: any) {
@@ -933,6 +935,99 @@ router.delete('/ai-api-keys/:provider', async (req: Request, res: Response) => {
       error: 'Failed to delete AI API key',
       message: error.message,
     });
+  }
+});
+
+// ==========================================
+// Buying Signal Config Routes
+// ==========================================
+
+/**
+ * GET /api/admin/config/buying-signals
+ * Get buying signal configuration
+ */
+router.get('/config/buying-signals', async (_req: Request, res: Response) => {
+  try {
+    const config = await adminSettings.getBuyingSignalConfig();
+    res.json({ success: true, data: config });
+  } catch (error: any) {
+    console.error('Error fetching buying signal config:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch buying signal config', message: error.message });
+  }
+});
+
+/**
+ * PUT /api/admin/config/buying-signals
+ * Save buying signal configuration
+ */
+router.put('/config/buying-signals', async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const userId = session.userId || 'Unknown';
+    const config = req.body;
+
+    await adminSettings.setBuyingSignalConfig(config, userId);
+
+    res.json({ success: true, data: config, message: 'Buying signal configuration updated' });
+  } catch (error: any) {
+    console.error('Error saving buying signal config:', error);
+    res.status(400).json({ success: false, error: 'Failed to save buying signal config', message: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/config/buying-signals/test
+ * Test news search on a single account name (preview)
+ */
+router.post('/config/buying-signals/test', async (req: Request, res: Response) => {
+  try {
+    const { accountName } = req.body;
+
+    if (!accountName) {
+      return res.status(400).json({ success: false, error: 'accountName is required' });
+    }
+
+    const config = await adminSettings.getBuyingSignalConfig();
+    const { searchNewsForAccount } = await import('../services/newsSignalService');
+
+    // Build prompt from config
+    let prompt = config.newsPromptTemplate || '';
+    const activeCategories = (config.signalCategories || []).filter(c => c.active);
+    if (activeCategories.length > 0) {
+      prompt += '\n\nSpecifically look for:\n';
+      for (const cat of activeCategories) {
+        prompt += `- ${cat.name}: ${cat.description}`;
+        if (cat.keywords?.length > 0) prompt += ` (keywords: ${cat.keywords.join(', ')})`;
+        prompt += '\n';
+      }
+    }
+
+    const result = await searchNewsForAccount(accountName, prompt, pool);
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('Error testing news search:', error);
+    res.status(500).json({ success: false, error: 'Test search failed', message: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/config/buying-signals/run-now
+ * Trigger an immediate batch run
+ */
+router.post('/config/buying-signals/run-now', async (_req: Request, res: Response) => {
+  try {
+    const { runNightlyBatch } = await import('../services/signalScheduler');
+    const result = await runNightlyBatch(pool);
+
+    res.json({
+      success: true,
+      data: result,
+      message: `Batch complete. Gong: ${result.gongCount}, News: ${result.newsCount}${result.errors.length > 0 ? `, Errors: ${result.errors.length}` : ''}`,
+    });
+  } catch (error: any) {
+    console.error('Error running batch:', error);
+    res.status(500).json({ success: false, error: 'Batch run failed', message: error.message });
   }
 });
 

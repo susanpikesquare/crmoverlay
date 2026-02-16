@@ -92,7 +92,7 @@ export default function AEHub() {
   });
 
   // 10. Gong buying signals
-  const { data: gongSignalsData } = useQuery<{ success: boolean; data: any[] }>({
+  const { data: gongSignalsData, isLoading: loadingGongSignals } = useQuery<{ success: boolean; data: any[] }>({
     queryKey: ['ae-gong-signals'],
     queryFn: async () => {
       const response = await axios.get(`${API_URL}/api/hub/ae/gong-signals`, { withCredentials: true });
@@ -118,6 +118,19 @@ export default function AEHub() {
     mutationFn: (dealId: string) => axios.delete(`${API_URL}/api/hub/ae/watchlist/${dealId}`, { withCredentials: true }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ae-watchlist'] }),
   });
+
+  // Refresh signals mutation
+  const refreshSignalsMutation = useMutation({
+    mutationFn: () => axios.post(`${API_URL}/api/hub/ae/gong-signals/refresh`, {}, { withCredentials: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ae-gong-signals'] });
+      queryClient.invalidateQueries({ queryKey: ['ae-signals'] });
+    },
+  });
+
+  const handleRefreshSignals = useCallback(() => {
+    refreshSignalsMutation.mutate();
+  }, [refreshSignalsMutation]);
 
   const toggleWatchlist = useCallback((dealId: string) => {
     if (watchlistIds.has(dealId)) {
@@ -211,6 +224,8 @@ export default function AEHub() {
               alerts={alerts}
               gongSignals={gongSignalsData?.data || []}
               isLoading={isInsightsLoading}
+              onRefresh={handleRefreshSignals}
+              isRefreshing={refreshSignalsMutation.isPending}
             />
           </div>
           <div className="lg:col-span-6">

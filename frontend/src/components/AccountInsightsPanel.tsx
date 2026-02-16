@@ -56,16 +56,34 @@ interface GongDealSignal {
   lastCallDate: string;
 }
 
+interface NewsSignalData {
+  signals: Array<{
+    type: string;
+    category: string;
+    headline: string;
+    summary: string;
+    url?: string;
+    relevance: 'high' | 'medium' | 'low';
+    publishedDate?: string;
+  }>;
+  summary: string;
+  citations: Array<{ url: string; title: string }>;
+  searchedAt?: string;
+}
+
 interface AccountInsightsPanelProps {
   signals: AESignal[];
   alerts: ManagerAlert[];
   gongSignals?: GongDealSignal[];
+  newsSignals?: Array<{ accountId: string; accountName: string; signalData: NewsSignalData }>;
   isLoading?: boolean;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 type TabKey = 'hot' | 'cold' | 'expansion' | 'signals';
 
-export default function AccountInsightsPanel({ signals, alerts, gongSignals = [], isLoading }: AccountInsightsPanelProps) {
+export default function AccountInsightsPanel({ signals, alerts, gongSignals = [], newsSignals = [], isLoading, onRefresh, isRefreshing }: AccountInsightsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('hot');
 
   // Hot Accounts: high intent (>= 70) or active buying stage from new-business signals
@@ -108,8 +126,36 @@ export default function AccountInsightsPanel({ signals, alerts, gongSignals = []
     })
   );
 
-  // All Signals: merge existing + Gong, sorted by score
-  const allSignals = [...signals, ...gongAsSignals].sort((a, b) => b.score - a.score);
+  // Convert news signals to AESignal format
+  const newsAsSignals: AESignal[] = newsSignals.flatMap(ns =>
+    (ns.signalData?.signals || []).map((s, idx) => {
+      const newsCategoryMap: Record<string, string> = {
+        'store-opening': 'Store Opening',
+        'executive-hire': 'Executive Hire',
+        'expansion': 'Expansion',
+        'funding': 'Funding',
+        'partnership': 'Partnership',
+        'product-launch': 'Product Launch',
+        'restructuring': 'Restructuring',
+      };
+      const relevanceScore = s.relevance === 'high' ? 80 : s.relevance === 'medium' ? 60 : 40;
+      return {
+        id: `news-${ns.accountId}-${s.category}-${idx}`,
+        accountId: ns.accountId,
+        accountName: ns.accountName,
+        signalType: 'new-business' as const,
+        headline: s.headline,
+        details: s.summary,
+        score: relevanceScore,
+        category: newsCategoryMap[s.category] || s.category,
+        actionRecommendation: s.url ? `Read more: ${s.url}` : 'Research this development further',
+        metrics: {},
+      };
+    })
+  );
+
+  // All Signals: merge existing + Gong + News, sorted by score
+  const allSignals = [...signals, ...gongAsSignals, ...newsAsSignals].sort((a, b) => b.score - a.score);
 
   const tabs: { key: TabKey; label: string; count: number }[] = [
     { key: 'hot', label: 'Hot', count: hotAccounts.length },
@@ -141,6 +187,14 @@ export default function AccountInsightsPanel({ signals, alerts, gongSignals = []
       case 'Decision Process': return 'bg-purple-100 text-purple-700';
       case 'Positive Momentum': return 'bg-green-100 text-green-700';
       case 'Objection': return 'bg-orange-100 text-orange-700';
+      // News signal categories
+      case 'Store Opening': return 'bg-emerald-100 text-emerald-700';
+      case 'Executive Hire': return 'bg-violet-100 text-violet-700';
+      case 'Expansion': return 'bg-cyan-100 text-cyan-700';
+      case 'Funding': return 'bg-green-100 text-green-700';
+      case 'Partnership': return 'bg-blue-100 text-blue-700';
+      case 'Product Launch': return 'bg-pink-100 text-pink-700';
+      case 'Restructuring': return 'bg-amber-100 text-amber-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -165,6 +219,15 @@ export default function AccountInsightsPanel({ signals, alerts, gongSignals = []
           <h2 className="text-lg font-bold text-slate-900">Account Insights</h2>
           <p className="text-sm text-slate-500">Account-level signals and engagement health</p>
         </div>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -290,6 +353,7 @@ export default function AccountInsightsPanel({ signals, alerts, gongSignals = []
           ) : (
             allSignals.map(signal => {
               const isGong = signal.id.startsWith('gong-');
+              const isNews = signal.id.startsWith('news-');
               // Find momentum for Gong signals
               const dealMomentum = isGong
                 ? gongSignals.find(gs => signal.id.includes(gs.opportunityId))?.momentum
@@ -310,6 +374,11 @@ export default function AccountInsightsPanel({ signals, alerts, gongSignals = []
                         {isGong && (
                           <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-violet-50 text-violet-600 border border-violet-200">
                             Gong
+                          </span>
+                        )}
+                        {isNews && (
+                          <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-teal-50 text-teal-600 border border-teal-200">
+                            News
                           </span>
                         )}
                       </div>

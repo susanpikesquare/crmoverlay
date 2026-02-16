@@ -856,6 +856,58 @@ Provide ONLY the JSON response, no additional text.`;
   }
 
   /**
+   * Ask with web search — Anthropic-only.
+   * Uses Claude's built-in web search tool to find real-time information.
+   */
+  async askWithWebSearch(prompt: string, maxTokens: number = 2000): Promise<{
+    text: string;
+    citations: Array<{ url: string; title: string }>;
+  }> {
+    await this.ensureInitialized();
+
+    if (!this.anthropicClient) {
+      return { text: 'Web search requires Anthropic Claude to be configured.', citations: [] };
+    }
+
+    try {
+      const message = await this.anthropicClient.messages.create({
+        model: this.model || 'claude-sonnet-4-5-20250929',
+        max_tokens: maxTokens,
+        tools: [{ type: 'web_search_20250305' as any, name: 'web_search' } as any],
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      // Parse response — extract text and citations from content blocks
+      let text = '';
+      const citations: Array<{ url: string; title: string }> = [];
+
+      for (const block of message.content) {
+        if (block.type === 'text') {
+          text = block.text;
+        } else if ((block as any).type === 'web_search_tool_result') {
+          // Extract citations from search results
+          const searchBlock = block as any;
+          if (searchBlock.content && Array.isArray(searchBlock.content)) {
+            for (const result of searchBlock.content) {
+              if (result.type === 'web_search_result' && result.url) {
+                citations.push({
+                  url: result.url,
+                  title: result.title || result.url,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      return { text, citations };
+    } catch (error: any) {
+      console.error('[AIService] Web search error:', error);
+      return { text: `Web search failed: ${error.message}`, citations: [] };
+    }
+  }
+
+  /**
    * Reinitialize the AI service from database config.
    * Called when admin saves/deletes an API key so the running
    * singleton picks up the new configuration without a restart.
