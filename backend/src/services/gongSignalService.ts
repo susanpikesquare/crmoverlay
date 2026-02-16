@@ -36,44 +36,19 @@ const GONG_SIGNALS_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
  * Get Gong buying signals with caching.
- * Checks persistent DB store first, then in-memory cache, then runs on-demand analysis.
+ * Checks in-memory cache first, then persistent DB store (checked inside
+ * analyzeDealsForBuyingSignals after opp IDs are already fetched), then
+ * runs on-demand analysis.
  */
 export async function getGongBuyingSignals(
   connection: Connection,
   userId: string,
   pool: Pool
 ): Promise<GongDealSignal[]> {
-  // Check in-memory cache first
+  // Check in-memory cache first (instant)
   const cached = metadataCache.get<GongDealSignal[]>(userId, 'default', GONG_SIGNALS_NAMESPACE);
   if (cached) {
     return cached;
-  }
-
-  // Check persistent store for fresh (non-expired) results
-  try {
-    // Get user's open opportunity IDs to look up stored signals
-    const oppResult = await connection.query(`
-      SELECT Id FROM Opportunity
-      WHERE OwnerId = '${userId}'
-        AND IsClosed = false
-        AND StageName NOT IN ('Prospecting', 'Qualification')
-      LIMIT 20
-    `);
-    const oppIds = (oppResult.records as any[]).map(r => r.Id);
-
-    if (oppIds.length > 0) {
-      const storedSignals = await getSignalsForOpportunities(pool, oppIds);
-      const gongStored = storedSignals.filter(s => s.source === 'gong');
-
-      if (gongStored.length > 0) {
-        const results = gongStored.map(s => s.signalData as GongDealSignal);
-        metadataCache.set(userId, 'default', GONG_SIGNALS_NAMESPACE, results, GONG_SIGNALS_TTL_MS);
-        return results;
-      }
-    }
-  } catch (error) {
-    console.error('[GongSignals] Error checking persistent store:', error);
-    // Fall through to on-demand analysis
   }
 
   const results = await analyzeDealsForBuyingSignals(connection, userId, pool);
@@ -87,18 +62,9 @@ export async function getGongBuyingSignals(
 async function analyzeDealsForBuyingSignals(
   connection: Connection,
   userId: string,
-  _pool: Pool
+  pool: Pool
 ): Promise<GongDealSignal[]> {
-  // Step 1: Create Gong service — return empty if not configured
-  let gongService;
-  try {
-    gongService = await createGongServiceFromDB();
-  } catch {
-    return [];
-  }
-  if (!gongService) return [];
-
-  // Step 2: Get user's open opportunities
+  // Step 1: Get user's open opportunities (needed for both DB check and Gong analysis)
   let opportunities: any[];
   try {
     const result = await connection.query(`
@@ -118,7 +84,30 @@ async function analyzeDealsForBuyingSignals(
 
   if (opportunities.length === 0) return [];
 
-  // Step 3: Fetch calls for each opportunity
+  // Step 2: Check persistent store for fresh results (cheap DB query, no extra SF call)
+  try {
+    const oppIds = opportunities.map((o: any) => o.Id);
+    const storedSignals = await getSignalsForOpportunities(pool, oppIds);
+    const gongStored = storedSignals.filter(s => s.source === 'gong');
+
+    if (gongStored.length > 0) {
+      return gongStored.map(s => s.signalData as GongDealSignal);
+    }
+  } catch (error) {
+    console.error('[GongSignals] Error checking persistent store:', error);
+    // Fall through to on-demand analysis
+  }
+
+  // Step 3: Create Gong service — return empty if not configured
+  let gongService;
+  try {
+    gongService = await createGongServiceFromDB();
+  } catch {
+    return [];
+  }
+  if (!gongService) return [];
+
+  // Step 4: Fetch calls for each opportunity
   const dealCallMap = new Map<string, { opp: any; callIds: string[]; callTitles: Map<string, string> }>();
   const allCallIds: string[] = [];
 
