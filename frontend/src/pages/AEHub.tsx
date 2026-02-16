@@ -5,7 +5,6 @@ import PipelineForecastPanel from '../components/PipelineForecastPanel';
 import AIAssistant from '../components/AIAssistant';
 import ScoreboardBar from '../components/ScoreboardBar';
 import UnifiedPrioritiesPanel from '../components/UnifiedPrioritiesPanel';
-import WhatIfModeler from '../components/WhatIfModeler';
 import AccountInsightsPanel from '../components/AccountInsightsPanel';
 import OpportunityInsightsPanel from '../components/OpportunityInsightsPanel';
 import { config } from '../config';
@@ -56,16 +55,7 @@ export default function AEHub() {
     },
   });
 
-  // 5. What-If Deals
-  const { data: whatIfData, isLoading: loadingWhatIf } = useQuery<{ success: boolean; data: any }>({
-    queryKey: ['ae-whatif-deals'],
-    queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/hub/ae/whatif-deals`, { withCredentials: true });
-      return response.data;
-    },
-  });
-
-  // 6. At-risk deals count (for scoreboard)
+  // 5. At-risk deals count (for scoreboard)
   const { data: atRiskData } = useQuery<{ success: boolean; data: any[] }>({
     queryKey: ['ae-at-risk-deals'],
     queryFn: async () => {
@@ -140,7 +130,6 @@ export default function AEHub() {
   const priorities = prioritiesData?.data || [];
   const signals = signalsData?.data || [];
   const alerts = alertsData?.data || [];
-  const whatIf = whatIfData?.data || { deals: [], quotaTarget: 0, closedWon: 0 };
   const atRiskCount = atRiskData?.data?.length || 0;
   const enhancedAtRisk = enhancedAtRiskData?.data || [];
   const stalledDeals = stalledData?.data || [];
@@ -194,18 +183,13 @@ export default function AEHub() {
           onSignalsClick={scrollToSignals}
         />
 
-        {/* SECTION 2 + 3: Priorities & Risks (left ~55%) | Quota & What-If (right ~45%) */}
+        {/* SECTION 2 + 3: Priorities & Risks (left ~55%) | Pipeline Forecast (right ~45%) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6" ref={atRiskRef}>
           <div className="lg:col-span-7">
             <UnifiedPrioritiesPanel priorities={priorities} isLoading={loadingPriorities} />
           </div>
           <div className="lg:col-span-5">
-            <WhatIfModeler
-              deals={whatIf.deals || []}
-              quotaTarget={whatIf.quotaTarget || 0}
-              closedWon={whatIf.closedWon || 0}
-              isLoading={loadingWhatIf}
-            />
+            <PipelineForecastPanel dateRange="thisQuarter" teamFilter="me" />
           </div>
         </div>
 
@@ -230,10 +214,6 @@ export default function AEHub() {
           </div>
         </div>
 
-        {/* Pipeline Forecast (retained — full width) */}
-        <div className="mb-6">
-          <PipelineForecastPanel dateRange="thisQuarter" teamFilter="me" />
-        </div>
       </div>
     </div>
   );
