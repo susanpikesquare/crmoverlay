@@ -3,6 +3,8 @@ import {
   updateConfig,
   updatePriorityScoring,
   updateRiskRules,
+  updateFieldMappings,
+  updateOpportunityStages,
   resetToDefaults,
   importConfig,
   exportConfig,
@@ -10,6 +12,7 @@ import {
   AppConfig,
   PriorityConfig,
   RiskRule,
+  FieldMapping,
 } from '../configService';
 
 // Reset to clean state before each test
@@ -128,6 +131,37 @@ describe('importConfig / exportConfig', () => {
     const imported = importConfig(exported, 'round-trip-user');
     expect(imported.riskRules).toEqual(getConfig().riskRules);
     expect(imported.lastModified!.by).toBe('round-trip-user');
+  });
+});
+
+describe('updateFieldMappings', () => {
+  it('replaces field mappings and sets lastModified', () => {
+    const mappings: FieldMapping[] = [
+      { conceptName: 'Test Field', category: 'custom', salesforceField: 'Test__c', calculateInApp: false },
+    ];
+    const result = updateFieldMappings(mappings, 'admin');
+    expect(result.fieldMappings).toHaveLength(1);
+    expect(result.fieldMappings[0].conceptName).toBe('Test Field');
+    expect(result.lastModified!.by).toBe('admin');
+  });
+
+  it('handles empty mappings array', () => {
+    const result = updateFieldMappings([], 'admin');
+    expect(result.fieldMappings).toHaveLength(0);
+  });
+});
+
+describe('updateOpportunityStages', () => {
+  it('replaces stages and sets lastModified', () => {
+    const stages = ['Discovery', 'Proposal', 'Closed Won'];
+    const result = updateOpportunityStages(stages, 'admin');
+    expect(result.opportunityStages).toEqual(stages);
+    expect(result.lastModified!.by).toBe('admin');
+  });
+
+  it('handles empty stages array', () => {
+    const result = updateOpportunityStages([], 'admin');
+    expect(result.opportunityStages).toEqual([]);
   });
 });
 
