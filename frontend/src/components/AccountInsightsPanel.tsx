@@ -39,15 +39,33 @@ interface ManagerAlert {
   amount?: number;
 }
 
+interface GongDealSignal {
+  opportunityId: string;
+  opportunityName: string;
+  accountId: string;
+  accountName: string;
+  signals: Array<{
+    type: string;
+    confidence: 'high' | 'medium' | 'low';
+    evidence: string;
+    callTitle: string;
+  }>;
+  momentum: 'accelerating' | 'steady' | 'stalling' | 'unknown';
+  summary: string;
+  callCount: number;
+  lastCallDate: string;
+}
+
 interface AccountInsightsPanelProps {
   signals: AESignal[];
   alerts: ManagerAlert[];
+  gongSignals?: GongDealSignal[];
   isLoading?: boolean;
 }
 
 type TabKey = 'hot' | 'cold' | 'expansion' | 'signals';
 
-export default function AccountInsightsPanel({ signals, alerts, isLoading }: AccountInsightsPanelProps) {
+export default function AccountInsightsPanel({ signals, alerts, gongSignals = [], isLoading }: AccountInsightsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('hot');
 
   // Hot Accounts: high intent (>= 70) or active buying stage from new-business signals
@@ -61,8 +79,37 @@ export default function AccountInsightsPanel({ signals, alerts, isLoading }: Acc
   // Expansion Ready: expansion signals with high scores
   const expansionAccounts = signals.filter(s => s.signalType === 'expansion');
 
-  // All Signals: sorted by score
-  const allSignals = [...signals].sort((a, b) => b.score - a.score);
+  // Convert Gong signals to AESignal format for the Signals tab
+  const gongAsSignals: AESignal[] = gongSignals.flatMap(deal =>
+    deal.signals.map((s, idx) => {
+      const categoryMap: Record<string, string> = {
+        'budget-confirmed': 'Budget Confirmed',
+        'timeline-pressure': 'Timeline Pressure',
+        'champion-identified': 'Champion Found',
+        'multi-threading': 'Multi-Threading',
+        'competitive-threat': 'Competitive Threat',
+        'decision-process-revealed': 'Decision Process',
+        'positive-momentum': 'Positive Momentum',
+        'objection-surfaced': 'Objection',
+      };
+      const confidenceScore = s.confidence === 'high' ? 85 : s.confidence === 'medium' ? 65 : 45;
+      return {
+        id: `gong-${deal.opportunityId}-${s.type}-${idx}`,
+        accountId: deal.accountId,
+        accountName: deal.accountName,
+        signalType: 'new-business' as const,
+        headline: deal.summary || `${categoryMap[s.type] || s.type} detected in Gong call`,
+        details: s.evidence || `Detected in: ${s.callTitle}`,
+        score: confidenceScore,
+        category: categoryMap[s.type] || s.type,
+        actionRecommendation: `Review Gong call "${s.callTitle}"`,
+        metrics: {},
+      };
+    })
+  );
+
+  // All Signals: merge existing + Gong, sorted by score
+  const allSignals = [...signals, ...gongAsSignals].sort((a, b) => b.score - a.score);
 
   const tabs: { key: TabKey; label: string; count: number }[] = [
     { key: 'hot', label: 'Hot', count: hotAccounts.length },
@@ -85,6 +132,15 @@ export default function AccountInsightsPanel({ signals, alerts, isLoading }: Acc
       case 'ICP Match': return 'bg-blue-100 text-blue-700';
       case 'High Utilization': return 'bg-orange-100 text-orange-700';
       case 'Renewal Opportunity': return 'bg-yellow-100 text-yellow-700';
+      // Gong signal categories
+      case 'Budget Confirmed': return 'bg-green-100 text-green-700';
+      case 'Timeline Pressure': return 'bg-amber-100 text-amber-700';
+      case 'Champion Found': return 'bg-blue-100 text-blue-700';
+      case 'Multi-Threading': return 'bg-indigo-100 text-indigo-700';
+      case 'Competitive Threat': return 'bg-red-100 text-red-700';
+      case 'Decision Process': return 'bg-purple-100 text-purple-700';
+      case 'Positive Momentum': return 'bg-green-100 text-green-700';
+      case 'Objection': return 'bg-orange-100 text-orange-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -232,28 +288,52 @@ export default function AccountInsightsPanel({ signals, alerts, isLoading }: Acc
               <p className="text-sm mt-1">Enrich accounts with 6sense/Clay to surface signals</p>
             </div>
           ) : (
-            allSignals.map(signal => (
-              <Link
-                key={signal.id}
-                to={`/account/${signal.accountId}`}
-                className="block p-4 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-sm text-slate-900 truncate">{signal.accountName}</h3>
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getCategoryBadge(signal.category)}`}>
-                        {signal.category}
+            allSignals.map(signal => {
+              const isGong = signal.id.startsWith('gong-');
+              // Find momentum for Gong signals
+              const dealMomentum = isGong
+                ? gongSignals.find(gs => signal.id.includes(gs.opportunityId))?.momentum
+                : undefined;
+              return (
+                <Link
+                  key={signal.id}
+                  to={`/account/${signal.accountId}`}
+                  className="block p-4 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-sm text-slate-900 truncate">{signal.accountName}</h3>
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getCategoryBadge(signal.category)}`}>
+                          {signal.category}
+                        </span>
+                        {isGong && (
+                          <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-violet-50 text-violet-600 border border-violet-200">
+                            Gong
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {dealMomentum && dealMomentum !== 'unknown' && (
+                        <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                          dealMomentum === 'accelerating' ? 'bg-green-50 text-green-700' :
+                          dealMomentum === 'steady' ? 'bg-blue-50 text-blue-700' :
+                          'bg-red-50 text-red-700'
+                        }`}>
+                          {dealMomentum === 'accelerating' ? 'Accelerating' :
+                           dealMomentum === 'steady' ? 'Steady' : 'Stalling'}
+                        </span>
+                      )}
+                      <span className={`px-2 py-1 text-xs font-bold rounded border ${getScoreColor(signal.score)}`}>
+                        {signal.score}
                       </span>
                     </div>
                   </div>
-                  <span className={`px-2 py-1 text-xs font-bold rounded border ${getScoreColor(signal.score)}`}>
-                    {signal.score}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-600">{signal.details}</p>
-              </Link>
-            ))
+                  <p className="text-xs text-slate-600">{signal.details}</p>
+                </Link>
+              );
+            })
           )
         )}
       </div>

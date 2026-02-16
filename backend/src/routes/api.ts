@@ -13,6 +13,7 @@ import { getObjectPermissions } from '../services/objectPermissionsService';
 import * as listViewService from '../services/listViewService';
 import { ListQueryParams, FilterCriteria, OwnershipScope } from '../types/filters';
 import { escapeSoqlValue } from '../utils/soqlSanitizer';
+import { getGongBuyingSignals } from '../services/gongSignalService';
 
 const router = Router();
 
@@ -1297,7 +1298,7 @@ router.get('/hub/ae/signals', isAuthenticated, async (req: Request, res: Respons
       });
     }
 
-    const signals = await HubData.getAESignals(connection, userId);
+    const signals = await HubData.getAESignals(connection, userId, pool);
 
     res.json({
       success: true,
@@ -1309,6 +1310,39 @@ router.get('/hub/ae/signals', isAuthenticated, async (req: Request, res: Respons
     res.status(500).json({
       success: false,
       error: 'Failed to fetch AE signals',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/hub/ae/gong-signals
+ * Get Gong-powered buying signal detection for AE deals
+ */
+router.get('/hub/ae/gong-signals', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    const data = await getGongBuyingSignals(connection, userId, pool);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error: any) {
+    console.error('Error fetching Gong signals:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Gong signals',
       message: error.message,
     });
   }

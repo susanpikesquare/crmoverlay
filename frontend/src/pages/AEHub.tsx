@@ -91,6 +91,16 @@ export default function AEHub() {
     },
   });
 
+  // 10. Gong buying signals
+  const { data: gongSignalsData } = useQuery<{ success: boolean; data: any[] }>({
+    queryKey: ['ae-gong-signals'],
+    queryFn: async () => {
+      const response = await axios.get(`${API_URL}/api/hub/ae/gong-signals`, { withCredentials: true });
+      return response.data;
+    },
+    staleTime: 60 * 60 * 1000, // 1 hour (matches backend cache)
+  });
+
   // Watchlist mutation with optimistic updates
   const [localWatchlistIds, setLocalWatchlistIds] = useState<Set<string>>(new Set());
 
@@ -199,6 +209,7 @@ export default function AEHub() {
             <AccountInsightsPanel
               signals={signals}
               alerts={alerts}
+              gongSignals={gongSignalsData?.data || []}
               isLoading={isInsightsLoading}
             />
           </div>

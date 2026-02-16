@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 interface RiskReason {
-  category: 'no-exec-sponsor' | 'stalling' | 'few-stakeholders' | 'strong-competition' | 'missing-success-criteria' | 'missing-business-impact';
+  category: 'no-exec-sponsor' | 'stalling' | 'few-stakeholders' | 'strong-competition' | 'missing-success-criteria' | 'missing-business-impact' | 'negative-sentiment' | 'no-engagement';
   label: string;
   detail: string;
   severity: 'critical' | 'high' | 'medium';
@@ -86,6 +86,8 @@ function RiskBadge({ reason }: { reason: RiskReason }) {
     'strong-competition': 'bg-purple-100 text-purple-700',
     'missing-success-criteria': 'bg-blue-100 text-blue-700',
     'missing-business-impact': 'bg-teal-100 text-teal-700',
+    'negative-sentiment': 'bg-rose-100 text-rose-700',
+    'no-engagement': 'bg-gray-100 text-gray-700',
   };
   return (
     <span

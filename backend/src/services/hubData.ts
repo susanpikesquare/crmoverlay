@@ -10,6 +10,7 @@ import { Account, Opportunity } from './salesforceData';
 import * as agentforce from './agentforceService';
 import { getQuotaFieldName } from './configService';
 import { AdminSettingsService, AccountTierOverrides } from './adminSettings';
+import { getGongBuyingSignals, GongDealSignal } from './gongSignalService';
 
 /**
  * AE Hub Metrics
@@ -3487,7 +3488,8 @@ export async function getExpansionOpportunityAccounts(
  */
 export async function getAESignals(
   connection: Connection,
-  userId: string
+  userId: string,
+  pool?: Pool
 ): Promise<AESignal[]> {
   const signals: AESignal[] = [];
 
@@ -3672,6 +3674,51 @@ export async function getAESignals(
     });
   } catch (error) {
     console.error('Error fetching new-business signals:', error);
+  }
+
+  // --- Gong buying signals ---
+  if (pool) {
+    try {
+      const gongSignals = await getGongBuyingSignals(connection, userId, pool);
+      for (const deal of gongSignals) {
+        for (const signal of deal.signals) {
+          // Map signal type to display category
+          const categoryMap: Record<string, string> = {
+            'budget-confirmed': 'Budget Confirmed',
+            'timeline-pressure': 'Timeline Pressure',
+            'champion-identified': 'Champion Found',
+            'multi-threading': 'Multi-Threading',
+            'competitive-threat': 'Competitive Threat',
+            'decision-process-revealed': 'Decision Process',
+            'positive-momentum': 'Positive Momentum',
+            'objection-surfaced': 'Objection',
+          };
+          const category = categoryMap[signal.type] || signal.type;
+
+          // Score: high=85, medium=65, low=45
+          const confidenceScore = signal.confidence === 'high' ? 85 : signal.confidence === 'medium' ? 65 : 45;
+          // Bonus for multiple signals on same deal
+          const multiSignalBonus = Math.min(10, (deal.signals.length - 1) * 3);
+          const score = Math.min(100, confidenceScore + multiSignalBonus);
+
+          signals.push({
+            id: `gong-${deal.opportunityId}-${signal.type}`,
+            accountId: deal.accountId,
+            accountName: deal.accountName,
+            signalType: 'new-business',
+            headline: deal.summary || `${category} detected in Gong call`,
+            details: signal.evidence || `Detected in: ${signal.callTitle}`,
+            score,
+            category,
+            actionRecommendation: `Review Gong call "${signal.callTitle}" for context on ${category.toLowerCase()}`,
+            metrics: {},
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[AESignals] Error fetching Gong signals:', error);
+      // Gracefully skip Gong signals
+    }
   }
 
   // Sort all signals by score descending
@@ -3973,7 +4020,7 @@ export interface EnhancedAtRiskDeal {
   daysInStage: number;
   overallRiskScore: number;
   riskReasons: Array<{
-    category: 'no-exec-sponsor' | 'stalling' | 'few-stakeholders' | 'strong-competition' | 'missing-success-criteria' | 'missing-business-impact';
+    category: 'no-exec-sponsor' | 'stalling' | 'few-stakeholders' | 'strong-competition' | 'missing-success-criteria' | 'missing-business-impact' | 'negative-sentiment' | 'no-engagement';
     label: string;
     detail: string;
     severity: 'critical' | 'high' | 'medium';
@@ -4167,6 +4214,8 @@ export async function getEnhancedAtRiskDeals(
       });
     }
 
+    // Gong-based risk reasons (added below after loop)
+
     // Only include deals with at least one risk reason
     if (riskReasons.length === 0) continue;
 
@@ -4191,6 +4240,54 @@ export async function getEnhancedAtRiskDeals(
       overallRiskScore,
       riskReasons,
     });
+  }
+
+  // Enrich with Gong-based risk reasons
+  try {
+    const gongSignals = await getGongBuyingSignals(connection, userId, pool);
+    const gongByOpp = new Map<string, GongDealSignal>();
+    for (const gs of gongSignals) {
+      gongByOpp.set(gs.opportunityId, gs);
+    }
+
+    for (const deal of results) {
+      const gs = gongByOpp.get(deal.dealId);
+      if (!gs) continue;
+
+      // Stalling momentum + no recent calls → no engagement
+      if (gs.momentum === 'stalling' && gs.callCount === 0) {
+        deal.riskReasons.push({
+          category: 'no-engagement',
+          label: 'No Engagement',
+          detail: 'No recent Gong calls detected for this deal',
+          severity: 'high',
+        });
+        deal.overallRiskScore = Math.min(100, deal.overallRiskScore + 20);
+      } else if (gs.momentum === 'stalling') {
+        deal.riskReasons.push({
+          category: 'negative-sentiment',
+          label: 'Negative Sentiment',
+          detail: gs.summary || 'Deal momentum is stalling based on call analysis',
+          severity: 'high',
+        });
+        deal.overallRiskScore = Math.min(100, deal.overallRiskScore + 20);
+      }
+
+      // Competitive threat from Gong signals
+      const hasCompetitiveThreat = gs.signals.some(s => s.type === 'competitive-threat' && s.confidence === 'high');
+      if (hasCompetitiveThreat && !deal.riskReasons.some(r => r.category === 'strong-competition')) {
+        deal.riskReasons.push({
+          category: 'strong-competition',
+          label: 'Competitive Threat (Gong)',
+          detail: gs.signals.find(s => s.type === 'competitive-threat')?.evidence || 'Competitive threat detected in calls',
+          severity: 'high',
+        });
+        deal.overallRiskScore = Math.min(100, deal.overallRiskScore + 20);
+      }
+    }
+  } catch (error) {
+    console.error('[EnhancedAtRisk] Error enriching with Gong signals:', error);
+    // Gracefully skip Gong enrichment
   }
 
   // Sort by risk score descending
