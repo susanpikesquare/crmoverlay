@@ -1382,6 +1382,116 @@ router.get('/hub/ae/whatif-deals', isAuthenticated, async (req: Request, res: Re
 });
 
 /**
+ * GET /api/hub/ae/at-risk-enhanced
+ * Get enhanced at-risk deals with MEDDPICC risk reasons
+ */
+router.get('/hub/ae/at-risk-enhanced', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const deals = await HubData.getEnhancedAtRiskDeals(connection, userId, pool);
+    res.json({ success: true, data: deals, count: deals.length });
+  } catch (error: any) {
+    console.error('Error fetching enhanced at-risk deals:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch enhanced at-risk deals', message: error.message });
+  }
+});
+
+/**
+ * GET /api/hub/ae/stalled-deals
+ * Get deals stalled 30+ days in current stage
+ */
+router.get('/hub/ae/stalled-deals', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const deals = await HubData.getStalledDeals(connection, userId, pool);
+    res.json({ success: true, data: deals, count: deals.length });
+  } catch (error: any) {
+    console.error('Error fetching stalled deals:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch stalled deals', message: error.message });
+  }
+});
+
+/**
+ * GET /api/hub/ae/watchlist
+ * Get user's watchlisted deals
+ */
+router.get('/hub/ae/watchlist', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!connection || !userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const deals = await HubData.getWatchlistDeals(connection, userId, pool);
+    res.json({ success: true, data: deals, count: deals.length });
+  } catch (error: any) {
+    console.error('Error fetching watchlist deals:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch watchlist deals', message: error.message });
+  }
+});
+
+/**
+ * POST /api/hub/ae/watchlist/:dealId
+ * Add a deal to user's watchlist
+ */
+router.post('/hub/ae/watchlist/:dealId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const userId = session.userId;
+    const { dealId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    HubData.addToWatchlist(userId, dealId);
+    res.json({ success: true, watchlist: HubData.getWatchlistIds(userId) });
+  } catch (error: any) {
+    console.error('Error adding to watchlist:', error);
+    res.status(500).json({ success: false, error: 'Failed to add to watchlist', message: error.message });
+  }
+});
+
+/**
+ * DELETE /api/hub/ae/watchlist/:dealId
+ * Remove a deal from user's watchlist
+ */
+router.delete('/hub/ae/watchlist/:dealId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const userId = session.userId;
+    const { dealId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    HubData.removeFromWatchlist(userId, dealId);
+    res.json({ success: true, watchlist: HubData.getWatchlistIds(userId) });
+  } catch (error: any) {
+    console.error('Error removing from watchlist:', error);
+    res.status(500).json({ success: false, error: 'Failed to remove from watchlist', message: error.message });
+  }
+});
+
+/**
  * GET /api/hub/ae/pipeline-forecast
  * Get pipeline and forecast data for AE
  */

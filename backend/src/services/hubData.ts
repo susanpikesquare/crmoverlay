@@ -3942,6 +3942,338 @@ export async function getWhatIfDeals(
 }
 
 // ============================================================================
+// ENHANCED AT-RISK DEALS, STALLED DEALS & WATCHLIST
+// ============================================================================
+
+export interface EnhancedAtRiskDeal {
+  dealId: string;
+  dealName: string;
+  accountName: string;
+  accountId: string;
+  amount: number;
+  stage: string;
+  closeDate: string;
+  daysInStage: number;
+  overallRiskScore: number;
+  riskReasons: Array<{
+    category: 'no-exec-sponsor' | 'stalling' | 'few-stakeholders' | 'strong-competition' | 'missing-success-criteria' | 'missing-business-impact';
+    label: string;
+    detail: string;
+    severity: 'critical' | 'high' | 'medium';
+  }>;
+}
+
+export interface StalledDeal {
+  dealId: string;
+  dealName: string;
+  accountName: string;
+  accountId: string;
+  amount: number;
+  stage: string;
+  closeDate: string;
+  daysInStage: number;
+  lastActivityDate: string;
+}
+
+// In-memory watchlist store (keyed by userId → Set of dealIds)
+const watchlistStore = new Map<string, Set<string>>();
+
+export function getWatchlistIds(userId: string): string[] {
+  const set = watchlistStore.get(userId);
+  return set ? Array.from(set) : [];
+}
+
+export function addToWatchlist(userId: string, dealId: string): void {
+  if (!watchlistStore.has(userId)) {
+    watchlistStore.set(userId, new Set());
+  }
+  watchlistStore.get(userId)!.add(dealId);
+}
+
+export function removeFromWatchlist(userId: string, dealId: string): void {
+  const set = watchlistStore.get(userId);
+  if (set) {
+    set.delete(dealId);
+  }
+}
+
+/**
+ * Get enhanced at-risk deals with MEDDPICC-based risk reasons.
+ * Tries enriched query first with MEDDPICC fields, falls back to basic.
+ */
+export async function getEnhancedAtRiskDeals(
+  connection: Connection,
+  userId: string,
+  pool: Pool
+): Promise<EnhancedAtRiskDeal[]> {
+  const amountField = await getAmountFieldName(pool);
+  const now = new Date();
+
+  // Try enriched query with MEDDPICC fields
+  const enrichedQuery = `
+    SELECT Id, Name, AccountId, Account.Name, ${amountField}, StageName,
+           CloseDate, LastModifiedDate, CreatedDate, Probability, NextStep,
+           MEDDPICCR_Economic_Buyer__c, MEDDPICCR_Champion__c,
+           MEDDPICCR_Competition__c, MEDDPICCR_Decision_Criteria__c,
+           MEDDPICCR_Implicate_Pain__c
+    FROM Opportunity
+    WHERE OwnerId = '${userId}'
+      AND IsClosed = false
+      AND StageName NOT IN ('Prospecting', 'Qualification')
+    ORDER BY ${amountField} DESC NULLS LAST
+    LIMIT 50
+  `;
+
+  const basicQuery = `
+    SELECT Id, Name, AccountId, Account.Name, ${amountField}, StageName,
+           CloseDate, LastModifiedDate, CreatedDate, Probability, NextStep
+    FROM Opportunity
+    WHERE OwnerId = '${userId}'
+      AND IsClosed = false
+      AND StageName NOT IN ('Prospecting', 'Qualification')
+    ORDER BY ${amountField} DESC NULLS LAST
+    LIMIT 50
+  `;
+
+  let opportunities: any[] = [];
+  let hasMeddpiccFields = false;
+
+  try {
+    const result = await connection.query(enrichedQuery);
+    opportunities = result.records as any[];
+    hasMeddpiccFields = true;
+  } catch (error: any) {
+    if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
+      try {
+        const result = await connection.query(basicQuery);
+        opportunities = result.records as any[];
+      } catch (fallbackError) {
+        console.error('Error fetching at-risk deals (fallback):', fallbackError);
+        return [];
+      }
+    } else {
+      console.error('Error fetching enhanced at-risk deals:', error);
+      return [];
+    }
+  }
+
+  const results: EnhancedAtRiskDeal[] = [];
+
+  for (const opp of opportunities) {
+    const riskReasons: EnhancedAtRiskDeal['riskReasons'] = [];
+    const daysInStage = daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now);
+
+    // Check MEDDPICC risk factors
+    if (hasMeddpiccFields) {
+      const economicBuyer = opp.MEDDPICCR_Economic_Buyer__c || '';
+      const champion = opp.MEDDPICCR_Champion__c || '';
+      const competition = opp.MEDDPICCR_Competition__c || '';
+      const decisionCriteria = opp.MEDDPICCR_Decision_Criteria__c || '';
+      const implicatePain = opp.MEDDPICCR_Implicate_Pain__c || '';
+
+      if (!economicBuyer || economicBuyer.length < 3) {
+        riskReasons.push({
+          category: 'no-exec-sponsor',
+          label: 'No Exec Sponsor',
+          detail: 'Economic buyer not identified or poorly defined',
+          severity: 'critical',
+        });
+      }
+
+      if (!champion || champion.length < 3) {
+        riskReasons.push({
+          category: 'few-stakeholders',
+          label: 'Few Stakeholders',
+          detail: 'No identified champion in the account',
+          severity: 'high',
+        });
+      }
+
+      if (competition && (competition.toLowerCase().includes('strong') || competition.toLowerCase().includes('competitive') || competition.length > 20)) {
+        riskReasons.push({
+          category: 'strong-competition',
+          label: 'Strong Competition',
+          detail: 'Competitive threat detected in deal',
+          severity: 'high',
+        });
+      }
+
+      if (!decisionCriteria || decisionCriteria.length < 3) {
+        riskReasons.push({
+          category: 'missing-success-criteria',
+          label: 'Missing Criteria',
+          detail: 'Decision criteria not documented',
+          severity: 'medium',
+        });
+      }
+
+      if (!implicatePain || implicatePain.length < 3) {
+        riskReasons.push({
+          category: 'missing-business-impact',
+          label: 'Missing Impact',
+          detail: 'Business pain/impact not articulated',
+          severity: 'medium',
+        });
+      }
+    } else {
+      // Fallback risk detection using standard fields
+      if (!opp.NextStep || opp.NextStep.trim().length === 0) {
+        riskReasons.push({
+          category: 'missing-success-criteria',
+          label: 'Missing Criteria',
+          detail: 'No next step defined — unclear decision path',
+          severity: 'medium',
+        });
+      }
+
+      const probability = opp.Probability || 0;
+      if (probability < 30 && opp.StageName !== 'Prospecting') {
+        riskReasons.push({
+          category: 'no-exec-sponsor',
+          label: 'No Exec Sponsor',
+          detail: `Low probability (${probability}%) suggests weak executive engagement`,
+          severity: 'high',
+        });
+      }
+    }
+
+    // Stalling check (always applies)
+    if (daysInStage > 30) {
+      riskReasons.push({
+        category: 'stalling',
+        label: 'Stalling',
+        detail: `${daysInStage} days in ${opp.StageName} (benchmark: <30)`,
+        severity: daysInStage > 60 ? 'critical' : 'high',
+      });
+    }
+
+    // Only include deals with at least one risk reason
+    if (riskReasons.length === 0) continue;
+
+    // Calculate overall risk score (0-100)
+    let overallRiskScore = 0;
+    for (const reason of riskReasons) {
+      if (reason.severity === 'critical') overallRiskScore += 30;
+      else if (reason.severity === 'high') overallRiskScore += 20;
+      else overallRiskScore += 10;
+    }
+    overallRiskScore = Math.min(100, overallRiskScore);
+
+    results.push({
+      dealId: opp.Id,
+      dealName: opp.Name,
+      accountName: opp.Account?.Name || 'Unknown',
+      accountId: opp.AccountId || '',
+      amount: opp[amountField] || 0,
+      stage: opp.StageName || '',
+      closeDate: opp.CloseDate || '',
+      daysInStage,
+      overallRiskScore,
+      riskReasons,
+    });
+  }
+
+  // Sort by risk score descending
+  results.sort((a, b) => b.overallRiskScore - a.overallRiskScore);
+  return results;
+}
+
+/**
+ * Get stalled deals — 30+ days in current stage.
+ */
+export async function getStalledDeals(
+  connection: Connection,
+  userId: string,
+  pool: Pool
+): Promise<StalledDeal[]> {
+  const amountField = await getAmountFieldName(pool);
+  const now = new Date();
+
+  const query = `
+    SELECT Id, Name, AccountId, Account.Name, ${amountField}, StageName,
+           CloseDate, LastModifiedDate, CreatedDate, LastActivityDate
+    FROM Opportunity
+    WHERE OwnerId = '${userId}'
+      AND IsClosed = false
+      AND StageName NOT IN ('Prospecting')
+    ORDER BY LastModifiedDate ASC
+    LIMIT 50
+  `;
+
+  try {
+    const result = await connection.query(query);
+    const opportunities = result.records as any[];
+
+    return opportunities
+      .map(opp => {
+        const daysInStage = daysBetween(opp.LastModifiedDate || opp.CreatedDate || now.toISOString(), now);
+        return {
+          dealId: opp.Id,
+          dealName: opp.Name,
+          accountName: opp.Account?.Name || 'Unknown',
+          accountId: opp.AccountId || '',
+          amount: opp[amountField] || 0,
+          stage: opp.StageName || '',
+          closeDate: opp.CloseDate || '',
+          daysInStage,
+          lastActivityDate: opp.LastActivityDate || opp.LastModifiedDate || '',
+        };
+      })
+      .filter(deal => deal.daysInStage >= 30)
+      .sort((a, b) => b.daysInStage - a.daysInStage);
+  } catch (error) {
+    console.error('Error fetching stalled deals:', error);
+    return [];
+  }
+}
+
+/**
+ * Get watchlisted deal details from Salesforce
+ */
+export async function getWatchlistDeals(
+  connection: Connection,
+  userId: string,
+  pool: Pool
+): Promise<any[]> {
+  const dealIds = getWatchlistIds(userId);
+  if (dealIds.length === 0) return [];
+
+  const amountField = await getAmountFieldName(pool);
+  let forecastCategoryField: string;
+  try {
+    forecastCategoryField = await getForecastCategoryFieldName(pool);
+  } catch {
+    forecastCategoryField = 'ForecastCategory';
+  }
+
+  const idList = dealIds.map(id => `'${id}'`).join(',');
+  const query = `
+    SELECT Id, Name, AccountId, Account.Name, ${amountField}, StageName,
+           CloseDate, Probability, ${forecastCategoryField}
+    FROM Opportunity
+    WHERE Id IN (${idList})
+    LIMIT 50
+  `;
+
+  try {
+    const result = await connection.query(query);
+    return (result.records as any[]).map(opp => ({
+      dealId: opp.Id,
+      dealName: opp.Name,
+      accountName: opp.Account?.Name || 'Unknown',
+      accountId: opp.AccountId || '',
+      amount: opp[amountField] || 0,
+      stage: opp.StageName || '',
+      closeDate: opp.CloseDate || '',
+      forecastCategory: opp[forecastCategoryField] || '',
+    }));
+  } catch (error) {
+    console.error('Error fetching watchlist deals:', error);
+    return [];
+  }
+}
+
+// ============================================================================
 // EXECUTIVE HUB QUERIES
 // ============================================================================
 
