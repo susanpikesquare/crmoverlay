@@ -858,6 +858,7 @@ Provide ONLY the JSON response, no additional text.`;
   /**
    * Ask with web search — Anthropic-only.
    * Uses Claude's built-in web search tool to find real-time information.
+   * Always uses claude-sonnet-4-5-20250929 (web search requires a compatible model).
    */
   async askWithWebSearch(prompt: string, maxTokens: number = 2000): Promise<{
     text: string;
@@ -869,42 +870,56 @@ Provide ONLY the JSON response, no additional text.`;
       return { text: 'Web search requires Anthropic Claude to be configured.', citations: [] };
     }
 
-    try {
-      const message = await this.anthropicClient.messages.create({
-        model: this.model || 'claude-sonnet-4-5-20250929',
-        max_tokens: maxTokens,
-        tools: [{ type: 'web_search_20250305' as any, name: 'web_search' } as any],
-        messages: [{ role: 'user', content: prompt }],
-      });
+    // Web search requires a compatible model — always use Sonnet 4.5
+    const webSearchModel = 'claude-sonnet-4-5-20250929';
+    const maxRetries = 2;
 
-      // Parse response — extract text and citations from content blocks
-      let text = '';
-      const citations: Array<{ url: string; title: string }> = [];
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const message = await this.anthropicClient.messages.create({
+          model: webSearchModel,
+          max_tokens: maxTokens,
+          tools: [{ type: 'web_search_20250305', name: 'web_search' } as any],
+          messages: [{ role: 'user', content: prompt }],
+        });
 
-      for (const block of message.content) {
-        if (block.type === 'text') {
-          text = block.text;
-        } else if ((block as any).type === 'web_search_tool_result') {
-          // Extract citations from search results
-          const searchBlock = block as any;
-          if (searchBlock.content && Array.isArray(searchBlock.content)) {
-            for (const result of searchBlock.content) {
-              if (result.type === 'web_search_result' && result.url) {
-                citations.push({
-                  url: result.url,
-                  title: result.title || result.url,
-                });
+        // Parse response — extract text and citations from content blocks
+        let text = '';
+        const citations: Array<{ url: string; title: string }> = [];
+
+        for (const block of message.content) {
+          if (block.type === 'text') {
+            text = block.text;
+          } else if ((block as any).type === 'web_search_tool_result') {
+            const searchBlock = block as any;
+            if (searchBlock.content && Array.isArray(searchBlock.content)) {
+              for (const result of searchBlock.content) {
+                if (result.type === 'web_search_result' && result.url) {
+                  citations.push({
+                    url: result.url,
+                    title: result.title || result.url,
+                  });
+                }
               }
             }
           }
         }
-      }
 
-      return { text, citations };
-    } catch (error: any) {
-      console.error('[AIService] Web search error:', error);
-      return { text: `Web search failed: ${error.message}`, citations: [] };
+        return { text, citations };
+      } catch (error: any) {
+        const status = error?.status || error?.statusCode;
+        // Retry on 503 (overloaded) or 529 (overloaded)
+        if ((status === 503 || status === 529) && attempt < maxRetries) {
+          console.warn(`[AIService] Web search returned ${status}, retrying (attempt ${attempt + 1}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+          continue;
+        }
+        console.error('[AIService] Web search error:', error);
+        return { text: `Web search failed: ${error.message}`, citations: [] };
+      }
     }
+
+    return { text: 'Web search failed after retries.', citations: [] };
   }
 
   /**
