@@ -859,6 +859,7 @@ Provide ONLY the JSON response, no additional text.`;
    * Ask with web search — Anthropic-only.
    * Uses Claude's built-in web search tool to find real-time information.
    * Always uses claude-sonnet-4-5-20250929 (web search requires a compatible model).
+   * Uses a 25-second timeout to stay within Heroku's 30-second request limit.
    */
   async askWithWebSearch(prompt: string, maxTokens: number = 2000): Promise<{
     text: string;
@@ -867,59 +868,55 @@ Provide ONLY the JSON response, no additional text.`;
     await this.ensureInitialized();
 
     if (!this.anthropicClient) {
-      return { text: 'Web search requires Anthropic Claude to be configured.', citations: [] };
+      return { text: 'Web search requires an Anthropic API key. Please configure one in Admin > AI Config.', citations: [] };
     }
 
     // Web search requires a compatible model — always use Sonnet 4.5
     const webSearchModel = 'claude-sonnet-4-5-20250929';
-    const maxRetries = 2;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const message = await this.anthropicClient.messages.create({
-          model: webSearchModel,
-          max_tokens: maxTokens,
-          tools: [{ type: 'web_search_20250305', name: 'web_search' } as any],
-          messages: [{ role: 'user', content: prompt }],
-        });
+    try {
+      // Race the API call against a 90-second timeout
+      const timeoutMs = 90000;
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Web search timed out. Try again or use a simpler query.')), timeoutMs)
+      );
 
-        // Parse response — extract text and citations from content blocks
-        let text = '';
-        const citations: Array<{ url: string; title: string }> = [];
+      const apiPromise = this.anthropicClient.messages.create({
+        model: webSearchModel,
+        max_tokens: maxTokens,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' } as any],
+        messages: [{ role: 'user', content: prompt }],
+      });
 
-        for (const block of message.content) {
-          if (block.type === 'text') {
-            text = block.text;
-          } else if ((block as any).type === 'web_search_tool_result') {
-            const searchBlock = block as any;
-            if (searchBlock.content && Array.isArray(searchBlock.content)) {
-              for (const result of searchBlock.content) {
-                if (result.type === 'web_search_result' && result.url) {
-                  citations.push({
-                    url: result.url,
-                    title: result.title || result.url,
-                  });
-                }
+      const message = await Promise.race([apiPromise, timeoutPromise]);
+
+      // Parse response — extract text and citations from content blocks
+      let text = '';
+      const citations: Array<{ url: string; title: string }> = [];
+
+      for (const block of message.content) {
+        if (block.type === 'text') {
+          text = block.text;
+        } else if ((block as any).type === 'web_search_tool_result') {
+          const searchBlock = block as any;
+          if (searchBlock.content && Array.isArray(searchBlock.content)) {
+            for (const result of searchBlock.content) {
+              if (result.type === 'web_search_result' && result.url) {
+                citations.push({
+                  url: result.url,
+                  title: result.title || result.url,
+                });
               }
             }
           }
         }
-
-        return { text, citations };
-      } catch (error: any) {
-        const status = error?.status || error?.statusCode;
-        // Retry on 503 (overloaded) or 529 (overloaded)
-        if ((status === 503 || status === 529) && attempt < maxRetries) {
-          console.warn(`[AIService] Web search returned ${status}, retrying (attempt ${attempt + 1}/${maxRetries})...`);
-          await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
-          continue;
-        }
-        console.error('[AIService] Web search error:', error);
-        return { text: `Web search failed: ${error.message}`, citations: [] };
       }
-    }
 
-    return { text: 'Web search failed after retries.', citations: [] };
+      return { text, citations };
+    } catch (error: any) {
+      console.error('[AIService] Web search error:', error.message || error);
+      return { text: `Web search failed: ${error.message}`, citations: [] };
+    }
   }
 
   /**

@@ -104,8 +104,40 @@ export default function BuyingSignalConfigTab({ config, onSave }: BuyingSignalCo
     setTestLoading(true);
     setTestResult(null);
     try {
-      const res = await api.post('/api/admin/config/buying-signals/test', { accountName: testAccountName });
-      setTestResult(res.data.data);
+      // Start the async search — returns a jobId to poll
+      const startRes = await api.post('/api/admin/config/buying-signals/test', { accountName: testAccountName });
+      const { jobId } = startRes.data;
+
+      if (!jobId) {
+        // Fallback: synchronous response (old API or immediate result)
+        setTestResult(startRes.data.data || { signals: [], summary: 'No results.', citations: [] });
+        setTestLoading(false);
+        return;
+      }
+
+      // Poll for results every 3 seconds (web search can take 30-60s)
+      const maxAttempts = 30; // Up to 90 seconds
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        try {
+          const pollRes = await api.get(`/api/admin/config/buying-signals/test/${jobId}`);
+          if (pollRes.data.status === 'done') {
+            setTestResult(pollRes.data.data);
+            setTestLoading(false);
+            return;
+          } else if (pollRes.data.status === 'error') {
+            setTestResult({ signals: [], summary: `Error: ${pollRes.data.message || 'Search failed'}`, citations: [] });
+            setTestLoading(false);
+            return;
+          }
+          // Still processing — continue polling
+        } catch {
+          // Poll request failed — keep trying
+        }
+      }
+
+      // Timed out after polling
+      setTestResult({ signals: [], summary: 'Search is taking longer than expected. Please try again.', citations: [] });
     } catch (err: any) {
       setTestResult({ signals: [], summary: `Error: ${err.response?.data?.message || err.message}`, citations: [] });
     } finally {

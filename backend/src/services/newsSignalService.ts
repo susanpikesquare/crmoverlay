@@ -70,6 +70,11 @@ If no relevant news is found, return: {"signals": [], "summary": "No recent buyi
 
   const { text, citations } = await aiService.askWithWebSearch(prompt, 2000);
 
+  // Check if the AI service returned an error/info message (not JSON)
+  if (text.startsWith('Web search requires') || text.startsWith('Web search failed')) {
+    return { signals: [], summary: text, citations: [] };
+  }
+
   // Parse JSON from response
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {

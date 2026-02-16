@@ -976,8 +976,22 @@ router.put('/config/buying-signals', async (req: Request, res: Response) => {
 });
 
 /**
+ * Async test job store — holds in-progress and completed test results.
+ * Jobs expire after 5 minutes to prevent memory leaks.
+ */
+const testJobs = new Map<string, { status: 'processing' | 'done' | 'error'; data?: any; message?: string; createdAt: number }>();
+
+// Cleanup expired jobs every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of testJobs) {
+    if (now - job.createdAt > 5 * 60 * 1000) testJobs.delete(id);
+  }
+}, 5 * 60 * 1000);
+
+/**
  * POST /api/admin/config/buying-signals/test
- * Test news search on a single account name (preview)
+ * Start an async news search test. Returns a jobId to poll for results.
  */
 router.post('/config/buying-signals/test', async (req: Request, res: Response) => {
   try {
@@ -1002,13 +1016,61 @@ router.post('/config/buying-signals/test', async (req: Request, res: Response) =
       }
     }
 
-    const result = await searchNewsForAccount(accountName, prompt, pool);
+    // Generate a job ID and start the search in the background
+    const jobId = `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    testJobs.set(jobId, { status: 'processing', createdAt: Date.now() });
 
-    res.json({ success: true, data: result });
+    // Fire and forget — result stored in testJobs when done
+    searchNewsForAccount(accountName, prompt, pool)
+      .then(result => {
+        testJobs.set(jobId, { status: 'done', data: result, createdAt: Date.now() });
+      })
+      .catch(error => {
+        let message = error.message || 'Unknown error';
+        const status = error?.status || error?.statusCode;
+        if (status === 503 || message.includes('503')) {
+          message = 'The AI service is temporarily overloaded. Please try again in a few minutes.';
+        } else if (status === 401 || message.includes('401') || message.includes('authentication')) {
+          message = 'Anthropic API key is invalid or expired. Please check your key in Admin > AI Config.';
+        } else if (message.includes('not initialized') || message.includes('not configured')) {
+          message = 'An Anthropic API key is required for web search. Please configure one in Admin > AI Config.';
+        }
+        console.error('Error testing news search:', error);
+        testJobs.set(jobId, { status: 'error', message, createdAt: Date.now() });
+      });
+
+    // Return immediately with the job ID — frontend will poll
+    res.json({ success: true, jobId, status: 'processing' });
   } catch (error: any) {
-    console.error('Error testing news search:', error);
+    console.error('Error starting news search test:', error);
     res.status(500).json({ success: false, error: 'Test search failed', message: error.message });
   }
+});
+
+/**
+ * GET /api/admin/config/buying-signals/test/:jobId
+ * Poll for async test results.
+ */
+router.get('/config/buying-signals/test/:jobId', async (req: Request, res: Response) => {
+  const { jobId } = req.params;
+  const job = testJobs.get(jobId);
+
+  if (!job) {
+    return res.status(404).json({ success: false, error: 'Job not found or expired' });
+  }
+
+  if (job.status === 'processing') {
+    return res.json({ success: true, status: 'processing' });
+  }
+
+  if (job.status === 'error') {
+    testJobs.delete(jobId);
+    return res.json({ success: false, status: 'error', message: job.message });
+  }
+
+  // Done — return results and clean up
+  testJobs.delete(jobId);
+  res.json({ success: true, status: 'done', data: job.data });
 });
 
 /**
