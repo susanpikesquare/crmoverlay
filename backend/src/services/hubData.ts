@@ -85,7 +85,7 @@ export interface RenewalAccount extends Account {
 /**
  * Helper function to calculate days between dates
  */
-function daysBetween(date1: string | Date, date2: string | Date): number {
+export function daysBetween(date1: string | Date, date2: string | Date): number {
   const d1 = new Date(date1);
   const d2 = new Date(date2);
   const diffTime = Math.abs(d2.getTime() - d1.getTime());
@@ -96,7 +96,7 @@ function daysBetween(date1: string | Date, date2: string | Date): number {
  * Extract domain/company key from account name for grouping
  * Examples: "Park Hyatt" → "hyatt", "Grand Hyatt" → "hyatt", "TechCorp Inc" → "techcorp"
  */
-function extractDomainKey(accountName: string): string {
+export function extractDomainKey(accountName: string): string {
   // Remove common suffixes
   let cleaned = accountName
     .toLowerCase()
@@ -148,7 +148,7 @@ async function getForecastCategoryFieldName(pool: Pool): Promise<string> {
 /**
  * Group accounts by parent company/domain
  */
-function groupAccountsByDomain(accounts: any[]): any[] {
+export function groupAccountsByDomain(accounts: any[]): any[] {
   const domainMap = new Map<string, any[]>();
 
   // Group accounts by extracted domain
@@ -194,7 +194,7 @@ function groupAccountsByDomain(accounts: any[]): any[] {
  * Calculate qualification score from standard fields
  * Since we're not querying custom MEDDPICC fields, use Probability as primary indicator
  */
-function calculateMEDDPICCScore(opp: Opportunity): number {
+export function calculateMEDDPICCScore(opp: Opportunity): number {
   // Use Probability as the primary indicator (it's a standard field)
   // Convert probability (0-100) to a qualification score
   if (opp.Probability !== undefined && opp.Probability !== null) {
