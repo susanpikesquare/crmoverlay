@@ -65,6 +65,7 @@ interface NewsSignalData {
     url?: string;
     relevance: 'high' | 'medium' | 'low';
     publishedDate?: string;
+    score?: number;
   }>;
   summary: string;
   citations: Array<{ url: string; title: string }>;
@@ -138,7 +139,7 @@ export default function AccountInsightsPanel({ signals, alerts, gongSignals = []
         'product-launch': 'Product Launch',
         'restructuring': 'Restructuring',
       };
-      const relevanceScore = s.relevance === 'high' ? 80 : s.relevance === 'medium' ? 60 : 40;
+      const fallbackScore = s.relevance === 'high' ? 80 : s.relevance === 'medium' ? 60 : 40;
       return {
         id: `news-${ns.accountId}-${s.category}-${idx}`,
         accountId: ns.accountId,
@@ -146,7 +147,7 @@ export default function AccountInsightsPanel({ signals, alerts, gongSignals = []
         signalType: 'new-business' as const,
         headline: s.headline,
         details: s.summary,
-        score: relevanceScore,
+        score: s.score ?? fallbackScore,
         category: newsCategoryMap[s.category] || s.category,
         actionRecommendation: s.url ? `Read more: ${s.url}` : 'Research this development further',
         metrics: {},

@@ -1,14 +1,16 @@
 /**
  * News Signal Service
  *
- * Uses Claude's built-in web search to find news-based buying signals
- * for accounts. Configurable via admin-authored prompts.
+ * Uses Brave Search API to fetch news articles, then Claude (via askWithContext)
+ * to analyze them for buying signals. Scores signals by category weight,
+ * relevance, and recency.
  */
 
 import { Pool } from 'pg';
 import { aiService } from './aiService';
 import { getAccountNameCache, upsertSignals, StoredSignal } from './signalStore';
 import { AdminSettingsService, BuyingSignalConfig } from './adminSettings';
+import { searchBraveNews, formatArticlesForAnalysis } from './braveSearchService';
 
 // --- Types ---
 
@@ -20,6 +22,7 @@ export interface NewsSignal {
   url?: string;
   relevance: 'high' | 'medium' | 'low';
   publishedDate?: string;
+  score?: number;
 }
 
 export interface NewsSearchResult {
@@ -39,27 +42,107 @@ const DEFAULT_NEWS_PROMPT = `Look for recent news that could indicate buying sig
 - Organizational restructuring or digital transformation`;
 
 /**
- * Search for news about a single account using Claude web search.
+ * Compute a signal score based on category weight, relevance, and recency.
+ * Returns 0-100.
+ */
+export function computeSignalScore(
+  category: string,
+  relevance: 'high' | 'medium' | 'low',
+  publishedDate: string | undefined,
+  categoryWeights: Record<string, number>
+): number {
+  // Relevance factor
+  const relevanceFactor = relevance === 'high' ? 1.0 : relevance === 'medium' ? 0.6 : 0.3;
+
+  // Category weight from admin config (default 1.0)
+  const categoryWeight = categoryWeights[category] ?? 1.0;
+
+  // Recency factor based on published date
+  let recencyFactor = 0.4; // default for unknown dates
+  if (publishedDate) {
+    const daysAgo = Math.max(0, (Date.now() - new Date(publishedDate).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysAgo <= 1) recencyFactor = 1.0;
+    else if (daysAgo <= 7) recencyFactor = 0.8;
+    else if (daysAgo <= 14) recencyFactor = 0.6;
+    else if (daysAgo <= 30) recencyFactor = 0.4;
+    else recencyFactor = 0.2;
+  }
+
+  return Math.round(categoryWeight * relevanceFactor * recencyFactor * 100);
+}
+
+/**
+ * Build a map of category name -> weight from admin config.
+ */
+export function buildCategoryWeightMap(config: BuyingSignalConfig): Record<string, number> {
+  const weights: Record<string, number> = {};
+  for (const cat of config.signalCategories || []) {
+    if (cat.active) {
+      weights[cat.name] = cat.weight ?? 1.0;
+      // Also map by id for flexible matching
+      weights[cat.id] = cat.weight ?? 1.0;
+    }
+  }
+  return weights;
+}
+
+/**
+ * Search for news about a single account using Brave Search + AI analysis.
  */
 export async function searchNewsForAccount(
   accountName: string,
   adminPrompt: string,
-  _pool: Pool
+  pool: Pool
 ): Promise<NewsSearchResult> {
-  // Build a concise prompt to minimize input tokens (rate-limited APIs)
+  // Load config for Brave API key and category weights
+  const adminSettings = new AdminSettingsService(pool);
+  let config: BuyingSignalConfig;
+  try {
+    config = await adminSettings.getBuyingSignalConfig();
+  } catch {
+    config = getDefaultConfig();
+  }
+
+  const braveApiKey = config.braveApiKey;
+  if (!braveApiKey) {
+    return { signals: [], summary: 'Brave Search API key not configured. Add it in Admin > Buying Signals.', citations: [] };
+  }
+
+  // Step 1: Fetch articles from Brave Search
+  let braveResult;
+  try {
+    braveResult = await searchBraveNews(accountName, braveApiKey);
+  } catch (error: any) {
+    console.error(`[NewsSignals] Brave Search error for "${accountName}":`, error.message);
+    return { signals: [], summary: `News search failed: ${error.message}`, citations: [] };
+  }
+
+  if (braveResult.articles.length === 0) {
+    return { signals: [], summary: `No recent news found for "${accountName}".`, citations: [] };
+  }
+
+  // Build citations from Brave results
+  const citations = braveResult.articles.map(a => ({ url: a.url, title: a.title }));
+
+  // Step 2: Format articles and ask AI to analyze
+  const articlesContext = formatArticlesForAnalysis(braveResult.articles);
+
   const signalHint = adminPrompt
     ? `Focus on: ${adminPrompt.substring(0, 500)}`
     : 'Focus on: expansions, executive hires, funding, partnerships, product launches';
 
-  const prompt = `Search recent news about "${accountName}". ${signalHint}
+  const prompt = `Analyze these news articles about "${accountName}" for buying signals.
+${signalHint}
 
-Return JSON only: {"signals":[{"type":"news","category":"string","headline":"string","summary":"string","url":"string","relevance":"high|medium|low"}],"summary":"one sentence"}
-If nothing found: {"signals":[],"summary":"No signals."}`;
+ARTICLES:
+${articlesContext}
+Return JSON only: {"signals":[{"type":"news","category":"string","headline":"string","summary":"string","url":"string","relevance":"high|medium|low","publishedDate":"YYYY-MM-DD or null"}],"summary":"one sentence"}
+If no relevant signals: {"signals":[],"summary":"No signals found."}`;
 
-  const { text, citations } = await aiService.askWithWebSearch(prompt, 1024);
+  const text = await aiService.askWithContext(prompt, 1024);
 
-  // Check if the AI service returned an error/info message (not JSON)
-  if (text.startsWith('Web search requires') || text.startsWith('Web search failed')) {
+  // Check if AI returned an error message
+  if (text.startsWith('AI is not configured')) {
     return { signals: [], summary: text, citations: [] };
   }
 
@@ -71,17 +154,30 @@ If nothing found: {"signals":[],"summary":"No signals."}`;
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
+    const categoryWeights = buildCategoryWeightMap(config);
+
     const signals: NewsSignal[] = Array.isArray(parsed.signals)
-      ? parsed.signals.map((s: any) => ({
-          type: 'news' as const,
-          category: s.category || 'other',
-          headline: s.headline || 'News detected',
-          summary: s.summary || '',
-          url: s.url || undefined,
-          relevance: ['high', 'medium', 'low'].includes(s.relevance) ? s.relevance : 'medium',
-          publishedDate: s.publishedDate || undefined,
-        }))
+      ? parsed.signals.map((s: any) => {
+          const relevance: 'high' | 'medium' | 'low' =
+            ['high', 'medium', 'low'].includes(s.relevance) ? s.relevance : 'medium';
+          const publishedDate = s.publishedDate || undefined;
+          const score = computeSignalScore(s.category || 'other', relevance, publishedDate, categoryWeights);
+
+          return {
+            type: 'news' as const,
+            category: s.category || 'other',
+            headline: s.headline || 'News detected',
+            summary: s.summary || '',
+            url: s.url || undefined,
+            relevance,
+            publishedDate,
+            score,
+          };
+        })
       : [];
+
+    // Sort by score descending
+    signals.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
     return {
       signals,

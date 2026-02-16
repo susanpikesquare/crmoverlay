@@ -8,11 +8,13 @@ interface SignalCategory {
   description: string;
   keywords: string[];
   active: boolean;
+  weight?: number;
 }
 
 interface BuyingSignalConfig {
   enabled: boolean;
   newsSearchEnabled: boolean;
+  braveApiKey?: string;
   schedule: string;
   maxAccountsPerRun: number;
   newsPromptTemplate: string;
@@ -30,6 +32,7 @@ interface TestResult {
     url?: string;
     relevance: string;
     publishedDate?: string;
+    score?: number;
   }>;
   summary: string;
   citations: Array<{ url: string; title: string }>;
@@ -60,6 +63,7 @@ export default function BuyingSignalConfigTab({ config, onSave }: BuyingSignalCo
   const initialConfig: BuyingSignalConfig = config?.buyingSignalConfig || {
     enabled: true,
     newsSearchEnabled: false,
+    braveApiKey: '',
     schedule: '0 2 * * *',
     maxAccountsPerRun: 30,
     newsPromptTemplate: '',
@@ -229,9 +233,9 @@ export default function BuyingSignalConfigTab({ config, onSave }: BuyingSignalCo
           <div className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h4 className="text-sm font-semibold text-gray-900">News Search (Claude Web Search)</h4>
+                <h4 className="text-sm font-semibold text-gray-900">News Search (Brave + AI Analysis)</h4>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Use Claude's built-in web search to find news-based buying signals. Requires Anthropic API key.
+                  Use Brave Search API to find news, then AI to analyze for buying signals. Works with any AI provider.
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -244,6 +248,25 @@ export default function BuyingSignalConfigTab({ config, onSave }: BuyingSignalCo
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
             </div>
+
+            {formData.newsSearchEnabled && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Brave Search API Key</label>
+                <input
+                  type="password"
+                  value={formData.braveApiKey || ''}
+                  onChange={e => setFormData(prev => ({ ...prev, braveApiKey: e.target.value }))}
+                  placeholder="BSA..."
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Free tier: ~1,000 queries/month.{' '}
+                  <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    Get free API key
+                  </a>
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Schedule */}
@@ -407,6 +430,15 @@ export default function BuyingSignalConfigTab({ config, onSave }: BuyingSignalCo
                               <span className={`px-1.5 py-0.5 text-xs rounded-full ${getRelevanceBadge(sig.relevance)}`}>
                                 {sig.relevance}
                               </span>
+                              {sig.score !== undefined && (
+                                <span className={`px-1.5 py-0.5 text-xs font-bold rounded border ${
+                                  sig.score >= 70 ? 'bg-green-50 text-green-700 border-green-200' :
+                                  sig.score >= 40 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                  'bg-gray-50 text-gray-700 border-gray-200'
+                                }`}>
+                                  {sig.score}
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs text-gray-600">{sig.summary}</p>
                             <div className="flex items-center gap-2 mt-1">

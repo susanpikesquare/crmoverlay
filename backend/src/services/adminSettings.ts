@@ -105,6 +105,7 @@ export type AccountTierOverrides = Record<string, AccountTierOverride>;
 export interface BuyingSignalConfig {
   enabled: boolean;
   newsSearchEnabled: boolean;
+  braveApiKey?: string;                // Brave Search API key (free tier)
   schedule: string;                    // cron expression, default '0 2 * * *'
   maxAccountsPerRun: number;           // default 30
   newsPromptTemplate: string;          // Admin-authored prompt for news search
@@ -114,6 +115,7 @@ export interface BuyingSignalConfig {
     description: string;               // What to look for
     keywords: string[];                // Search keywords
     active: boolean;
+    weight?: number;                   // Scoring weight, default 1.0
   }>;
   lastRunAt?: string;                  // ISO timestamp of last batch run
   lastRunStatus?: string;              // 'success' | 'partial' | 'error'
@@ -577,6 +579,7 @@ export class AdminSettingsService {
     return {
       enabled: config.enabled ?? defaults.enabled,
       newsSearchEnabled: config.newsSearchEnabled ?? defaults.newsSearchEnabled,
+      braveApiKey: config.braveApiKey,
       schedule: config.schedule ?? defaults.schedule,
       maxAccountsPerRun: config.maxAccountsPerRun ?? defaults.maxAccountsPerRun,
       newsPromptTemplate: config.newsPromptTemplate ?? defaults.newsPromptTemplate,
