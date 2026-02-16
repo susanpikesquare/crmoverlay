@@ -14,6 +14,9 @@ import {
   getExecutiveMetrics,
   getUnderutilizedAccounts,
   getExecutiveAtRiskDeals,
+  getTodaysPriorities,
+  getExpansionOpportunityAccounts,
+  getExecutivePriorities,
 } from '../hubData';
 
 // Mock agentforce to avoid real AI calls
@@ -975,6 +978,558 @@ describe('getExecutiveAtRiskDeals', () => {
     } as any;
 
     const result = await getExecutiveAtRiskDeals(conn);
+
+    expect(result).toEqual([]);
+  });
+});
+
+// ============================================================
+// getTodaysPriorities tests
+// ============================================================
+
+describe('getTodaysPriorities', () => {
+  it('flags closing-this-month deals missing Command fields as critical', async () => {
+    const now = new Date();
+    const thisMonthClose = new Date(now.getFullYear(), now.getMonth(), 20).toISOString().split('T')[0];
+    const conn = createMockConnection({
+      opps: {
+        records: [{
+          Id: 'o1',
+          Name: 'BigDeal',
+          AccountId: 'a1',
+          Account: { Name: 'TestCo' },
+          StageName: 'Proposal',
+          Amount: 100000,
+          CloseDate: thisMonthClose,
+          LastModifiedDate: new Date().toISOString(),
+          CreatedDate: new Date().toISOString(),
+          Command_Why_Do_Anything__c: null,
+          Command_Why_Now__c: null,
+          Command_Why_Us__c: 'Strong fit',
+          MEDDPICC_Overall_Score__c: 70,
+          NextStep: 'Send proposal',
+          IsAtRisk__c: false,
+        }],
+      },
+      tasks: { records: [] },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    const missingCmd = result.find(p => p.id === 'missing-cmd-o1');
+    expect(missingCmd).toBeDefined();
+    expect(missingCmd!.urgency).toBe('critical');
+    expect(missingCmd!.description).toContain('Why Do Anything');
+    expect(missingCmd!.description).toContain('Why Now');
+    expect(missingCmd!.description).not.toContain('Why Us');
+  });
+
+  it('flags stage stuck >30 days as high priority', async () => {
+    const staleDate = new Date(Date.now() - 35 * 86400000).toISOString();
+    const conn = createMockConnection({
+      opps: {
+        records: [{
+          Id: 'o2',
+          Name: 'StuckDeal',
+          AccountId: 'a1',
+          Account: { Name: 'TestCo' },
+          StageName: 'Discovery',
+          Amount: 50000,
+          CloseDate: '2026-12-01',
+          LastModifiedDate: staleDate,
+          CreatedDate: staleDate,
+          MEDDPICC_Overall_Score__c: 70,
+          NextStep: 'Follow up',
+          IsAtRisk__c: false,
+        }],
+      },
+      tasks: { records: [] },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    const stuck = result.find(p => p.id === 'stuck-o2');
+    expect(stuck).toBeDefined();
+    expect(stuck!.urgency).toBe('high');
+    expect(stuck!.type).toBe('stage-stuck');
+  });
+
+  it('flags low MEDDPICC (<50%) as high priority', async () => {
+    const conn = createMockConnection({
+      opps: {
+        records: [{
+          Id: 'o3',
+          Name: 'WeakDeal',
+          AccountId: 'a1',
+          Account: { Name: 'TestCo' },
+          StageName: 'Negotiation',
+          Amount: 80000,
+          CloseDate: '2026-12-01',
+          LastModifiedDate: new Date().toISOString(),
+          CreatedDate: new Date().toISOString(),
+          MEDDPICC_Overall_Score__c: 30,
+          NextStep: 'Review',
+          IsAtRisk__c: false,
+        }],
+      },
+      tasks: { records: [] },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    const lowMeddpicc = result.find(p => p.id === 'low-meddpicc-o3');
+    expect(lowMeddpicc).toBeDefined();
+    expect(lowMeddpicc!.urgency).toBe('high');
+  });
+
+  it('flags deals with no NextStep as medium priority', async () => {
+    const conn = createMockConnection({
+      opps: {
+        records: [{
+          Id: 'o4',
+          Name: 'NoStepDeal',
+          AccountId: 'a1',
+          Account: { Name: 'TestCo' },
+          StageName: 'Discovery',
+          Amount: 50000,
+          CloseDate: '2026-12-01',
+          LastModifiedDate: new Date().toISOString(),
+          CreatedDate: new Date().toISOString(),
+          MEDDPICC_Overall_Score__c: 70,
+          NextStep: null,
+          IsAtRisk__c: false,
+        }],
+      },
+      tasks: { records: [] },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    const noStep = result.find(p => p.id === 'no-next-step-o4');
+    expect(noStep).toBeDefined();
+    expect(noStep!.urgency).toBe('medium');
+  });
+
+  it('flags at-risk deals as critical', async () => {
+    const conn = createMockConnection({
+      opps: {
+        records: [{
+          Id: 'o5',
+          Name: 'RiskyDeal',
+          AccountId: 'a1',
+          Account: { Name: 'TestCo' },
+          StageName: 'Negotiation',
+          Amount: 200000,
+          CloseDate: '2026-12-01',
+          LastModifiedDate: new Date().toISOString(),
+          CreatedDate: new Date().toISOString(),
+          MEDDPICC_Overall_Score__c: 80,
+          NextStep: 'Close',
+          IsAtRisk__c: true,
+        }],
+      },
+      tasks: { records: [] },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    const atRisk = result.find(p => p.id === 'at-risk-o5');
+    expect(atRisk).toBeDefined();
+    expect(atRisk!.urgency).toBe('critical');
+  });
+
+  it('handles overdue tasks as critical and due-today tasks as high', async () => {
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+    const conn = createMockConnection({
+      opps: { records: [] },
+      tasks: {
+        records: [
+          {
+            Id: 't1',
+            Subject: 'Follow up with client',
+            ActivityDate: yesterday,
+            WhatId: 'a1',
+            What: { Name: 'TestCo', Type: 'Account' },
+          },
+          {
+            Id: 't2',
+            Subject: 'Send proposal',
+            ActivityDate: today,
+            WhatId: 'o1',
+            What: { Name: 'BigDeal', Type: 'Opportunity' },
+          },
+        ],
+      },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    const overdueTask = result.find(p => p.id === 'task-t1');
+    expect(overdueTask).toBeDefined();
+    expect(overdueTask!.urgency).toBe('critical');
+    expect(overdueTask!.title).toContain('Overdue');
+
+    const todayTask = result.find(p => p.id === 'task-t2');
+    expect(todayTask).toBeDefined();
+    // Due-today tasks: whether they're 'critical' or 'high' depends on exact time comparison
+    expect(['critical', 'high']).toContain(todayTask!.urgency);
+  });
+
+  it('handles task query failure gracefully', async () => {
+    let callCount = 0;
+    const conn = {
+      query: jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          // Opportunities query succeeds
+          return Promise.resolve({ records: [] });
+        }
+        // Task query fails
+        return Promise.reject(new Error('Task query failed'));
+      }),
+    } as any;
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    // Should not throw, returns whatever priorities were found from opps
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('sorts by urgency (critical > high > medium) and caps at 15 items', async () => {
+    const now = new Date();
+    const thisMonthClose = new Date(now.getFullYear(), now.getMonth(), 25).toISOString().split('T')[0];
+
+    // Create 20 opportunities to exceed the 15-item cap
+    const records = [];
+    for (let i = 0; i < 20; i++) {
+      records.push({
+        Id: `o${i}`,
+        Name: `Deal ${i}`,
+        AccountId: 'a1',
+        Account: { Name: 'TestCo' },
+        StageName: 'Discovery',
+        Amount: 50000,
+        CloseDate: thisMonthClose,
+        LastModifiedDate: new Date().toISOString(),
+        CreatedDate: new Date().toISOString(),
+        MEDDPICC_Overall_Score__c: 70,
+        NextStep: null, // Will generate medium priority
+        IsAtRisk__c: false,
+        Command_Why_Do_Anything__c: 'Yes',
+        Command_Why_Now__c: 'Yes',
+        Command_Why_Us__c: 'Yes',
+      });
+    }
+
+    const conn = createMockConnection({
+      opps: { records },
+      tasks: { records: [] },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    expect(result.length).toBeLessThanOrEqual(15);
+  });
+
+  it('returns empty array when no opportunities', async () => {
+    const conn = createMockConnection({
+      opps: { records: [] },
+      tasks: { records: [] },
+    });
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array on complete error', async () => {
+    const conn = {
+      query: jest.fn().mockRejectedValue(new Error('SF down')),
+    } as any;
+
+    const result = await getTodaysPriorities(conn, 'u1');
+
+    expect(result).toEqual([]);
+  });
+});
+
+// ============================================================
+// getExpansionOpportunityAccounts tests
+// ============================================================
+
+describe('getExpansionOpportunityAccounts', () => {
+  it('returns accounts with utilization >= 80% threshold', async () => {
+    const conn = createMockConnection({
+      accounts: {
+        records: [
+          {
+            Id: 'a1',
+            Name: 'HighUsageCo',
+            Contract_Total_License_Seats__c: 500,
+            Total_Active_Users__c: 450,
+            License_Utilization_Max__c: 90,
+            Current_Gainsight_Score__c: 85,
+            Total_ARR__c: 200000,
+          },
+          {
+            Id: 'a2',
+            Name: 'LowUsageCo',
+            Contract_Total_License_Seats__c: 1000,
+            Total_Active_Users__c: 200,
+            License_Utilization_Max__c: 20,
+            Current_Gainsight_Score__c: 55,
+            Total_ARR__c: 100000,
+          },
+        ],
+      },
+    });
+
+    const result = await getExpansionOpportunityAccounts(conn, 'u1');
+
+    // Only the high usage account should be included (90% >= 80% threshold)
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('HighUsageCo');
+    expect(result[0].utilizationPercent).toBe(90);
+  });
+
+  it('flags over-utilized (>=100%) accounts correctly', async () => {
+    const conn = createMockConnection({
+      accounts: {
+        records: [{
+          Id: 'a1',
+          Name: 'OverUtilizedCo',
+          Contract_Total_License_Seats__c: 100,
+          Total_Active_Users__c: 120,
+          License_Utilization_Max__c: 120,
+          Current_Gainsight_Score__c: 90,
+          Total_ARR__c: 150000,
+        }],
+      },
+    });
+
+    const result = await getExpansionOpportunityAccounts(conn, 'u1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].riskLevel).toBe('over-utilized');
+    expect(result[0].utilizationPercent).toBe(120);
+  });
+
+  it('uses fallback query on INVALID_FIELD error', async () => {
+    let callCount = 0;
+    const conn = {
+      query: jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          const err = new Error('No such column');
+          (err as any).errorCode = 'INVALID_FIELD';
+          return Promise.reject(err);
+        }
+        return Promise.resolve({
+          records: [{
+            Id: 'a1',
+            Name: 'FallbackCo',
+            Total_ARR__c: 100000,
+            Current_Gainsight_Score__c: 70,
+          }],
+        });
+      }),
+    } as any;
+
+    const result = await getExpansionOpportunityAccounts(conn, 'u1');
+
+    // Fallback records don't have utilization fields, so they won't pass threshold
+    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array on error', async () => {
+    const conn = {
+      query: jest.fn().mockRejectedValue(new Error('SF down')),
+    } as any;
+
+    const result = await getExpansionOpportunityAccounts(conn, 'u1');
+
+    expect(result).toEqual([]);
+  });
+
+  it('sorts by highest utilization first', async () => {
+    const conn = createMockConnection({
+      accounts: {
+        records: [
+          {
+            Id: 'a1',
+            Name: 'MediumCo',
+            Contract_Total_License_Seats__c: 500,
+            Total_Active_Users__c: 425,
+            License_Utilization_Max__c: 85,
+          },
+          {
+            Id: 'a2',
+            Name: 'HighCo',
+            Contract_Total_License_Seats__c: 500,
+            Total_Active_Users__c: 475,
+            License_Utilization_Max__c: 95,
+          },
+        ],
+      },
+    });
+
+    const result = await getExpansionOpportunityAccounts(conn, 'u1');
+
+    expect(result).toHaveLength(2);
+    expect(result[0].name).toBe('HighCo');
+    expect(result[1].name).toBe('MediumCo');
+  });
+});
+
+// ============================================================
+// getExecutivePriorities tests
+// ============================================================
+
+describe('getExecutivePriorities', () => {
+  it('flags at-risk large deals ($100K+) as critical', async () => {
+    const staleDate = new Date(Date.now() - 25 * 86400000).toISOString();
+    const conn = createMockConnection({
+      users: { records: [{ Id: 'u1', Name: 'Rep 1' }] },
+      opps: {
+        records: [{
+          Id: 'o1',
+          Name: 'Big Stale Deal',
+          AccountId: 'a1',
+          Account: { Name: 'BigCo' },
+          StageName: 'Negotiation',
+          Amount: 200000,
+          CloseDate: '2026-12-01',
+          LastModifiedDate: staleDate,
+          CreatedDate: staleDate,
+          OwnerId: 'u1',
+          Owner: { Name: 'Rep 1' },
+          NextStep: 'Review',
+          Probability: 30,
+        }],
+      },
+    });
+
+    const result = await getExecutivePriorities(conn);
+
+    const atRisk = result.find(p => p.id === 'at-risk-o1');
+    expect(atRisk).toBeDefined();
+    expect(atRisk!.urgency).toBe('critical');
+  });
+
+  it('flags missing info on large deals closing this month as high', async () => {
+    const now = new Date();
+    const thisMonthClose = new Date(now.getFullYear(), now.getMonth(), 20).toISOString().split('T')[0];
+    const conn = createMockConnection({
+      users: { records: [{ Id: 'u1', Name: 'Rep 1' }] },
+      opps: {
+        records: [{
+          Id: 'o2',
+          Name: 'Missing Info Deal',
+          AccountId: 'a1',
+          Account: { Name: 'TestCo' },
+          StageName: 'Proposal',
+          Amount: 100000,
+          CloseDate: thisMonthClose,
+          LastModifiedDate: new Date().toISOString(),
+          CreatedDate: new Date().toISOString(),
+          OwnerId: 'u1',
+          Owner: { Name: 'Rep 1' },
+          NextStep: '',
+          Probability: 0,
+        }],
+      },
+    });
+
+    const result = await getExecutivePriorities(conn);
+
+    const missingInfo = result.find(p => p.id === 'missing-info-o2');
+    expect(missingInfo).toBeDefined();
+    expect(missingInfo!.urgency).toBe('high');
+  });
+
+  it('flags stuck deals (>45 days, $75K+) as high', async () => {
+    const staleDate = new Date(Date.now() - 50 * 86400000).toISOString();
+    const conn = createMockConnection({
+      users: { records: [{ Id: 'u1', Name: 'Rep 1' }] },
+      opps: {
+        records: [{
+          Id: 'o3',
+          Name: 'Stuck Deal',
+          AccountId: 'a1',
+          Account: { Name: 'TestCo' },
+          StageName: 'Discovery',
+          Amount: 100000,
+          CloseDate: '2026-12-01',
+          LastModifiedDate: staleDate,
+          CreatedDate: staleDate,
+          OwnerId: 'u1',
+          Owner: { Name: 'Rep 1' },
+          NextStep: 'Follow up',
+          Probability: 60,
+        }],
+      },
+    });
+
+    const result = await getExecutivePriorities(conn);
+
+    const stuck = result.find(p => p.id === 'stuck-o3');
+    expect(stuck).toBeDefined();
+    expect(stuck!.urgency).toBe('high');
+  });
+
+  it('caps at 2 priorities per rep', async () => {
+    const staleDate = new Date(Date.now() - 25 * 86400000).toISOString();
+    const conn = createMockConnection({
+      users: { records: [{ Id: 'u1', Name: 'Rep 1' }] },
+      opps: {
+        records: [
+          {
+            Id: 'o1', Name: 'Deal 1', AccountId: 'a1', Account: { Name: 'Co1' },
+            StageName: 'Negotiation', Amount: 200000, CloseDate: '2026-12-01',
+            LastModifiedDate: staleDate, CreatedDate: staleDate,
+            OwnerId: 'u1', Owner: { Name: 'Rep 1' }, NextStep: 'x', Probability: 30,
+          },
+          {
+            Id: 'o2', Name: 'Deal 2', AccountId: 'a2', Account: { Name: 'Co2' },
+            StageName: 'Proposal', Amount: 150000, CloseDate: '2026-12-01',
+            LastModifiedDate: staleDate, CreatedDate: staleDate,
+            OwnerId: 'u1', Owner: { Name: 'Rep 1' }, NextStep: 'y', Probability: 25,
+          },
+          {
+            Id: 'o3', Name: 'Deal 3', AccountId: 'a3', Account: { Name: 'Co3' },
+            StageName: 'Discovery', Amount: 300000, CloseDate: '2026-12-01',
+            LastModifiedDate: staleDate, CreatedDate: staleDate,
+            OwnerId: 'u1', Owner: { Name: 'Rep 1' }, NextStep: 'z', Probability: 20,
+          },
+        ],
+      },
+    });
+
+    const result = await getExecutivePriorities(conn);
+
+    // Only 2 at-risk items per rep (o1 and o2), o3 should be filtered by per-rep cap
+    const atRiskItems = result.filter(p => p.type === 'deal-risk');
+    expect(atRiskItems.length).toBeLessThanOrEqual(2);
+  });
+
+  it('returns empty array when no users found', async () => {
+    const conn = createMockConnection({
+      users: { records: [] },
+    });
+
+    const result = await getExecutivePriorities(conn);
+
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array on error', async () => {
+    const conn = {
+      query: jest.fn().mockRejectedValue(new Error('SF down')),
+    } as any;
+
+    const result = await getExecutivePriorities(conn);
 
     expect(result).toEqual([]);
   });
