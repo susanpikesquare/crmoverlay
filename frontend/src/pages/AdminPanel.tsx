@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 
-// Tab Components (will create these next)
+// Tab Components
 import RiskRulesTab from '../components/admin/RiskRulesTab';
 import PriorityScoringTab from '../components/admin/PriorityScoringTab';
 import FieldMappingsTab from '../components/admin/FieldMappingsTab';
@@ -15,89 +15,101 @@ import AIConfigTab from '../components/admin/AIConfigTab';
 import OpportunityStagesTab from '../components/admin/OpportunityStagesTab';
 import ForecastSettingsTab from '../components/admin/ForecastSettingsTab';
 import OpportunityDetailTab from '../components/admin/OpportunityDetailTab';
+
 type TabType = 'risk-rules' | 'priority-scoring' | 'field-mappings' | 'opportunity-stages' | 'opportunity-detail' | 'forecast-settings' | 'role-mappings' | 'display-settings' | 'hub-layout' | 'ai-config' | 'config-management';
 
 interface TabConfig {
   id: TabType;
   label: string;
   icon: string;
-  description: string;
 }
 
-const TABS: TabConfig[] = [
+interface SidebarGroup {
+  id: string;
+  label: string;
+  icon: string;
+  tabs: TabConfig[];
+}
+
+const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
-    id: 'risk-rules',
-    label: 'Risk Rules',
-    icon: '⚠️',
-    description: 'Configure automated risk detection rules for accounts and opportunities',
-  },
-  {
-    id: 'priority-scoring',
-    label: 'Priority Scoring',
+    id: 'scoring-risk',
+    label: 'Risk & Scoring',
     icon: '🎯',
-    description: 'Manage priority score components and thresholds',
+    tabs: [
+      { id: 'risk-rules', label: 'Risk Rules', icon: '⚠️' },
+      { id: 'priority-scoring', label: 'Priority Scoring', icon: '🎯' },
+      { id: 'forecast-settings', label: 'Forecast Settings', icon: '📊' },
+    ],
   },
   {
-    id: 'field-mappings',
-    label: 'Field Mappings',
-    icon: '🔗',
-    description: 'Map Salesforce custom fields to application concepts',
-  },
-  {
-    id: 'opportunity-stages',
-    label: 'Opportunity Stages',
-    icon: '📊',
-    description: 'Configure which sales stages appear in opportunity filters',
-  },
-  {
-    id: 'opportunity-detail',
-    label: 'Opportunity Detail',
+    id: 'opportunities',
+    label: 'Opportunities',
     icon: '📋',
-    description: 'Configure which sections and fields display on opportunity detail pages',
+    tabs: [
+      { id: 'opportunity-stages', label: 'Stages', icon: '📊' },
+      { id: 'opportunity-detail', label: 'Detail Layout', icon: '📋' },
+    ],
   },
   {
-    id: 'forecast-settings',
-    label: 'Forecast Settings',
-    icon: '📊',
-    description: 'Configure forecast probabilities and stage weights',
+    id: 'layout-branding',
+    label: 'Layout & Branding',
+    icon: '🎨',
+    tabs: [
+      { id: 'field-mappings', label: 'Field Mappings', icon: '🔗' },
+      { id: 'display-settings', label: 'Display & Branding', icon: '⚙️' },
+      { id: 'hub-layout', label: 'Hub Layout', icon: '🏠' },
+    ],
   },
   {
-    id: 'role-mappings',
-    label: 'User Roles',
+    id: 'users-integrations',
+    label: 'Users & Integrations',
     icon: '👥',
-    description: 'Configure Salesforce profile to application role mappings',
+    tabs: [
+      { id: 'role-mappings', label: 'User Roles', icon: '👥' },
+      { id: 'ai-config', label: 'AI Configuration', icon: '🤖' },
+    ],
   },
   {
-    id: 'display-settings',
-    label: 'Display & Branding',
-    icon: '⚙️',
-    description: 'Display preferences, pagination, and logo/branding',
-  },
-  {
-    id: 'hub-layout',
-    label: 'Hub Layout',
-    icon: '🏠',
-    description: 'Customize hub page sections and add custom links',
-  },
-  {
-    id: 'ai-config',
-    label: 'AI Configuration',
-    icon: '🤖',
-    description: 'Configure AI provider API keys for intelligent features',
-  },
-  {
-    id: 'config-management',
-    label: 'Configuration',
+    id: 'system',
+    label: 'System',
     icon: '💾',
-    description: 'Import, export, and reset configuration',
+    tabs: [
+      { id: 'config-management', label: 'Import / Export', icon: '💾' },
+    ],
   },
 ];
+
+// Flat lookup for tab metadata
+const ALL_TABS: TabConfig[] = SIDEBAR_GROUPS.flatMap(g => g.tabs);
+
+// Find which group a tab belongs to
+function groupForTab(tabId: TabType): string {
+  return SIDEBAR_GROUPS.find(g => g.tabs.some(t => t.id === tabId))?.id || '';
+}
 
 export default function AdminPanel() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>('risk-rules');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set([groupForTab('risk-rules')]));
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  const handleTabClick = (tabId: TabType) => {
+    setActiveTab(tabId);
+    // Auto-expand the group when a tab is selected
+    const gId = groupForTab(tabId);
+    if (gId) setExpandedGroups(prev => new Set(prev).add(gId));
+  };
 
   // Fetch current user to verify admin access
   const { data: userData, isLoading: isLoadingUser } = useQuery({
@@ -166,7 +178,8 @@ export default function AdminPanel() {
     );
   }
 
-  const currentTab = TABS.find(t => t.id === activeTab)!;
+  const currentTab = ALL_TABS.find(t => t.id === activeTab)!;
+  const currentGroup = SIDEBAR_GROUPS.find(g => g.tabs.some(t => t.id === activeTab));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -209,69 +222,75 @@ export default function AdminPanel() {
 
       <div className="flex">
         {/* Sidebar Navigation */}
-        <aside className="w-64 bg-white border-r border-gray-200 min-h-[calc(100vh-81px)]">
-          <nav className="p-4">
-            <div className="space-y-1">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`
-                    w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-colors
-                    ${activeTab === tab.id
-                      ? 'bg-blue-50 text-blue-700 font-medium'
-                      : 'text-gray-700 hover:bg-gray-50'
-                    }
-                  `}
-                >
-                  <span className="text-xl mt-0.5">{tab.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">{tab.label}</div>
-                    <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">
-                      {tab.description}
+        <aside className="w-56 bg-white border-r border-gray-200 min-h-[calc(100vh-81px)]">
+          <nav className="py-3">
+            {SIDEBAR_GROUPS.map((group) => {
+              const isExpanded = expandedGroups.has(group.id);
+              const hasActiveTab = group.tabs.some(t => t.id === activeTab);
+
+              return (
+                <div key={group.id} className="mb-0.5">
+                  {/* Group header */}
+                  <button
+                    onClick={() => toggleGroup(group.id)}
+                    className={`w-full flex items-center gap-2 px-4 py-2 text-left transition-colors ${
+                      hasActiveTab ? 'text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <svg
+                      className={`w-3 h-3 text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-xs font-semibold uppercase tracking-wider">{group.label}</span>
+                  </button>
+
+                  {/* Tabs within group */}
+                  {isExpanded && (
+                    <div className="ml-5 border-l border-gray-200">
+                      {group.tabs.map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => handleTabClick(tab.id)}
+                          className={`w-full flex items-center gap-2 pl-4 pr-3 py-1.5 text-left text-sm transition-colors ${
+                            activeTab === tab.id
+                              ? 'text-blue-700 font-medium bg-blue-50 border-l-2 border-blue-600 -ml-px'
+                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                  {activeTab === tab.id && (
-                    <div className="w-1 h-full bg-blue-600 rounded-full absolute right-0"></div>
                   )}
-                </button>
-              ))}
-            </div>
+                </div>
+              );
+            })}
           </nav>
 
           {/* Configuration Info */}
-          <div className="p-4 mt-4 border-t border-gray-200">
-            <div className="text-xs text-gray-500">
-              <div className="font-medium text-gray-700 mb-2">Configuration Info</div>
-              {configData.lastModified ? (
-                <>
-                  <div className="mb-1">
-                    Last modified by:
-                    <div className="font-medium text-gray-700">{configData.lastModified.by}</div>
-                  </div>
-                  <div>
-                    Date:
-                    <div className="font-medium text-gray-700">
-                      {new Date(configData.lastModified.date).toLocaleString()}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-gray-500">No modifications yet</div>
-              )}
+          {configData.lastModified && (
+            <div className="px-4 py-3 border-t border-gray-200">
+              <div className="text-xs text-gray-400">
+                Last saved by <span className="text-gray-600">{configData.lastModified.by}</span>
+                <br />
+                {new Date(configData.lastModified.date).toLocaleDateString()}
+              </div>
             </div>
-          </div>
+          )}
         </aside>
 
         {/* Main Content Area */}
         <main className="flex-1 p-6">
           {/* Tab Header */}
           <div className="mb-6">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-3xl">{currentTab.icon}</span>
-              <h2 className="text-2xl font-bold text-gray-900">{currentTab.label}</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{currentGroup?.label}</span>
+              <span className="text-gray-300">/</span>
+              <h2 className="text-lg font-bold text-gray-900">{currentTab.label}</h2>
             </div>
-            <p className="text-gray-600">{currentTab.description}</p>
           </div>
 
           {/* Tab Content */}

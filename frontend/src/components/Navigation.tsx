@@ -172,7 +172,7 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/dashboard" className="flex items-center">
+          <Link to="/dashboard" className="flex items-center mr-8">
             {brandingData?.logoBase64 ? (
               <img
                 src={brandingData.logoBase64}
