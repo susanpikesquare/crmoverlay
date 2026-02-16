@@ -146,6 +146,23 @@ async function getForecastCategoryFieldName(pool: Pool): Promise<string> {
 }
 
 /**
+ * Get excluded opportunity types from admin config.
+ * Returns a SOQL-safe filter clause, e.g. "AND Type NOT IN ('Deferred ARR')".
+ */
+async function getExcludedTypesFilter(pool: Pool): Promise<string> {
+  try {
+    const adminSettings = new AdminSettingsService(pool);
+    const config = await adminSettings.getSalesforceFieldConfig();
+    const excluded = config.excludedOpportunityTypes || [];
+    if (excluded.length === 0) return '';
+    const escaped = excluded.map(t => t.replace(/'/g, "\\'"));
+    return `AND Type NOT IN ('${escaped.join("','")}')`;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Group accounts by parent company/domain
  */
 export function groupAccountsByDomain(accounts: any[]): any[] {
@@ -4007,6 +4024,7 @@ export async function getEnhancedAtRiskDeals(
   pool: Pool
 ): Promise<EnhancedAtRiskDeal[]> {
   const amountField = await getAmountFieldName(pool);
+  const excludeFilter = await getExcludedTypesFilter(pool);
   const now = new Date();
 
   // Try enriched query with MEDDPICC fields
@@ -4020,6 +4038,7 @@ export async function getEnhancedAtRiskDeals(
     WHERE OwnerId = '${userId}'
       AND IsClosed = false
       AND StageName NOT IN ('Prospecting', 'Qualification')
+      ${excludeFilter}
     ORDER BY ${amountField} DESC NULLS LAST
     LIMIT 50
   `;
@@ -4031,6 +4050,7 @@ export async function getEnhancedAtRiskDeals(
     WHERE OwnerId = '${userId}'
       AND IsClosed = false
       AND StageName NOT IN ('Prospecting', 'Qualification')
+      ${excludeFilter}
     ORDER BY ${amountField} DESC NULLS LAST
     LIMIT 50
   `;
@@ -4187,6 +4207,7 @@ export async function getStalledDeals(
   pool: Pool
 ): Promise<StalledDeal[]> {
   const amountField = await getAmountFieldName(pool);
+  const excludeFilter = await getExcludedTypesFilter(pool);
   const now = new Date();
 
   const query = `
@@ -4196,6 +4217,7 @@ export async function getStalledDeals(
     WHERE OwnerId = '${userId}'
       AND IsClosed = false
       AND StageName NOT IN ('Prospecting')
+      ${excludeFilter}
     ORDER BY LastModifiedDate ASC
     LIMIT 50
   `;

@@ -11,6 +11,7 @@ export interface AIProviderConfig {
 export interface SalesforceFieldConfig {
   opportunityAmountField: string; // Field to use for opportunity amounts (e.g., 'Amount', 'New_ARR__c')
   forecastCategoryField?: string; // Field to use for forecast categories (default: 'ForecastCategory')
+  excludedOpportunityTypes?: string[]; // Opportunity Type values to exclude from insights (e.g., ['Deferred ARR'])
 }
 
 export interface BrandingConfig {
@@ -259,6 +260,7 @@ export class AdminSettingsService {
     return {
       opportunityAmountField: config.opportunityAmountField || 'Amount',
       forecastCategoryField: config.forecastCategoryField || 'Forecast_Category__c',
+      excludedOpportunityTypes: config.excludedOpportunityTypes || [],
     };
   }
 

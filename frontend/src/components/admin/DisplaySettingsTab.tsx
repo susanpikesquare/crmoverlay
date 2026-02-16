@@ -12,6 +12,7 @@ interface DisplaySettings {
 interface SalesforceFieldConfig {
   opportunityAmountField: string;
   forecastCategoryField: string;
+  excludedOpportunityTypes: string[];
 }
 
 interface BrandingConfig {
@@ -32,7 +33,7 @@ export default function DisplaySettingsTab({ config, onSave }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [settings, setSettings] = useState<DisplaySettings>(config.displaySettings);
   const [salesforceFields, setSalesforceFields] = useState<SalesforceFieldConfig>(
-    config.salesforceFields || { opportunityAmountField: 'Amount', forecastCategoryField: 'Forecast_Category__c' }
+    config.salesforceFields || { opportunityAmountField: 'Amount', forecastCategoryField: 'Forecast_Category__c', excludedOpportunityTypes: [] }
   );
 
   // Branding state
@@ -172,8 +173,24 @@ export default function DisplaySettingsTab({ config, onSave }: Props) {
     setSettings({ ...settings, [key]: value });
   };
 
+  const [newExcludedType, setNewExcludedType] = useState('');
+
   const handleUpdateSalesforceField = (key: keyof SalesforceFieldConfig, value: string) => {
     setSalesforceFields({ ...salesforceFields, [key]: value });
+  };
+
+  const handleAddExcludedType = () => {
+    const trimmed = newExcludedType.trim();
+    if (!trimmed) return;
+    const current = salesforceFields.excludedOpportunityTypes || [];
+    if (current.includes(trimmed)) return;
+    setSalesforceFields({ ...salesforceFields, excludedOpportunityTypes: [...current, trimmed] });
+    setNewExcludedType('');
+  };
+
+  const handleRemoveExcludedType = (type: string) => {
+    const current = salesforceFields.excludedOpportunityTypes || [];
+    setSalesforceFields({ ...salesforceFields, excludedOpportunityTypes: current.filter(t => t !== type) });
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -425,6 +442,44 @@ export default function DisplaySettingsTab({ config, onSave }: Props) {
                 Select which Salesforce field to use for forecast categorization (Pipeline, Best Case, Commit, Closed)
               </p>
             </div>
+
+            {/* Excluded Opportunity Types */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Excluded Opportunity Types
+              </label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={newExcludedType}
+                  onChange={(e) => setNewExcludedType(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddExcludedType(); } }}
+                  placeholder="e.g. Deferred ARR"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddExcludedType}
+                  className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                >
+                  Add
+                </button>
+              </div>
+              {(salesforceFields.excludedOpportunityTypes || []).length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {salesforceFields.excludedOpportunityTypes.map(type => (
+                    <span key={type} className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs">
+                      {type}
+                      <button onClick={() => handleRemoveExcludedType(type)} className="text-red-400 hover:text-red-600 font-bold">x</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Opportunity types listed here will be excluded from all AE Hub insight panels (At Risk, Stalled, etc.).
+                Enter the exact Type picklist value from Salesforce.
+              </p>
+            </div>
           </div>
 
           {/* Current Configuration */}
@@ -433,6 +488,9 @@ export default function DisplaySettingsTab({ config, onSave }: Props) {
               <div className="font-medium mb-1">Current Configuration:</div>
               <div>• Amount Field: <span className="font-mono">{salesforceFields.opportunityAmountField}</span></div>
               <div>• Forecast Field: <span className="font-mono">{salesforceFields.forecastCategoryField}</span></div>
+              {(salesforceFields.excludedOpportunityTypes || []).length > 0 && (
+                <div>• Excluded Types: <span className="font-mono">{salesforceFields.excludedOpportunityTypes.join(', ')}</span></div>
+              )}
             </div>
           </div>
         </div>

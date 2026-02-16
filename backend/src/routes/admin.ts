@@ -422,24 +422,21 @@ router.put('/config/opportunity-stages', async (req: Request, res: Response) => 
  */
 router.put('/config/salesforce-fields', async (req: Request, res: Response) => {
   try {
-    const { opportunityAmountField, forecastCategoryField } = req.body;
+    const { opportunityAmountField, forecastCategoryField, excludedOpportunityTypes } = req.body;
     const session = req.session as any;
     const userId = session.userId || 'Unknown';
 
-    await adminSettings.setSalesforceFieldConfig(
-      {
-        opportunityAmountField: opportunityAmountField || 'Amount',
-        forecastCategoryField: forecastCategoryField || 'ForecastCategory',
-      },
-      userId
-    );
+    const configToSave = {
+      opportunityAmountField: opportunityAmountField || 'Amount',
+      forecastCategoryField: forecastCategoryField || 'ForecastCategory',
+      excludedOpportunityTypes: excludedOpportunityTypes || [],
+    };
+
+    await adminSettings.setSalesforceFieldConfig(configToSave, userId);
 
     res.json({
       success: true,
-      data: {
-        opportunityAmountField: opportunityAmountField || 'Amount',
-        forecastCategoryField: forecastCategoryField || 'ForecastCategory',
-      },
+      data: configToSave,
       message: 'Salesforce field settings updated successfully',
     });
   } catch (error: any) {
