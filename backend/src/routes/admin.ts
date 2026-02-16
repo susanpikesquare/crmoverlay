@@ -28,10 +28,12 @@ async function hydrateConfigFromDB(): Promise<void> {
   }
 }
 
-// Helper: persist the current in-memory AppConfig to the database
+// Persist the current in-memory AppConfig to the database.
+// IMPORTANT: Callers must hydrate BEFORE applying their in-memory update,
+// then call this AFTER. Do NOT hydrate here — it would overwrite the
+// in-memory changes that were just applied.
 async function persistAppConfig(userId: string): Promise<void> {
   try {
-    await hydrateConfigFromDB();
     const config = configService.getConfig();
     await adminSettings.saveAppConfig(config, userId);
   } catch (err) {
@@ -85,6 +87,7 @@ router.put('/config/risk-rules', async (req: Request, res: Response) => {
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.updateRiskRules(rules, modifiedBy);
     await persistAppConfig(modifiedBy);
 
@@ -198,6 +201,7 @@ router.put('/config/priority-scoring', async (req: Request, res: Response) => {
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.updatePriorityScoring(priorityScoring, modifiedBy);
     await persistAppConfig(modifiedBy);
 
@@ -229,6 +233,7 @@ router.put('/config/field-mappings', async (req: Request, res: Response) => {
     const modifiedBy = session.userInfo?.name || 'Unknown';
     const userId = session.userId || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.updateFieldMappings(mappings, modifiedBy);
     await persistAppConfig(modifiedBy);
 
@@ -309,6 +314,7 @@ router.put('/config/role-mappings', async (req: Request, res: Response) => {
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.updateConfig({ roleMapping: mappings }, modifiedBy);
     await persistAppConfig(modifiedBy);
 
@@ -337,6 +343,7 @@ router.put('/config/user-role-overrides', async (req: Request, res: Response) =>
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.updateConfig({ userRoleOverrides: overrides }, modifiedBy);
     await persistAppConfig(modifiedBy);
 
@@ -365,6 +372,7 @@ router.put('/config/display-settings', async (req: Request, res: Response) => {
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.updateConfig({ displaySettings }, modifiedBy);
     await persistAppConfig(modifiedBy);
 
@@ -393,6 +401,7 @@ router.put('/config/opportunity-stages', async (req: Request, res: Response) => 
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || session.userInfo?.user_id || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.updateOpportunityStages(stages, modifiedBy);
     await persistAppConfig(modifiedBy);
 
@@ -714,6 +723,7 @@ router.post('/config/import', async (req: Request, res: Response) => {
     const session = req.session as any;
     const modifiedBy = session.userInfo?.name || 'Unknown';
 
+    await hydrateConfigFromDB();
     const updatedConfig = configService.importConfig(configJson, modifiedBy);
     await persistAppConfig(modifiedBy);
 
