@@ -1,6 +1,8 @@
 import { Connection } from 'jsforce';
 import { Pool } from 'pg';
 import { AdminSettingsService, OpportunityDetailConfig } from './adminSettings';
+import { QueryBuilder } from './queryBuilder';
+import { ListQueryParams } from '../types/filters';
 
 /**
  * Salesforce Data Service
@@ -310,29 +312,60 @@ export async function getHighPriorityAccounts(
 
 /**
  * Get all accounts visible to the current user (Salesforce sharing rules apply)
+ * Optionally accepts ListQueryParams for server-side filtering/scoping and
+ * ownerIds for scope-based OwnerId filtering.
  */
 export async function getAllAccounts(
   connection: Connection,
-  _userId: string
+  _userId: string,
+  params?: ListQueryParams,
+  ownerIds?: string[] | null
 ): Promise<Account[]> {
-  const primaryQuery = `
-    SELECT Id, Name, Industry, OwnerId, NumberOfEmployees,
-           ParentId, Parent.Name,
-           accountBuyingStage6sense__c, accountIntentScore6sense__c,
-           accountProfileFit6sense__c, accountProfileScore6sense__c,
-           accountReachScore6sense__c, X6Sense_Segments__c,
-           CreatedDate, LastModifiedDate
-    FROM Account
-    ORDER BY LastModifiedDate DESC
-    LIMIT 200
-  `;
+  const fields = [
+    'Id', 'Name', 'Industry', 'OwnerId', 'NumberOfEmployees',
+    'ParentId', 'Parent.Name',
+    'accountBuyingStage6sense__c', 'accountIntentScore6sense__c',
+    'accountProfileFit6sense__c', 'accountProfileScore6sense__c',
+    'accountReachScore6sense__c', 'X6Sense_Segments__c',
+    'CreatedDate', 'LastModifiedDate',
+  ];
+  const fallbackFields = [
+    'Id', 'Name', 'Industry', 'OwnerId', 'NumberOfEmployees',
+    'ParentId', 'CreatedDate', 'LastModifiedDate',
+  ];
 
-  const fallbackQuery = `
-    SELECT Id, Name, Industry, OwnerId, NumberOfEmployees, ParentId, CreatedDate, LastModifiedDate
-    FROM Account
-    ORDER BY LastModifiedDate DESC
-    LIMIT 200
-  `;
+  let primaryQuery: string;
+  let fallbackQuery: string;
+
+  if (params && (params.filters?.length || params.search || params.scope || params.sortField)) {
+    const builder = new QueryBuilder('Account').select(fields);
+    if (ownerIds !== undefined) builder.withScope(ownerIds);
+    if (params.filters?.length) builder.withFilters(params.filters);
+    if (params.search) builder.withSearch(params.search, ['Name', 'Industry']);
+    if (params.sortField) builder.withSort(params.sortField, params.sortDir || 'DESC');
+    else builder.withSort('LastModifiedDate', 'DESC');
+    builder.withPagination(params.limit || 200, params.offset);
+    primaryQuery = builder.build();
+
+    const fb = new QueryBuilder('Account').select(fallbackFields);
+    if (ownerIds !== undefined) fb.withScope(ownerIds);
+    if (params.search) fb.withSearch(params.search, ['Name']);
+    fb.withSort('LastModifiedDate', 'DESC').withPagination(params.limit || 200, params.offset);
+    fallbackQuery = fb.build();
+  } else {
+    primaryQuery = `
+      SELECT ${fields.join(', ')}
+      FROM Account
+      ORDER BY LastModifiedDate DESC
+      LIMIT 200
+    `;
+    fallbackQuery = `
+      SELECT ${fallbackFields.join(', ')}
+      FROM Account
+      ORDER BY LastModifiedDate DESC
+      LIMIT 200
+    `;
+  }
 
   const accounts = await safeQuery<Account>(connection, primaryQuery, fallbackQuery);
 
@@ -458,32 +491,63 @@ export async function getAtRiskOpportunities(
 
 /**
  * Get all open opportunities visible to the current user (Salesforce sharing rules apply)
+ * Optionally accepts ListQueryParams for server-side filtering/scoping and
+ * ownerIds for scope-based OwnerId filtering.
  */
 export async function getAllOpportunities(
   connection: Connection,
-  _userId: string
+  _userId: string,
+  params?: ListQueryParams,
+  ownerIds?: string[] | null
 ): Promise<Opportunity[]> {
-  const primaryQuery = `
-    SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
-           Probability, CloseDate, OwnerId, Owner.Name, Type, IsClosed,
-           DaysInStage__c, IsAtRisk__c,
-           MEDDPICC_Overall_Score__c,
-           CreatedDate, LastModifiedDate
-    FROM Opportunity
-    WHERE IsClosed = false
-    ORDER BY CloseDate ASC
-    LIMIT 500
-  `;
+  const fields = [
+    'Id', 'Name', 'AccountId', 'Account.Name', 'Amount', 'StageName',
+    'Probability', 'CloseDate', 'OwnerId', 'Owner.Name', 'Type', 'IsClosed',
+    'DaysInStage__c', 'IsAtRisk__c', 'MEDDPICC_Overall_Score__c',
+    'CreatedDate', 'LastModifiedDate',
+  ];
+  const fallbackFields = [
+    'Id', 'Name', 'AccountId', 'Account.Name', 'Amount', 'StageName',
+    'Probability', 'CloseDate', 'OwnerId', 'Owner.Name', 'Type',
+    'CreatedDate', 'LastModifiedDate',
+  ];
 
-  const fallbackQuery = `
-    SELECT Id, Name, AccountId, Account.Name, Amount, StageName,
-           Probability, CloseDate, OwnerId, Owner.Name, Type,
-           CreatedDate, LastModifiedDate
-    FROM Opportunity
-    WHERE IsClosed = false
-    ORDER BY CloseDate ASC
-    LIMIT 500
-  `;
+  let primaryQuery: string;
+  let fallbackQuery: string;
+
+  if (params && (params.filters?.length || params.search || params.scope || params.sortField)) {
+    const builder = new QueryBuilder('Opportunity').select(fields);
+    builder.withWhere('IsClosed = false');
+    if (ownerIds !== undefined) builder.withScope(ownerIds);
+    if (params.filters?.length) builder.withFilters(params.filters);
+    if (params.search) builder.withSearch(params.search, ['Name']);
+    if (params.sortField) builder.withSort(params.sortField, params.sortDir || 'ASC');
+    else builder.withSort('CloseDate', 'ASC');
+    builder.withPagination(params.limit || 500, params.offset);
+    primaryQuery = builder.build();
+
+    const fb = new QueryBuilder('Opportunity').select(fallbackFields);
+    fb.withWhere('IsClosed = false');
+    if (ownerIds !== undefined) fb.withScope(ownerIds);
+    if (params.search) fb.withSearch(params.search, ['Name']);
+    fb.withSort('CloseDate', 'ASC').withPagination(params.limit || 500, params.offset);
+    fallbackQuery = fb.build();
+  } else {
+    primaryQuery = `
+      SELECT ${fields.join(', ')}
+      FROM Opportunity
+      WHERE IsClosed = false
+      ORDER BY CloseDate ASC
+      LIMIT 500
+    `;
+    fallbackQuery = `
+      SELECT ${fallbackFields.join(', ')}
+      FROM Opportunity
+      WHERE IsClosed = false
+      ORDER BY CloseDate ASC
+      LIMIT 500
+    `;
+  }
 
   const opportunities = await safeQuery<Opportunity>(connection, primaryQuery, fallbackQuery);
 

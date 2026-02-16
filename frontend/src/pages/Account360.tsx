@@ -14,6 +14,7 @@ interface AccountTierOverride {
 import Account360Tab from '../components/account/Account360Tab';
 import ExecSummaryTab from '../components/account/ExecSummaryTab';
 import AccountPlanTab from '../components/account/AccountPlanTab';
+import { useFieldPermissions } from '../hooks/useFieldPermissions';
 
 interface Account {
   Id: string;
@@ -181,6 +182,7 @@ export default function Account360() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const { isFieldAccessible } = useFieldPermissions('Account');
 
   const tabParam = searchParams.get('tab') || '360';
   const activeTab = VALID_TAB_IDS.has(tabParam as TabId) ? (tabParam as TabId) : '360';
@@ -374,14 +376,18 @@ export default function Account360() {
                   getBadgeColor={getPriorityBadgeColor}
                 />
               </div>
-              <p className="text-gray-600 mb-4">{account.Industry}</p>
+              {isFieldAccessible('Industry') && (
+                <p className="text-gray-600 mb-4">{account.Industry}</p>
+              )}
               <div className="flex items-center gap-6 text-sm text-gray-600">
-                <div>
-                  <span className="font-medium">Priority Score:</span>{' '}
-                  <span className="text-gray-900 font-semibold">
-                    {account.Priority_Score__c != null ? `${account.Priority_Score__c}/100` : 'N/A'}
-                  </span>
-                </div>
+                {isFieldAccessible('Priority_Score__c') && (
+                  <div>
+                    <span className="font-medium">Priority Score:</span>{' '}
+                    <span className="text-gray-900 font-semibold">
+                      {account.Priority_Score__c != null ? `${account.Priority_Score__c}/100` : 'N/A'}
+                    </span>
+                  </div>
+                )}
                 {account.LastModifiedDate && (
                   <div>
                     <span className="font-medium">Last Updated:</span>{' '}

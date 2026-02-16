@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { Connection } from 'jsforce';
 import { isAuthenticated } from '../middleware/auth';
 import * as SFData from '../services/salesforceData';
 import * as HubData from '../services/hubData';
@@ -6,8 +7,86 @@ import * as configService from '../services/configService';
 import { aiService } from '../services/aiService';
 import { pool } from '../config/database';
 import { AdminSettingsService } from '../services/adminSettings';
+import { getRoleHierarchy } from '../services/roleHierarchyService';
+import { getFieldPermissions } from '../services/flsService';
+import { getObjectPermissions } from '../services/objectPermissionsService';
+import * as listViewService from '../services/listViewService';
+import { ListQueryParams, FilterCriteria, OwnershipScope } from '../types/filters';
+import { escapeSoqlValue } from '../utils/soqlSanitizer';
 
 const router = Router();
+
+/**
+ * Resolve ownership scope to an array of user IDs for SOQL filtering.
+ * - 'my' → [userId]
+ * - 'team' → [userId, ...subordinateUserIds]
+ * - 'all' → null (no OwnerId filter)
+ */
+async function resolveScope(
+  connection: Connection,
+  session: any,
+  scope?: OwnershipScope
+): Promise<string[] | null> {
+  if (!scope || scope === 'all') return null;
+
+  const userId = session.userId;
+  if (!userId) return null;
+
+  if (scope === 'my') return [userId];
+
+  if (scope === 'team') {
+    const orgId = session.organizationId || '';
+    const hierarchy = await getRoleHierarchy(connection, userId, orgId);
+    return [userId, ...hierarchy.subordinateUserIds];
+  }
+
+  return null;
+}
+
+/**
+ * Parse filter/scope/sort query params from a request
+ */
+function parseListQueryParams(req: Request): ListQueryParams {
+  const params: ListQueryParams = {};
+
+  if (req.query.scope) {
+    params.scope = req.query.scope as OwnershipScope;
+  }
+
+  if (req.query.filters) {
+    try {
+      params.filters = JSON.parse(req.query.filters as string) as FilterCriteria[];
+    } catch {
+      params.filters = [];
+    }
+  }
+
+  if (req.query.search) {
+    params.search = req.query.search as string;
+  }
+
+  if (req.query.sortField) {
+    params.sortField = req.query.sortField as string;
+  }
+
+  if (req.query.sortDir) {
+    params.sortDir = (req.query.sortDir as string).toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+  }
+
+  if (req.query.limit) {
+    params.limit = parseInt(req.query.limit as string, 10);
+  }
+
+  if (req.query.offset) {
+    params.offset = parseInt(req.query.offset as string, 10);
+  }
+
+  if (req.query.listViewId) {
+    params.listViewId = req.query.listViewId as string;
+  }
+
+  return params;
+}
 
 type AppRole = 'executive' | 'sales-leader' | 'ae' | 'am' | 'csm' | 'unknown';
 
@@ -314,7 +393,8 @@ router.get('/user/me', isAuthenticated, async (req: Request, res: Response) => {
 
 /**
  * GET /api/accounts
- * Returns all accounts owned by the current user with optional filtering
+ * Returns all accounts with optional server-side filtering, scope, and search.
+ * Query params: scope=my|team|all, filters=[...], search=..., sortField=..., sortDir=ASC|DESC
  */
 router.get('/accounts', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -329,9 +409,12 @@ router.get('/accounts', isAuthenticated, async (req: Request, res: Response) => 
       });
     }
 
-    let accounts = await SFData.getAllAccounts(connection, userId);
+    const queryParams = parseListQueryParams(req);
+    const ownerIds = await resolveScope(connection, session, queryParams.scope);
 
-    // Apply client-side filters
+    let accounts = await SFData.getAllAccounts(connection, userId, queryParams, ownerIds);
+
+    // Apply client-side filters for backward compatibility
     const { priority, search } = req.query;
 
     if (priority) {
@@ -340,7 +423,7 @@ router.get('/accounts', isAuthenticated, async (req: Request, res: Response) => 
       );
     }
 
-    if (search) {
+    if (search && !queryParams.search) {
       const searchLower = (search as string).toLowerCase();
       accounts = accounts.filter(
         acc =>
@@ -349,8 +432,10 @@ router.get('/accounts', isAuthenticated, async (req: Request, res: Response) => 
       );
     }
 
-    // Sort by priority score descending
-    accounts.sort((a, b) => (b.Priority_Score__c || 0) - (a.Priority_Score__c || 0));
+    // Sort by priority score descending (default if no sort specified)
+    if (!queryParams.sortField) {
+      accounts.sort((a, b) => (b.Priority_Score__c || 0) - (a.Priority_Score__c || 0));
+    }
 
     res.json({
       success: true,
@@ -442,7 +527,8 @@ router.get('/accounts/:id', isAuthenticated, async (req: Request, res: Response)
 
 /**
  * GET /api/opportunities
- * Returns all opportunities owned by the current user with optional filtering
+ * Returns all opportunities with optional server-side filtering, scope, and search.
+ * Query params: scope=my|team|all, filters=[...], search=..., sortField=..., sortDir=ASC|DESC
  */
 router.get('/opportunities', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -457,7 +543,10 @@ router.get('/opportunities', isAuthenticated, async (req: Request, res: Response
       });
     }
 
-    let opportunities = await SFData.getAllOpportunities(connection, userId);
+    const queryParams = parseListQueryParams(req);
+    const ownerIds = await resolveScope(connection, session, queryParams.scope);
+
+    let opportunities = await SFData.getAllOpportunities(connection, userId, queryParams, ownerIds);
 
     // If includeClosed=true, also fetch closed opportunities and merge
     const { stage, atRisk, includeClosed } = req.query;
@@ -475,12 +564,14 @@ router.get('/opportunities', isAuthenticated, async (req: Request, res: Response
       opportunities = opportunities.filter(opp => opp.IsAtRisk__c);
     }
 
-    // Sort by close date
-    opportunities.sort((a, b) => {
-      const dateA = a.CloseDate ? new Date(a.CloseDate).getTime() : 0;
-      const dateB = b.CloseDate ? new Date(b.CloseDate).getTime() : 0;
-      return dateA - dateB;
-    });
+    // Sort by close date (default if no sort specified)
+    if (!queryParams.sortField) {
+      opportunities.sort((a, b) => {
+        const dateA = a.CloseDate ? new Date(a.CloseDate).getTime() : 0;
+        const dateB = b.CloseDate ? new Date(b.CloseDate).getTime() : 0;
+        return dateA - dateB;
+      });
+    }
 
     res.json({
       success: true,
@@ -2286,6 +2377,305 @@ router.post('/gong/ai-search', isAuthenticated, async (req: Request, res: Respon
     res.status(500).json({
       success: false,
       error: 'Failed to process Gong AI search',
+      message: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// LIST VIEW ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/listviews/:objectType
+ * Returns available Salesforce list views for the given object type
+ */
+router.get('/listviews/:objectType', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const { objectType } = req.params;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const views = await listViewService.getListViewsForObject(connection, objectType);
+
+    res.json({ success: true, data: views, count: views.length });
+  } catch (error: any) {
+    console.error('Error fetching list views:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch list views',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/listviews/:objectType/:listViewId/results
+ * Execute a Salesforce list view and return its results
+ */
+router.get('/listviews/:objectType/:listViewId/results', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const { objectType, listViewId } = req.params;
+
+    if (!connection) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const results = await listViewService.getListViewResults(connection, objectType, listViewId);
+
+    if (!results) {
+      return res.status(404).json({ success: false, error: 'List view not found or no results' });
+    }
+
+    res.json({ success: true, data: results });
+  } catch (error: any) {
+    console.error('Error fetching list view results:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch list view results',
+      message: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// METADATA ENDPOINTS (FLS, Object Permissions, Scope Defaults)
+// ============================================================================
+
+/**
+ * GET /api/metadata/fields/:objectType
+ * Returns field-level permissions for the given object type
+ */
+router.get('/metadata/fields/:objectType', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+    const { objectType } = req.params;
+
+    if (!connection || !session.userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const permissions = await getFieldPermissions(
+      connection,
+      objectType,
+      session.userId,
+      session.organizationId || ''
+    );
+
+    res.json({ success: true, data: permissions });
+  } catch (error: any) {
+    console.error('Error fetching field permissions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch field permissions',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/metadata/object-permissions
+ * Returns which objects the current user can access
+ */
+router.get('/metadata/object-permissions', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const connection = req.sfConnection;
+    const session = req.session as any;
+
+    if (!connection || !session.userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const permissions = await getObjectPermissions(
+      connection,
+      session.userId,
+      session.organizationId || ''
+    );
+
+    res.json({ success: true, data: permissions });
+  } catch (error: any) {
+    console.error('Error fetching object permissions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch object permissions',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/metadata/scope-defaults
+ * Returns the configured default scope for each role
+ */
+router.get('/metadata/scope-defaults', isAuthenticated, async (_req: Request, res: Response) => {
+  try {
+    const config = configService.getConfig();
+    res.json({
+      success: true,
+      data: config.scopeDefaults,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch scope defaults',
+      message: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// FILTER PRESETS ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/filter-presets
+ * Returns saved filter presets for the current user/org
+ */
+router.get('/filter-presets', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const { objectType } = req.query;
+
+    if (!session.userId || !session.organizationId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    let query = `
+      SELECT * FROM filter_presets
+      WHERE (created_by = $1 OR is_shared = true)
+        AND organization_id = $2
+    `;
+    const params: any[] = [session.userId, session.organizationId];
+
+    if (objectType) {
+      query += ` AND object_type = $3`;
+      params.push(objectType);
+    }
+
+    query += ` ORDER BY updated_at DESC`;
+
+    const result = await pool.query(query, params);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error: any) {
+    console.error('Error fetching filter presets:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch filter presets',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/filter-presets
+ * Create a new filter preset
+ */
+router.post('/filter-presets', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const { name, objectType, scope, filters, isShared } = req.body;
+
+    if (!session.userId || !session.organizationId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    if (!name || !objectType) {
+      return res.status(400).json({ success: false, error: 'Name and objectType are required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO filter_presets (name, object_type, scope, filters, created_by, organization_id, is_shared)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [name, objectType, scope || 'my', JSON.stringify(filters || []), session.userId, session.organizationId, isShared || false]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    console.error('Error creating filter preset:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create filter preset',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/filter-presets/:id
+ * Update a filter preset
+ */
+router.put('/filter-presets/:id', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const { id } = req.params;
+    const { name, scope, filters, isShared } = req.body;
+
+    if (!session.userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const result = await pool.query(
+      `UPDATE filter_presets
+       SET name = COALESCE($1, name),
+           scope = COALESCE($2, scope),
+           filters = COALESCE($3, filters),
+           is_shared = COALESCE($4, is_shared),
+           updated_at = NOW()
+       WHERE id = $5 AND created_by = $6
+       RETURNING *`,
+      [name, scope, filters ? JSON.stringify(filters) : null, isShared, id, session.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Preset not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    console.error('Error updating filter preset:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update filter preset',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * DELETE /api/filter-presets/:id
+ * Delete a filter preset
+ */
+router.delete('/filter-presets/:id', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const { id } = req.params;
+
+    if (!session.userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const result = await pool.query(
+      'DELETE FROM filter_presets WHERE id = $1 AND created_by = $2 RETURNING id',
+      [id, session.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Preset not found' });
+    }
+
+    res.json({ success: true, message: 'Preset deleted' });
+  } catch (error: any) {
+    console.error('Error deleting filter preset:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete filter preset',
       message: error.message,
     });
   }

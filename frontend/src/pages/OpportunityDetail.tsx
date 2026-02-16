@@ -7,6 +7,7 @@ import AIDealSummary from '../components/AIDealSummary';
 import AIAssistant from '../components/AIAssistant';
 import GongCallInsights from '../components/GongCallInsights';
 import GongAISearch from '../components/GongAISearch';
+import { useFieldPermissions } from '../hooks/useFieldPermissions';
 
 interface DetailField {
   label: string;
@@ -25,6 +26,7 @@ interface DetailSection {
 
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>();
+  const { isFieldAccessible } = useFieldPermissions('Opportunity');
 
   const { data: opportunity, isLoading } = useQuery({
     queryKey: ['opportunity', id],
@@ -267,24 +269,30 @@ export default function OpportunityDetail() {
   const renderSection = (section: DetailSection, opp: Record<string, any>) => {
     if (!section.enabled) return null;
 
+    // Filter out fields the user cannot access via FLS
+    const accessibleFields = section.fields.filter(f => isFieldAccessible(f.salesforceField));
+    if (accessibleFields.length === 0) return null;
+
+    const filteredSection = { ...section, fields: accessibleFields };
+
     // Determine rendering style based on field types
-    const allScores = section.fields.length > 0 && section.fields.every(f => f.fieldType === 'score');
+    const allScores = filteredSection.fields.length > 0 && filteredSection.fields.every(f => f.fieldType === 'score');
 
     if (allScores) {
-      return renderScoreSection(section, opp);
+      return renderScoreSection(filteredSection, opp);
     }
 
     // Special case: "command" section — use existing CommandOfMessageCard if fields match
-    if (section.id === 'command') {
+    if (filteredSection.id === 'command') {
       // Build the field key map for CommandOfMessageCard
-      const commandFields = section.fields.map(f => ({
+      const commandFields = filteredSection.fields.map(f => ({
         key: f.salesforceField,
         label: f.label,
       }));
       return <CommandOfMessageCard opportunity={opp} configuredFields={commandFields} />;
     }
 
-    return renderTextSection(section, opp);
+    return renderTextSection(filteredSection, opp);
   };
 
   if (isLoading) {
@@ -374,34 +382,42 @@ export default function OpportunityDetail() {
                 {opportunity.Account?.Name}
               </Link>
               <div className="grid grid-cols-4 gap-6 mt-6">
-                <div>
-                  <p className="text-sm text-gray-600">Amount</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
-                    {formatCurrency(opportunity.Amount)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Close Date</p>
-                  <p className="text-xl font-semibold text-gray-900 mt-1">
-                    {formatDate(opportunity.CloseDate)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Probability</p>
-                  <p className="text-xl font-semibold text-gray-900 mt-1">
-                    {opportunity.Probability}%
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Days in Stage</p>
-                  <p
-                    className={`text-xl font-semibold mt-1 ${
-                      (opportunity.DaysInStage__c || 0) > 14 ? 'text-red-600' : 'text-gray-900'
-                    }`}
-                  >
-                    {opportunity.DaysInStage__c ?? 'N/A'}
-                  </p>
-                </div>
+                {isFieldAccessible('Amount') && (
+                  <div>
+                    <p className="text-sm text-gray-600">Amount</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">
+                      {formatCurrency(opportunity.Amount)}
+                    </p>
+                  </div>
+                )}
+                {isFieldAccessible('CloseDate') && (
+                  <div>
+                    <p className="text-sm text-gray-600">Close Date</p>
+                    <p className="text-xl font-semibold text-gray-900 mt-1">
+                      {formatDate(opportunity.CloseDate)}
+                    </p>
+                  </div>
+                )}
+                {isFieldAccessible('Probability') && (
+                  <div>
+                    <p className="text-sm text-gray-600">Probability</p>
+                    <p className="text-xl font-semibold text-gray-900 mt-1">
+                      {opportunity.Probability}%
+                    </p>
+                  </div>
+                )}
+                {isFieldAccessible('DaysInStage__c') && (
+                  <div>
+                    <p className="text-sm text-gray-600">Days in Stage</p>
+                    <p
+                      className={`text-xl font-semibold mt-1 ${
+                        (opportunity.DaysInStage__c || 0) > 14 ? 'text-red-600' : 'text-gray-900'
+                      }`}
+                    >
+                      {opportunity.DaysInStage__c ?? 'N/A'}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

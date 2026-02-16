@@ -3,6 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import apiClient from '../services/api';
 import AIAssistant from '../components/AIAssistant';
+import ScopeSelector from '../components/ScopeSelector';
+import FilterBar, { FilterCriteria } from '../components/FilterBar';
+import ListViewSelector from '../components/ListViewSelector';
+import { useListFilters } from '../hooks/useListFilters';
+import { useFieldPermissions } from '../hooks/useFieldPermissions';
 
 interface Opportunity {
   Id: string;
@@ -30,58 +35,34 @@ interface ViewDef {
 }
 
 const VIEWS: ViewDef[] = [
+  { id: 'pipeline', label: 'My Pipeline', filterFn: (opp) => !opp.IsClosed, needsClosed: false },
+  { id: 'renewals', label: 'Renewals', filterFn: (opp) => (opp.Type || '').toLowerCase().includes('renewal'), needsClosed: false },
+  { id: 'new-business', label: 'New Business', filterFn: (opp) => !opp.IsClosed && !(opp.Type || '').toLowerCase().includes('renewal'), needsClosed: false },
   {
-    id: 'pipeline',
-    label: 'My Pipeline',
-    filterFn: (opp) => !opp.IsClosed,
-    needsClosed: false,
-  },
-  {
-    id: 'renewals',
-    label: 'Renewals',
-    filterFn: (opp) => (opp.Type || '').toLowerCase().includes('renewal'),
-    needsClosed: false,
-  },
-  {
-    id: 'new-business',
-    label: 'New Business',
-    filterFn: (opp) => !opp.IsClosed && !(opp.Type || '').toLowerCase().includes('renewal'),
-    needsClosed: false,
-  },
-  {
-    id: 'closing-soon',
-    label: 'Closing Soon',
+    id: 'closing-soon', label: 'Closing Soon',
     filterFn: (opp) => {
-      if (opp.IsClosed) return false;
-      if (!opp.CloseDate) return false;
+      if (opp.IsClosed || !opp.CloseDate) return false;
       const closeDate = new Date(opp.CloseDate);
       const now = new Date();
-      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-      return closeDate >= now && closeDate <= thirtyDaysFromNow;
+      const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      return closeDate >= now && closeDate <= thirtyDays;
     },
     needsClosed: false,
   },
-  {
-    id: 'at-risk',
-    label: 'At Risk',
-    filterFn: (opp) => opp.IsAtRisk__c || (opp.MEDDPICC_Overall_Score__c != null && opp.MEDDPICC_Overall_Score__c < 60),
-    needsClosed: false,
-  },
-  {
-    id: 'won',
-    label: 'Won',
-    filterFn: (opp) => opp.StageName === 'Closed Won',
-    needsClosed: true,
-  },
-  {
-    id: 'all',
-    label: 'All',
-    filterFn: () => true,
-    needsClosed: true,
-  },
+  { id: 'at-risk', label: 'At Risk', filterFn: (opp) => opp.IsAtRisk__c || (opp.MEDDPICC_Overall_Score__c != null && opp.MEDDPICC_Overall_Score__c < 60), needsClosed: false },
+  { id: 'won', label: 'Won', filterFn: (opp) => opp.StageName === 'Closed Won', needsClosed: true },
+  { id: 'all', label: 'All', filterFn: () => true, needsClosed: true },
 ];
 
 const VALID_VIEW_IDS = new Set(VIEWS.map(v => v.id));
+
+const OPP_FILTER_FIELDS = [
+  { name: 'StageName', label: 'Stage', type: 'string' as const },
+  { name: 'Amount', label: 'Amount', type: 'number' as const },
+  { name: 'Type', label: 'Type', type: 'string' as const },
+  { name: 'CloseDate', label: 'Close Date', type: 'date' as const },
+  { name: 'Probability', label: 'Probability', type: 'number' as const },
+];
 
 export default function OpportunitiesList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -90,20 +71,31 @@ export default function OpportunitiesList() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'closeDate' | 'amount' | 'name' | 'meddpicc'>('closeDate');
+  const [listViewRecords, setListViewRecords] = useState<any[] | null>(null);
+
+  const {
+    scope,
+    filters,
+    setScope,
+    addFilter,
+    removeFilter,
+    clearFilters,
+    queryParams,
+  } = useListFilters({ objectType: 'Opportunity', defaultSort: 'CloseDate', defaultSortDir: 'ASC' });
+
+  const { isFieldAccessible } = useFieldPermissions('Opportunity');
 
   const activeViewDef = VIEWS.find(v => v.id === activeView)!;
   const needsClosed = activeViewDef.needsClosed;
 
-  // Primary query: open opportunities (always loaded)
   const { data: openOpps, isLoading: isLoadingOpen } = useQuery({
-    queryKey: ['allOpportunities'],
+    queryKey: ['allOpportunities', scope, JSON.stringify(filters)],
     queryFn: async () => {
-      const response = await apiClient.get('/api/opportunities');
+      const response = await apiClient.get('/api/opportunities', { params: queryParams });
       return response.data.data as Opportunity[];
     },
   });
 
-  // Secondary query: closed opportunities (only loaded when needed)
   const { data: closedOpps, isLoading: isLoadingClosed } = useQuery({
     queryKey: ['closedOpportunities'],
     queryFn: async () => {
@@ -114,42 +106,33 @@ export default function OpportunitiesList() {
   });
 
   const setActiveView = (viewId: ViewId) => {
-    setSearchParams({ view: viewId });
+    const next = new URLSearchParams(searchParams);
+    next.set('view', viewId);
+    setSearchParams(next);
   };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      style: 'currency', currency: 'USD',
+      minimumFractionDigits: 0, maximumFractionDigits: 0,
     }).format(amount);
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
+      month: 'short', day: 'numeric', year: 'numeric',
     });
   };
 
   const getStageColor = (stage: string) => {
     switch (stage) {
-      case 'Discovery':
-        return 'bg-blue-100 text-blue-800';
-      case 'Value Confirmation':
-        return 'bg-purple-100 text-purple-800';
-      case 'Negotiation':
-        return 'bg-green-100 text-green-800';
-      case 'Closed Won':
-        return 'bg-emerald-100 text-emerald-800';
-      case 'Closed Lost':
-        return 'bg-red-100 text-red-800';
-      case 'Abandoned':
-        return 'bg-gray-200 text-gray-700';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'Discovery': return 'bg-blue-100 text-blue-800';
+      case 'Value Confirmation': return 'bg-purple-100 text-purple-800';
+      case 'Negotiation': return 'bg-green-100 text-green-800';
+      case 'Closed Won': return 'bg-emerald-100 text-emerald-800';
+      case 'Closed Lost': return 'bg-red-100 text-red-800';
+      case 'Abandoned': return 'bg-gray-200 text-gray-700';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -159,51 +142,41 @@ export default function OpportunitiesList() {
     return 'text-red-600';
   };
 
-  // Determine the data source: for closed-needing tabs, use the combined set; otherwise just open
   const baseData = useMemo(() => {
-    if (needsClosed && closedOpps) {
-      return closedOpps; // includeClosed=true already returns open + closed
-    }
+    if (listViewRecords) return listViewRecords;
+    if (needsClosed && closedOpps) return closedOpps;
     return openOpps || [];
-  }, [needsClosed, closedOpps, openOpps]);
+  }, [listViewRecords, needsClosed, closedOpps, openOpps]);
 
   const showMeddpicc = activeView !== 'won' && activeView !== 'all';
 
   const opportunities = useMemo(() => {
     if (!baseData) return [];
 
-    // Apply view filter
-    let filtered = baseData.filter(activeViewDef.filterFn);
+    let filtered = listViewRecords ? baseData : baseData.filter(activeViewDef.filterFn);
 
-    // Apply search within tab
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (opp) =>
           opp.Name.toLowerCase().includes(search) ||
-          opp.Account.Name.toLowerCase().includes(search) ||
+          opp.Account?.Name?.toLowerCase().includes(search) ||
           (opp.Owner?.Name || '').toLowerCase().includes(search)
       );
     }
 
-    // Apply sorting
     filtered.sort((a, b) => {
       switch (sortBy) {
-        case 'closeDate':
-          return new Date(a.CloseDate).getTime() - new Date(b.CloseDate).getTime();
-        case 'amount':
-          return (b.Amount || 0) - (a.Amount || 0);
-        case 'name':
-          return a.Name.localeCompare(b.Name);
-        case 'meddpicc':
-          return (b.MEDDPICC_Overall_Score__c || 0) - (a.MEDDPICC_Overall_Score__c || 0);
-        default:
-          return 0;
+        case 'closeDate': return new Date(a.CloseDate).getTime() - new Date(b.CloseDate).getTime();
+        case 'amount': return (b.Amount || 0) - (a.Amount || 0);
+        case 'name': return a.Name.localeCompare(b.Name);
+        case 'meddpicc': return (b.MEDDPICC_Overall_Score__c || 0) - (a.MEDDPICC_Overall_Score__c || 0);
+        default: return 0;
       }
     });
 
     return filtered;
-  }, [baseData, activeViewDef, searchTerm, sortBy]);
+  }, [baseData, listViewRecords, activeViewDef, searchTerm, sortBy]);
 
   const isLoading = isLoadingOpen || (needsClosed && isLoadingClosed);
 
@@ -225,8 +198,9 @@ export default function OpportunitiesList() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-8">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-1">Opportunities</h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">Opportunities</h1>
+          <ScopeSelector scope={scope} onChange={setScope} />
         </div>
 
         {/* Tabs */}
@@ -246,10 +220,29 @@ export default function OpportunitiesList() {
           ))}
         </div>
 
+        {/* Filter Bar */}
+        <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <FilterBar
+              filters={filters}
+              onAddFilter={addFilter}
+              onRemoveFilter={removeFilter}
+              onClearAll={clearFilters}
+              fields={OPP_FILTER_FIELDS}
+            />
+            <div className="ml-auto">
+              <ListViewSelector
+                objectType="Opportunity"
+                onSelectResults={(records) => setListViewRecords(records)}
+                onClear={() => setListViewRecords(null)}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Controls bar */}
         <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
           <div className="flex items-center gap-4">
-            {/* Search */}
             <div className="flex-1">
               <input
                 type="text"
@@ -259,8 +252,6 @@ export default function OpportunitiesList() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
-
-            {/* Sort By */}
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Sort:</label>
               <select
@@ -274,8 +265,6 @@ export default function OpportunitiesList() {
                 <option value="meddpicc">MEDDPICC</option>
               </select>
             </div>
-
-            {/* Result count */}
             <span className="px-3 py-1 bg-gray-100 text-gray-700 text-sm font-medium rounded-full whitespace-nowrap">
               {opportunities.length} deal{opportunities.length !== 1 ? 's' : ''}
             </span>
@@ -288,35 +277,19 @@ export default function OpportunitiesList() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Opportunity
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Account
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Owner
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Stage
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Close Date
-                  </th>
-                  {showMeddpicc && (
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      MEDDPICC
-                    </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Opportunity</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Owner</th>
+                  {isFieldAccessible('Amount') && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
                   )}
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Status
-                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Stage</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Close Date</th>
+                  {showMeddpicc && isFieldAccessible('MEDDPICC_Overall_Score__c') && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">MEDDPICC</th>
+                  )}
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -335,64 +308,52 @@ export default function OpportunitiesList() {
                         {opp.Name}
                       </Link>
                     </td>
-                    <td className="px-6 py-4 text-gray-900">{opp.Account.Name}</td>
-                    <td className="px-6 py-4 text-gray-700 text-sm">{opp.Owner?.Name || '—'}</td>
+                    <td className="px-6 py-4 text-gray-900">{opp.Account?.Name}</td>
+                    <td className="px-6 py-4 text-gray-700 text-sm">{opp.Owner?.Name || '\u2014'}</td>
+                    {isFieldAccessible('Amount') && (
+                      <td className="px-6 py-4">
+                        <span className="font-semibold text-gray-900">
+                          {opp.Amount ? formatCurrency(opp.Amount) : '\u2014'}
+                        </span>
+                      </td>
+                    )}
+                    <td className="px-6 py-4 text-gray-700 text-sm">{opp.Type || '\u2014'}</td>
                     <td className="px-6 py-4">
-                      <span className="font-semibold text-gray-900">
-                        {opp.Amount ? formatCurrency(opp.Amount) : '—'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-700 text-sm">{opp.Type || '—'}</td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getStageColor(
-                          opp.StageName
-                        )}`}
-                      >
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStageColor(opp.StageName)}`}>
                         {opp.StageName}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-gray-900">
-                      {opp.CloseDate ? formatDate(opp.CloseDate) : '—'}
+                      {opp.CloseDate ? formatDate(opp.CloseDate) : '\u2014'}
                     </td>
-                    {showMeddpicc && (
+                    {showMeddpicc && isFieldAccessible('MEDDPICC_Overall_Score__c') && (
                       <td className="px-6 py-4">
                         {opp.MEDDPICC_Overall_Score__c != null ? (
                           <div className="flex items-center gap-2">
                             <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
                               <div
                                 className={`h-2 rounded-full ${
-                                  opp.MEDDPICC_Overall_Score__c >= 80
-                                    ? 'bg-green-500'
-                                    : opp.MEDDPICC_Overall_Score__c >= 60
-                                    ? 'bg-yellow-500'
+                                  opp.MEDDPICC_Overall_Score__c >= 80 ? 'bg-green-500'
+                                    : opp.MEDDPICC_Overall_Score__c >= 60 ? 'bg-yellow-500'
                                     : 'bg-red-500'
                                 }`}
                                 style={{ width: `${opp.MEDDPICC_Overall_Score__c}%` }}
                               ></div>
                             </div>
-                            <span
-                              className={`text-sm font-medium ${getMEDDPICCColor(
-                                opp.MEDDPICC_Overall_Score__c
-                              )}`}
-                            >
+                            <span className={`text-sm font-medium ${getMEDDPICCColor(opp.MEDDPICC_Overall_Score__c)}`}>
                               {opp.MEDDPICC_Overall_Score__c}%
                             </span>
                           </div>
                         ) : (
-                          <span className="text-gray-400 text-sm">—</span>
+                          <span className="text-gray-400 text-sm">{'\u2014'}</span>
                         )}
                       </td>
                     )}
                     <td className="px-6 py-4">
                       {opp.IsAtRisk__c ? (
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
-                          At Risk
-                        </span>
+                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">At Risk</span>
                       ) : (
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                          Healthy
-                        </span>
+                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Healthy</span>
                       )}
                     </td>
                   </tr>

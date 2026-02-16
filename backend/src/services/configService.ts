@@ -8,6 +8,8 @@
  * Future: Store in Salesforce Custom Settings or database
  */
 
+import { ScopeDefaults } from '../types/filters';
+
 export interface RiskRule {
   id: string;
   name: string;
@@ -80,6 +82,7 @@ export interface AppConfig {
     defaultSort: string;
     viewMode: 'table' | 'cards';
   };
+  scopeDefaults: ScopeDefaults;
   lastModified?: {
     by: string;
     date: string;
@@ -211,6 +214,14 @@ const defaultConfig: AppConfig = {
     dealsPerPage: 8,
     defaultSort: 'priority',
     viewMode: 'table',
+  },
+  scopeDefaults: {
+    ae: 'my',
+    am: 'my',
+    csm: 'my',
+    'sales-leader': 'team',
+    executive: 'all',
+    unknown: 'my',
   },
 };
 

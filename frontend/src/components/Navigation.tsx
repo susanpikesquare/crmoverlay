@@ -82,7 +82,7 @@ export default function Navigation() {
       const response = await apiClient.get('/api/branding');
       return response.data.data;
     },
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: authData } = useQuery({
@@ -93,32 +93,39 @@ export default function Navigation() {
     },
   });
 
-  // Check if user has admin profile by fetching their full user info
+  // Check if user has admin profile
   const { data: currentUserData } = useQuery({
     queryKey: ['current-user-profile'],
     queryFn: async () => {
       const response = await apiClient.get('/auth/current-user-profile');
-      console.log('Current user profile data:', response.data.data);
       return response.data.data;
     },
+  });
+
+  // Fetch object permissions for conditional nav links
+  const { data: objectPermissions } = useQuery({
+    queryKey: ['objectPermissions'],
+    queryFn: async () => {
+      const response = await apiClient.get('/api/metadata/object-permissions');
+      return response.data.data as Record<string, { accessible: boolean }>;
+    },
+    staleTime: 30 * 60 * 1000,
   });
 
   const { data: usersData } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
       const response = await apiClient.get('/auth/users');
-      console.log('Users data:', response.data.data);
       return response.data.data;
     },
-    enabled: showUserSelector, // Only fetch when dropdown is open
+    enabled: showUserSelector,
   });
 
-  // Check if current user is admin based on profile name
   const isAdmin = currentUserData?.profileName?.toLowerCase().includes('admin') ||
                   currentUserData?.profileName?.toLowerCase().includes('system administrator');
 
-  console.log('Profile name:', currentUserData?.profileName);
-  console.log('Is admin:', isAdmin);
+  const canAccessAccounts = objectPermissions?.Account?.accessible !== false;
+  const canAccessOpportunities = objectPermissions?.Opportunity?.accessible !== false;
 
   const handleLogout = async () => {
     try {
@@ -126,7 +133,6 @@ export default function Navigation() {
       navigate('/');
     } catch (error) {
       console.error('Logout error:', error);
-      // Navigate anyway to clear frontend state
       navigate('/');
     }
   };
@@ -134,37 +140,24 @@ export default function Navigation() {
   const handleImpersonate = async (userId: string) => {
     try {
       await apiClient.post('/auth/impersonate', { userId });
-      // Close dropdown
       setShowUserSelector(false);
-
-      // Clear ALL queries to force fresh data
       queryClient.clear();
 
-      // Fetch new user info to get their role
       const userResponse = await apiClient.get('/api/user/me');
       const userRole = userResponse.data.data.role;
 
-      // Redirect to appropriate cockpit based on role
-      if (userRole === 'executive') {
-        navigate('/dashboard/executive');
-      } else if (userRole === 'ae') {
-        navigate('/dashboard/ae');
-      } else if (userRole === 'am') {
-        navigate('/dashboard/am');
-      } else if (userRole === 'csm') {
-        navigate('/dashboard/csm');
-      } else {
-        navigate('/dashboard');
-      }
+      if (userRole === 'executive') navigate('/dashboard/executive');
+      else if (userRole === 'ae') navigate('/dashboard/ae');
+      else if (userRole === 'am') navigate('/dashboard/am');
+      else if (userRole === 'csm') navigate('/dashboard/csm');
+      else navigate('/dashboard');
 
-      // Force a page reload to ensure all state is fresh
       window.location.reload();
     } catch (error) {
       console.error('Impersonation error:', error);
     }
   };
 
-  // Get initials from name
   const getInitials = (name: string) => {
     if (!name) return 'U';
     const parts = name.split(' ');
@@ -209,56 +202,28 @@ export default function Navigation() {
               </svg>
               Hub
             </Link>
-            <div className="relative" ref={accountsMenuRef}>
-              <button
-                onClick={() => setShowAccountsMenu(!showAccountsMenu)}
+            {canAccessAccounts && (
+              <Link
+                to="/accounts"
                 className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
                 Accounts
-                <svg className={`w-3 h-3 transition-transform ${showAccountsMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </Link>
+            )}
+            {canAccessOpportunities && (
+              <Link
+                to="/opportunities"
+                className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-              </button>
-              {showAccountsMenu && (
-                <div className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
-                  <Link
-                    to="/accounts"
-                    onClick={() => setShowAccountsMenu(false)}
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 font-medium"
-                  >
-                    All Accounts
-                  </Link>
-                  <Link
-                    to="/account-plans"
-                    onClick={() => setShowAccountsMenu(false)}
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 font-medium"
-                  >
-                    Account Plans
-                  </Link>
-                </div>
-              )}
-            </div>
-            <Link
-              to="/opportunities"
-              className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Opportunities
-            </Link>
-            <Link
-              to="/gong-search"
-              className="text-gray-700 hover:text-gray-900 font-medium transition flex items-center gap-1.5"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              Gong AI
-            </Link>
+                Opportunities
+              </Link>
+            )}
             {/* Admin Link - Only show for admins */}
             {(authData?.user?.isAdmin || authData?.user?.role === 'admin') && (
               <Link
@@ -390,13 +355,9 @@ export default function Navigation() {
                   </div>
                   <div className="py-2">
                     {!usersData ? (
-                      <div className="px-4 py-8 text-center text-gray-500 text-sm">
-                        Loading users...
-                      </div>
+                      <div className="px-4 py-8 text-center text-gray-500 text-sm">Loading users...</div>
                     ) : usersData.length === 0 ? (
-                      <div className="px-4 py-8 text-center text-gray-500 text-sm">
-                        No users found
-                      </div>
+                      <div className="px-4 py-8 text-center text-gray-500 text-sm">No users found</div>
                     ) : (
                       usersData.map((user: any) => (
                         <button

@@ -3,6 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import apiClient from '../services/api';
 import AIAssistant from '../components/AIAssistant';
+import ScopeSelector from '../components/ScopeSelector';
+import FilterBar, { FilterCriteria } from '../components/FilterBar';
+import ListViewSelector from '../components/ListViewSelector';
+import { useListFilters } from '../hooks/useListFilters';
+import { useFieldPermissions } from '../hooks/useFieldPermissions';
 
 interface Account {
   Id: string;
@@ -24,23 +29,45 @@ interface AccountGroup {
   isStandalone: boolean;
 }
 
+const ACCOUNT_FILTER_FIELDS = [
+  { name: 'Industry', label: 'Industry', type: 'string' as const },
+  { name: 'Name', label: 'Account Name', type: 'string' as const },
+  { name: 'accountIntentScore6sense__c', label: 'Intent Score', type: 'number' as const },
+  { name: 'AnnualRevenue', label: 'Annual Revenue', type: 'number' as const },
+  { name: 'NumberOfEmployees', label: 'Employees', type: 'number' as const },
+  { name: 'accountBuyingStage6sense__c', label: 'Buying Stage', type: 'picklist' as const, picklistValues: ['Decision', 'Consideration', 'Awareness', 'Target'] },
+];
+
 export default function AccountsList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [sortBy, setSortBy] = useState<'priority' | 'intent' | 'name'>('priority');
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [listViewRecords, setListViewRecords] = useState<any[] | null>(null);
+
+  const {
+    scope,
+    filters,
+    setScope,
+    addFilter,
+    removeFilter,
+    clearFilters,
+    queryParams,
+  } = useListFilters({ objectType: 'Account', defaultSort: 'LastModifiedDate' });
+
+  const { isFieldAccessible } = useFieldPermissions('Account');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['allAccounts'],
+    queryKey: ['allAccounts', scope, JSON.stringify(filters), queryParams.search],
     queryFn: async () => {
-      const response = await apiClient.get('/api/accounts');
+      const response = await apiClient.get('/api/accounts', { params: queryParams });
       return response.data.data as Account[];
     },
   });
 
   const getPriorityBadgeColor = (tier: string) => {
-    if (tier.includes('🔥')) return 'bg-red-100 text-red-800 border-red-300';
-    if (tier.includes('🔶')) return 'bg-orange-100 text-orange-800 border-orange-300';
+    if (tier.includes('\uD83D\uDD25')) return 'bg-red-100 text-red-800 border-red-300';
+    if (tier.includes('\uD83D\uDD36')) return 'bg-orange-100 text-orange-800 border-orange-300';
     return 'bg-blue-100 text-blue-800 border-blue-300';
   };
 
@@ -72,10 +99,8 @@ export default function AccountsList() {
   const buildAccountGroups = (accounts: Account[]): AccountGroup[] => {
     const accountIds = new Set(accounts.map(a => a.Id));
     const childrenByParent = new Map<string, Account[]>();
-    const standaloneOrParent: Account[] = [];
     const childIds = new Set<string>();
 
-    // First pass: identify children whose parent is in the dataset
     for (const acc of accounts) {
       if (acc.ParentId && accountIds.has(acc.ParentId)) {
         const siblings = childrenByParent.get(acc.ParentId) || [];
@@ -85,14 +110,13 @@ export default function AccountsList() {
       }
     }
 
-    // Second pass: collect parents and standalone accounts
+    const standaloneOrParent: Account[] = [];
     for (const acc of accounts) {
       if (!childIds.has(acc.Id)) {
         standaloneOrParent.push(acc);
       }
     }
 
-    // Build groups
     return standaloneOrParent.map(acc => ({
       parent: acc,
       children: childrenByParent.get(acc.Id) || [],
@@ -101,11 +125,12 @@ export default function AccountsList() {
   };
 
   const { groups, totalAccounts } = useMemo(() => {
-    if (!data) return { groups: [] as AccountGroup[], totalAccounts: 0 };
+    // If a list view is active, use those records
+    const sourceData = listViewRecords || data;
+    if (!sourceData) return { groups: [] as AccountGroup[], totalAccounts: 0 };
 
-    let filtered = [...data];
+    let filtered = [...sourceData];
 
-    // Apply search filter
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -115,12 +140,10 @@ export default function AccountsList() {
       );
     }
 
-    // Apply priority filter
     if (priorityFilter !== 'all') {
       filtered = filtered.filter((acc) => acc.Priority_Tier__c?.includes(priorityFilter));
     }
 
-    // Apply sorting
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'priority':
@@ -138,81 +161,7 @@ export default function AccountsList() {
       groups: buildAccountGroups(filtered),
       totalAccounts: filtered.length,
     };
-  }, [data, searchTerm, priorityFilter, sortBy]);
-
-  const renderAccountRow = (account: Account, isChild: boolean = false) => (
-    <tr
-      key={account.Id}
-      className={`hover:bg-gray-50 transition-colors cursor-pointer ${isChild ? 'bg-gray-50/50' : ''}`}
-      onClick={() => window.location.href = `/account/${account.Id}`}
-    >
-      {/* Chevron column */}
-      <td className="w-8 px-2 py-4">
-        {/* Placeholder — only parent rows use this */}
-      </td>
-      <td className="px-6 py-4">
-        <div className={isChild ? 'pl-6' : ''}>
-          {isChild && (
-            <span className="text-gray-400 mr-2 text-xs">└</span>
-          )}
-          <Link
-            to={`/account/${account.Id}`}
-            className={`text-blue-600 hover:text-blue-800 font-medium ${isChild ? 'text-sm' : ''}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {account.Name}
-          </Link>
-        </div>
-      </td>
-      <td className={`px-6 py-4 text-gray-900 ${isChild ? 'text-sm' : ''}`}>{account.Industry}</td>
-      <td className="px-6 py-4">
-        <div className="flex items-center gap-2">
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
-              account.Priority_Tier__c || ''
-            )}`}
-          >
-            {account.Priority_Tier__c}
-          </span>
-          <span className="text-sm text-gray-600">
-            {account.Priority_Score__c}
-          </span>
-        </div>
-      </td>
-      <td className="px-6 py-4">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
-            <div
-              className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
-              style={{ width: `${account.SixSense_Intent_Score__c || 0}%` }}
-            ></div>
-          </div>
-          <span className="text-sm font-medium text-gray-900">
-            {account.SixSense_Intent_Score__c}
-          </span>
-        </div>
-      </td>
-      <td className="px-6 py-4">
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(
-            account.SixSense_Buying_Stage__c || ''
-          )}`}
-        >
-          {account.SixSense_Buying_Stage__c}
-        </span>
-      </td>
-      <td className="px-6 py-4">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-900">
-            {(account.Clay_Employee_Count__c || 0).toLocaleString()}
-          </span>
-          <span className="text-xs text-green-600 font-medium">
-            +{account.Clay_Employee_Growth_Pct__c || 0}%
-          </span>
-        </div>
-      </td>
-    </tr>
-  );
+  }, [data, listViewRecords, searchTerm, priorityFilter, sortBy]);
 
   if (isLoading) {
     return (
@@ -233,22 +182,42 @@ export default function AccountsList() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">All Accounts</h1>
-          <p className="text-gray-600">
-            {totalAccounts} account{totalAccounts !== 1 ? 's' : ''} found
-            {groupCount > 0 && ` (${groupCount} parent group${groupCount !== 1 ? 's' : ''})`}
-          </p>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">All Accounts</h1>
+            <p className="text-gray-600">
+              {totalAccounts} account{totalAccounts !== 1 ? 's' : ''} found
+              {groupCount > 0 && ` (${groupCount} parent group${groupCount !== 1 ? 's' : ''})`}
+            </p>
+          </div>
+          <ScopeSelector scope={scope} onChange={setScope} />
         </div>
 
-        {/* Filters */}
+        {/* Filter Bar */}
+        <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <FilterBar
+              filters={filters}
+              onAddFilter={addFilter}
+              onRemoveFilter={removeFilter}
+              onClearAll={clearFilters}
+              fields={ACCOUNT_FILTER_FIELDS}
+            />
+            <div className="ml-auto">
+              <ListViewSelector
+                objectType="Account"
+                onSelectResults={(records) => setListViewRecords(records)}
+                onClear={() => setListViewRecords(null)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Search / Sort Controls */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Search */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
               <input
                 type="text"
                 placeholder="Search by name or industry..."
@@ -257,29 +226,21 @@ export default function AccountsList() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-
-            {/* Priority Filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Priority Tier
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Priority Tier</label>
               <select
                 value={priorityFilter}
                 onChange={(e) => setPriorityFilter(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Priorities</option>
-                <option value="🔥">🔥 Hot</option>
-                <option value="🔶">🔶 Warm</option>
-                <option value="🔵">🔵 Cool</option>
+                <option value="\uD83D\uDD25">{'\uD83D\uDD25'} Hot</option>
+                <option value="\uD83D\uDD36">{'\uD83D\uDD36'} Warm</option>
+                <option value="\uD83D\uDD35">{'\uD83D\uDD35'} Cool</option>
               </select>
             </div>
-
-            {/* Sort By */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Sort By
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'priority' | 'intent' | 'name')}
@@ -300,24 +261,18 @@ export default function AccountsList() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="w-8 px-2 py-4"></th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Account Name
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Industry
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Priority
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Intent Score
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Buying Stage
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Employees
-                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Account Name</th>
+                  {isFieldAccessible('Industry') && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Industry</th>
+                  )}
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
+                  {isFieldAccessible('accountIntentScore6sense__c') && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Intent Score</th>
+                  )}
+                  {isFieldAccessible('accountBuyingStage6sense__c') && (
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Buying Stage</th>
+                  )}
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Employees</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -327,22 +282,17 @@ export default function AccountsList() {
 
                   return (
                     <React.Fragment key={group.parent.Id}>
-                      {/* Parent / standalone row */}
                       <tr
                         className="hover:bg-gray-50 transition-colors cursor-pointer"
                         onClick={() => window.location.href = `/account/${group.parent.Id}`}
                       >
-                        {/* Chevron column */}
                         <td className="w-8 px-2 py-4 text-center">
                           {hasChildren && (
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleParentExpand(group.parent.Id);
-                              }}
+                              onClick={(e) => { e.stopPropagation(); toggleParentExpand(group.parent.Id); }}
                               className="text-gray-400 hover:text-gray-700 text-sm focus:outline-none"
                             >
-                              {isExpanded ? '▼' : '▶'}
+                              {isExpanded ? '\u25BC' : '\u25B6'}
                             </button>
                           )}
                         </td>
@@ -362,56 +312,45 @@ export default function AccountsList() {
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-gray-900">{group.parent.Industry}</td>
+                        {isFieldAccessible('Industry') && (
+                          <td className="px-6 py-4 text-gray-900">{group.parent.Industry}</td>
+                        )}
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
-                                group.parent.Priority_Tier__c || ''
-                              )}`}
-                            >
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(group.parent.Priority_Tier__c || '')}`}>
                               {group.parent.Priority_Tier__c}
                             </span>
-                            <span className="text-sm text-gray-600">
-                              {group.parent.Priority_Score__c}
-                            </span>
+                            <span className="text-sm text-gray-600">{group.parent.Priority_Score__c}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
-                              <div
-                                className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
-                                style={{ width: `${group.parent.SixSense_Intent_Score__c || 0}%` }}
-                              ></div>
+                        {isFieldAccessible('accountIntentScore6sense__c') && (
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
+                                <div
+                                  className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
+                                  style={{ width: `${group.parent.SixSense_Intent_Score__c || 0}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">{group.parent.SixSense_Intent_Score__c}</span>
                             </div>
-                            <span className="text-sm font-medium text-gray-900">
-                              {group.parent.SixSense_Intent_Score__c}
+                          </td>
+                        )}
+                        {isFieldAccessible('accountBuyingStage6sense__c') && (
+                          <td className="px-6 py-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(group.parent.SixSense_Buying_Stage__c || '')}`}>
+                              {group.parent.SixSense_Buying_Stage__c}
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(
-                              group.parent.SixSense_Buying_Stage__c || ''
-                            )}`}
-                          >
-                            {group.parent.SixSense_Buying_Stage__c}
-                          </span>
-                        </td>
+                          </td>
+                        )}
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <span className="text-gray-900">
-                              {(group.parent.Clay_Employee_Count__c || 0).toLocaleString()}
-                            </span>
-                            <span className="text-xs text-green-600 font-medium">
-                              +{group.parent.Clay_Employee_Growth_Pct__c || 0}%
-                            </span>
+                            <span className="text-gray-900">{(group.parent.Clay_Employee_Count__c || 0).toLocaleString()}</span>
+                            <span className="text-xs text-green-600 font-medium">+{group.parent.Clay_Employee_Growth_Pct__c || 0}%</span>
                           </div>
                         </td>
                       </tr>
 
-                      {/* Child rows (visible when expanded) */}
                       {hasChildren && isExpanded && group.children.map((child) => (
                         <tr
                           key={child.Id}
@@ -421,7 +360,7 @@ export default function AccountsList() {
                           <td className="w-8 px-2 py-3"></td>
                           <td className="px-6 py-3">
                             <div className="pl-6 flex items-center">
-                              <span className="text-gray-400 mr-2 text-xs">└</span>
+                              <span className="text-gray-400 mr-2 text-xs">{'\u2514'}</span>
                               <Link
                                 to={`/account/${child.Id}`}
                                 className="text-blue-600 hover:text-blue-800 font-medium text-sm"
@@ -431,51 +370,41 @@ export default function AccountsList() {
                               </Link>
                             </div>
                           </td>
-                          <td className="px-6 py-3 text-gray-900 text-sm">{child.Industry}</td>
+                          {isFieldAccessible('Industry') && (
+                            <td className="px-6 py-3 text-gray-900 text-sm">{child.Industry}</td>
+                          )}
                           <td className="px-6 py-3">
                             <div className="flex items-center gap-2">
-                              <span
-                                className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(
-                                  child.Priority_Tier__c || ''
-                                )}`}
-                              >
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getPriorityBadgeColor(child.Priority_Tier__c || '')}`}>
                                 {child.Priority_Tier__c}
                               </span>
-                              <span className="text-sm text-gray-600">
-                                {child.Priority_Score__c}
-                              </span>
+                              <span className="text-sm text-gray-600">{child.Priority_Score__c}</span>
                             </div>
                           </td>
-                          <td className="px-6 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
-                                <div
-                                  className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
-                                  style={{ width: `${child.SixSense_Intent_Score__c || 0}%` }}
-                                ></div>
+                          {isFieldAccessible('accountIntentScore6sense__c') && (
+                            <td className="px-6 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
+                                  <div
+                                    className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full"
+                                    style={{ width: `${child.SixSense_Intent_Score__c || 0}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-sm font-medium text-gray-900">{child.SixSense_Intent_Score__c}</span>
                               </div>
-                              <span className="text-sm font-medium text-gray-900">
-                                {child.SixSense_Intent_Score__c}
+                            </td>
+                          )}
+                          {isFieldAccessible('accountBuyingStage6sense__c') && (
+                            <td className="px-6 py-3">
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(child.SixSense_Buying_Stage__c || '')}`}>
+                                {child.SixSense_Buying_Stage__c}
                               </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-3">
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-semibold ${getBuyingStageColor(
-                                child.SixSense_Buying_Stage__c || ''
-                              )}`}
-                            >
-                              {child.SixSense_Buying_Stage__c}
-                            </span>
-                          </td>
+                            </td>
+                          )}
                           <td className="px-6 py-3">
                             <div className="flex items-center gap-2">
-                              <span className="text-gray-900 text-sm">
-                                {(child.Clay_Employee_Count__c || 0).toLocaleString()}
-                              </span>
-                              <span className="text-xs text-green-600 font-medium">
-                                +{child.Clay_Employee_Growth_Pct__c || 0}%
-                              </span>
+                              <span className="text-gray-900 text-sm">{(child.Clay_Employee_Count__c || 0).toLocaleString()}</span>
+                              <span className="text-xs text-green-600 font-medium">+{child.Clay_Employee_Growth_Pct__c || 0}%</span>
                             </div>
                           </td>
                         </tr>

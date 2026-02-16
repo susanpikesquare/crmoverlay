@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createOAuth2Instance, createConnection } from '../config/salesforce';
 import { isAuthenticated } from '../middleware/auth';
 import { User, AuditLog, Customer } from '../models';
+import { getRoleHierarchy } from '../services/roleHierarchyService';
 
 const router = Router();
 
@@ -330,6 +331,11 @@ router.get('/callback', async (req: Request, res: Response) => {
     };
 
     console.log('Session userInfo stored:', session.userInfo);
+
+    // Pre-cache role hierarchy in background (warm cache for scope filtering)
+    getRoleHierarchy(connection, userInfo.user_id, userInfo.organization_id).catch(err => {
+      console.warn('Background role hierarchy cache warming failed:', err.message);
+    });
 
     // Save session before redirecting
     req.session.save((err) => {
