@@ -5,7 +5,7 @@
  * Adapted from the Google Apps Script's runAIAnalysis approach.
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import { createGongServiceFromDB, GongCall, GongTranscript } from './gongService';
 import { aiService } from './aiService';
 import AccountPlan from '../models/AccountPlan';
@@ -372,7 +372,7 @@ Be specific and actionable. Reference actual data, names, and numbers from the a
   };
 
   const leadershipAsks = (parsed.leadershipAsks || []).map((ask: any) => ({
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     initiative: ask.initiative || '',
     urgency: ask.urgency || 'Medium',
     action: ask.action || '',
@@ -387,7 +387,7 @@ Be specific and actionable. Reference actual data, names, and numbers from the a
   };
 
   const actionItems = (parsed.suggestedActionItems || []).map((item: any) => ({
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     description: item.description || '',
     status: 'todo',
     dueDate: item.dueDate || null,
