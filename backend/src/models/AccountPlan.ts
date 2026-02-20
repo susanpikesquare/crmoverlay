@@ -24,6 +24,13 @@ export interface AccountPlanAttributes {
   nextSteps: string;
   additionalNotes: string;
 
+  // AI-generated strategic analysis
+  aiAnalysis: Record<string, any> | null;
+  leadershipAsks: Record<string, any>[] | null;
+  dayPlans: Record<string, any> | null;
+  actionItems: Record<string, any>[] | null;
+  gongSnapshot: Record<string, any> | null;
+
   // Export tracking
   lastExportedAt: Date | null;
   lastExportFormat: string | null;
@@ -38,7 +45,8 @@ export interface AccountPlanCreationAttributes extends Optional<AccountPlanAttri
   'id' | 'status' | 'planDate' | 'accountSnapshot' | 'renewalOppsSnapshot' |
   'expansionOppsSnapshot' | 'contactsSnapshot' | 'executiveSummary' | 'retentionStrategy' |
   'growthStrategy' | 'keyInitiatives' | 'risksAndMitigations' | 'nextSteps' |
-  'additionalNotes' | 'lastExportedAt' | 'lastExportFormat' | 'googleDocId' |
+  'additionalNotes' | 'aiAnalysis' | 'leadershipAsks' | 'dayPlans' | 'actionItems' |
+  'gongSnapshot' | 'lastExportedAt' | 'lastExportFormat' | 'googleDocId' |
   'googleSlidesId' | 'createdAt' | 'updatedAt'
 > {}
 
@@ -62,6 +70,12 @@ class AccountPlan extends Model<AccountPlanAttributes, AccountPlanCreationAttrib
   public risksAndMitigations!: string;
   public nextSteps!: string;
   public additionalNotes!: string;
+
+  public aiAnalysis!: Record<string, any> | null;
+  public leadershipAsks!: Record<string, any>[] | null;
+  public dayPlans!: Record<string, any> | null;
+  public actionItems!: Record<string, any>[] | null;
+  public gongSnapshot!: Record<string, any> | null;
 
   public lastExportedAt!: Date | null;
   public lastExportFormat!: string | null;
@@ -174,6 +188,38 @@ AccountPlan.init(
       allowNull: false,
       defaultValue: '',
       field: 'additional_notes',
+    },
+
+    // AI-generated strategic analysis
+    aiAnalysis: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+      field: 'ai_analysis',
+    },
+    leadershipAsks: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+      field: 'leadership_asks',
+    },
+    dayPlans: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+      field: 'day_plans',
+    },
+    actionItems: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+      field: 'action_items',
+    },
+    gongSnapshot: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+      field: 'gong_snapshot',
     },
 
     // Export tracking

@@ -3,6 +3,7 @@ import { isAuthenticated } from '../middleware/auth';
 import { AccountPlan } from '../models';
 import * as SFData from '../services/salesforceData';
 import { generateWordDocument } from '../services/documentExport';
+import { generateAccountPlanAI } from '../services/accountPlanAIService';
 
 const router = Router();
 
@@ -170,6 +171,7 @@ router.put('/:id', isAuthenticated, async (req: Request, res: Response) => {
       'planName', 'status', 'planDate',
       'executiveSummary', 'retentionStrategy', 'growthStrategy',
       'keyInitiatives', 'risksAndMitigations', 'nextSteps', 'additionalNotes',
+      'aiAnalysis', 'leadershipAsks', 'dayPlans', 'actionItems',
     ];
 
     const updates: Record<string, any> = {};
@@ -258,6 +260,37 @@ router.post('/:id/refresh-data', isAuthenticated, async (req: Request, res: Resp
 });
 
 /**
+ * POST /api/account-plans/:id/generate-ai
+ * Generate AI analysis for an account plan (Gong + SF data → Claude)
+ */
+router.post('/:id/generate-ai', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const session = req.session as any;
+    const userId = session.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+
+    // Verify ownership
+    const plan = await AccountPlan.findOne({
+      where: { id: req.params.id, salesforceUserId: userId },
+    });
+
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'Account plan not found' });
+    }
+
+    const updatedPlan = await generateAccountPlanAI(plan.id);
+
+    res.json({ success: true, data: updatedPlan });
+  } catch (error: any) {
+    console.error('Error generating AI analysis:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate AI analysis', message: error.message });
+  }
+});
+
+/**
  * POST /api/account-plans/:id/export/word
  * Export plan to Word document (.docx)
  */
@@ -293,6 +326,10 @@ router.post('/:id/export/word', isAuthenticated, async (req: Request, res: Respo
       risksAndMitigations: plan.risksAndMitigations,
       nextSteps: plan.nextSteps,
       additionalNotes: plan.additionalNotes,
+      aiAnalysis: plan.aiAnalysis,
+      leadershipAsks: plan.leadershipAsks,
+      dayPlans: plan.dayPlans,
+      actionItems: plan.actionItems,
     });
 
     // Update export tracking

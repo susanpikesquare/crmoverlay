@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import AutoSaveTextarea from './AutoSaveTextarea';
 
 interface StrategySectionProps {
   executiveSummary: string;
@@ -10,61 +10,6 @@ interface StrategySectionProps {
   additionalNotes: string;
   onFieldChange: (field: string, value: string) => void;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
-}
-
-function AutoSaveTextarea({
-  label,
-  fieldName,
-  value,
-  placeholder,
-  onChange,
-}: {
-  label: string;
-  fieldName: string;
-  value: string;
-  placeholder: string;
-  onChange: (field: string, value: string) => void;
-}) {
-  const [localValue, setLocalValue] = useState(value);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => {
-    setLocalValue(value);
-  }, [value]);
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-    setLocalValue(newValue);
-
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-
-    debounceRef.current = setTimeout(() => {
-      onChange(fieldName, newValue);
-    }, 500);
-  }, [fieldName, onChange]);
-
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, []);
-
-  return (
-    <div>
-      <label className="block text-sm font-semibold text-gray-700 mb-2">{label}</label>
-      <textarea
-        value={localValue}
-        onChange={handleChange}
-        placeholder={placeholder}
-        rows={4}
-        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-y text-sm text-gray-900 placeholder-gray-400"
-      />
-    </div>
-  );
 }
 
 export default function StrategySection({

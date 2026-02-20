@@ -10,6 +10,10 @@ import HealthRiskSection from '../accountPlan/HealthRiskSection';
 import CSInsightsSection from '../accountPlan/CSInsightsSection';
 import HistoricalContextSection from '../accountPlan/HistoricalContextSection';
 import StrategySection from '../accountPlan/StrategySection';
+import AIAnalysisSection, { AIAnalysisData } from '../accountPlan/AIAnalysisSection';
+import LeadershipAsksSection, { LeadershipAsk } from '../accountPlan/LeadershipAsksSection';
+import DayPlanSection, { DayPlans } from '../accountPlan/DayPlanSection';
+import ActionItemsSection, { ActionItem } from '../accountPlan/ActionItemsSection';
 
 interface AccountPlanData {
   id: string;
@@ -29,6 +33,10 @@ interface AccountPlanData {
   risksAndMitigations: string;
   nextSteps: string;
   additionalNotes: string;
+  aiAnalysis: AIAnalysisData | null;
+  leadershipAsks: LeadershipAsk[] | null;
+  dayPlans: DayPlans | null;
+  actionItems: ActionItem[] | null;
   lastExportedAt: string | null;
   lastExportFormat: string | null;
   createdAt: string;
@@ -153,8 +161,39 @@ export default function AccountPlanTab({ accountId, accountName }: Props) {
     },
   });
 
+  // Generate AI analysis mutation
+  const generateAIMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiClient.post(`/api/account-plans/${existingPlanId}/generate-ai`);
+      return response.data.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['accountPlan', existingPlanId], data);
+    },
+  });
+
   const handleFieldChange = useCallback((field: string, value: string) => {
     updateMutation.mutate({ [field]: value });
+  }, [updateMutation]);
+
+  const handleAIFieldChange = useCallback((key: string, value: string) => {
+    if (!plan?.aiAnalysis) return;
+    const updatedAnalysis = { ...plan.aiAnalysis, [key]: value };
+    updateMutation.mutate({ aiAnalysis: updatedAnalysis });
+  }, [plan, updateMutation]);
+
+  const handleLeadershipAsksUpdate = useCallback((asks: LeadershipAsk[]) => {
+    updateMutation.mutate({ leadershipAsks: asks });
+  }, [updateMutation]);
+
+  const handleDayPlanFieldChange = useCallback((key: string, value: string) => {
+    const currentPlans = plan?.dayPlans || { thirtyDay: '', sixtyDay: '', ninetyDay: '' };
+    const updatedPlans = { ...currentPlans, [key]: value };
+    updateMutation.mutate({ dayPlans: updatedPlans });
+  }, [plan, updateMutation]);
+
+  const handleActionItemsUpdate = useCallback((items: ActionItem[]) => {
+    updateMutation.mutate({ actionItems: items });
   }, [updateMutation]);
 
   const handlePlanNameChange = useCallback((name: string) => {
@@ -323,6 +362,50 @@ export default function AccountPlanTab({ accountId, accountName }: Props) {
 
       <div className="mb-8">
         <HistoricalContextSection account={plan.accountSnapshot} />
+      </div>
+
+      {/* AI Analysis Section */}
+      <div className="mb-8">
+        <AIAnalysisSection
+          aiAnalysis={plan.aiAnalysis}
+          onFieldChange={handleAIFieldChange}
+          onGenerate={() => generateAIMutation.mutate()}
+          isGenerating={generateAIMutation.isPending}
+          saveStatus={saveStatus}
+        />
+      </div>
+
+      {generateAIMutation.isError && (
+        <div className="mb-8 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
+          Failed to generate AI analysis. Please try again.
+        </div>
+      )}
+
+      {/* Leadership Asks */}
+      <div className="mb-8">
+        <LeadershipAsksSection
+          leadershipAsks={plan.leadershipAsks}
+          onUpdate={handleLeadershipAsksUpdate}
+          saveStatus={saveStatus}
+        />
+      </div>
+
+      {/* 30/60/90 Day Plan */}
+      <div className="mb-8">
+        <DayPlanSection
+          dayPlans={plan.dayPlans}
+          onFieldChange={handleDayPlanFieldChange}
+          saveStatus={saveStatus}
+        />
+      </div>
+
+      {/* Action Items */}
+      <div className="mb-8">
+        <ActionItemsSection
+          actionItems={plan.actionItems}
+          onUpdate={handleActionItemsUpdate}
+          saveStatus={saveStatus}
+        />
       </div>
 
       {/* Strategy / User-authored sections */}

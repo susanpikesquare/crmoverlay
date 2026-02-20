@@ -29,6 +29,10 @@ interface AccountPlanExportData {
   risksAndMitigations: string;
   nextSteps: string;
   additionalNotes: string;
+  aiAnalysis?: Record<string, any> | null;
+  leadershipAsks?: Record<string, any>[] | null;
+  dayPlans?: Record<string, any> | null;
+  actionItems?: Record<string, any>[] | null;
 }
 
 function formatCurrency(amount: number | undefined | null): string {
@@ -307,8 +311,145 @@ export async function generateWordDocument(data: AccountPlanExportData): Promise
     spacer(),
   );
 
-  // ── 9. Strategy & Plan (User-authored) ──
-  children.push(heading('9. Strategy & Plan'));
+  // ── 9. AI Strategic Analysis ──
+  if (data.aiAnalysis) {
+    const ai = data.aiAnalysis;
+    children.push(heading('9. AI Strategic Analysis'));
+
+    if (ai.generatedAt) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `Generated: ${formatDate(ai.generatedAt)}`, size: 18, color: '666666', italics: true })],
+        spacing: { after: 100 },
+      }));
+    }
+
+    const aiFields = [
+      { label: 'Renewal Confidence', value: ai.renewalConfidence },
+      { label: 'Renewal Strategy', value: ai.renewalStrategy },
+      { label: 'Gong Sentiment', value: ai.gongSentiment },
+      { label: 'Pipeline Gap', value: ai.pipelineGap },
+      { label: 'Next Action', value: ai.nextAction },
+    ];
+    aiFields.forEach(f => { if (f.value) children.push(labelValue(f.label, f.value)); });
+    children.push(spacer());
+
+    // Why Stay
+    children.push(new Paragraph({ text: 'Why Stay — Stakeholder Perspectives', heading: HeadingLevel.HEADING_3 }));
+    const whyStayFields = [
+      { label: 'Economic Buyer', value: ai.whyStayEconomicBuyer },
+      { label: 'Admin / Power Users', value: ai.whyStayAdmin },
+      { label: 'Procurement', value: ai.whyStayProcurement },
+      { label: 'End Users', value: ai.whyStayUsers },
+      { label: 'Retention Risks', value: ai.whyStayRisks },
+    ];
+    whyStayFields.forEach(f => { if (f.value) children.push(labelValue(f.label, f.value)); });
+    children.push(spacer());
+
+    // Intelligence
+    children.push(new Paragraph({ text: 'Intelligence & Context', heading: HeadingLevel.HEADING_3 }));
+    const intelFields = [
+      { label: 'Competitive Mentions', value: ai.competitiveMentions },
+      { label: 'Whitespace Opportunities', value: ai.whitespaceOpportunities },
+      { label: 'Whitespace Strategy', value: ai.whitespaceStrategy },
+      { label: 'Stakeholder Intelligence', value: ai.stakeholderIntelligence },
+      { label: 'Key Decision Makers', value: ai.keyDecisionMakers },
+      { label: 'Tech Stack', value: ai.techStack },
+      { label: 'Key Themes', value: ai.keyThemes },
+      { label: 'Account History', value: ai.accountHistory },
+      { label: 'Resource Needs', value: ai.resourceNeeds },
+    ];
+    intelFields.forEach(f => { if (f.value) children.push(labelValue(f.label, f.value)); });
+    children.push(spacer());
+  }
+
+  // ── 10. Leadership Asks ──
+  if (data.leadershipAsks && data.leadershipAsks.length > 0) {
+    children.push(heading('10. Leadership Asks'));
+
+    const asksRows = [
+      new TableRow({
+        children: [
+          createHeaderCell('Initiative'),
+          createHeaderCell('Urgency'),
+          createHeaderCell('Action'),
+          createHeaderCell('Owner'),
+          createHeaderCell('Quarter'),
+        ],
+      }),
+      ...data.leadershipAsks.map((ask: any) =>
+        new TableRow({
+          children: [
+            createCell(ask.initiative || '—'),
+            createCell(ask.urgency || '—'),
+            createCell(ask.action || '—'),
+            createCell(ask.owner || '—'),
+            createCell(ask.quarter || '—'),
+          ],
+        })
+      ),
+    ];
+    children.push(
+      new Table({ rows: asksRows, width: { size: 100, type: WidthType.PERCENTAGE } }),
+      spacer(),
+    );
+  }
+
+  // ── 11. 30/60/90 Day Plan ──
+  if (data.dayPlans) {
+    children.push(heading('11. 30/60/90 Day Plan'));
+
+    const planSections = [
+      { label: 'First 30 Days', value: data.dayPlans.thirtyDay },
+      { label: 'Days 31-60', value: data.dayPlans.sixtyDay },
+      { label: 'Days 61-90', value: data.dayPlans.ninetyDay },
+    ];
+
+    planSections.forEach(({ label, value }) => {
+      children.push(
+        new Paragraph({ text: label, heading: HeadingLevel.HEADING_3, spacing: { before: 200 } }),
+      );
+      if (value) {
+        value.split('\n').forEach((line: string) => children.push(bodyText(line)));
+      } else {
+        children.push(bodyText('(No content)'));
+      }
+    });
+    children.push(spacer());
+  }
+
+  // ── 12. Action Items ──
+  if (data.actionItems && data.actionItems.length > 0) {
+    children.push(heading('12. Action Items'));
+
+    const statusLabel: Record<string, string> = { todo: 'To Do', in_progress: 'In Progress', done: 'Done' };
+    const actionRows = [
+      new TableRow({
+        children: [
+          createHeaderCell('Status'),
+          createHeaderCell('Description'),
+          createHeaderCell('Owner'),
+          createHeaderCell('Due Date'),
+        ],
+      }),
+      ...data.actionItems.map((item: any) =>
+        new TableRow({
+          children: [
+            createCell(statusLabel[item.status] || item.status || '—'),
+            createCell(item.description || '—'),
+            createCell(item.owner || '—'),
+            createCell(item.dueDate ? formatDate(item.dueDate) : '—'),
+          ],
+        })
+      ),
+    ];
+    children.push(
+      new Table({ rows: actionRows, width: { size: 100, type: WidthType.PERCENTAGE } }),
+      spacer(),
+    );
+  }
+
+  // ── 13. Strategy & Plan (User-authored) ──
+  children.push(heading('13. Strategy & Plan'));
 
   const strategyFields = [
     { label: 'Executive Summary', value: data.executiveSummary },
