@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import apiClient from '../../services/api';
 import EditableField from '../EditableField';
 import GongCallInsights from '../GongCallInsights';
 import GongAISearch from '../GongAISearch';
@@ -109,6 +111,128 @@ const getBuyingStageIcon = (stage: string) => {
       return '\uD83D\uDCCA';
   }
 };
+
+interface NewsSignal {
+  type: string;
+  category: string;
+  headline: string;
+  summary: string;
+  url?: string;
+  relevance: 'high' | 'medium' | 'low';
+  publishedDate?: string;
+  score?: number;
+}
+
+function getScoreColor(score: number): string {
+  if (score >= 70) return 'text-green-700 bg-green-50 border-green-200';
+  if (score >= 40) return 'text-yellow-700 bg-yellow-50 border-yellow-200';
+  return 'text-slate-700 bg-slate-50 border-slate-200';
+}
+
+function getRelevanceColor(relevance: string): string {
+  if (relevance === 'high') return 'text-red-700 bg-red-50 border-red-200';
+  if (relevance === 'medium') return 'text-yellow-700 bg-yellow-50 border-yellow-200';
+  return 'text-slate-700 bg-slate-50 border-slate-200';
+}
+
+function getCategoryColor(category: string): string {
+  const colors: Record<string, string> = {
+    'store-opening': 'bg-emerald-100 text-emerald-700',
+    'Store Opening': 'bg-emerald-100 text-emerald-700',
+    'executive-hire': 'bg-violet-100 text-violet-700',
+    'Executive Hire': 'bg-violet-100 text-violet-700',
+    'expansion': 'bg-cyan-100 text-cyan-700',
+    'Expansion': 'bg-cyan-100 text-cyan-700',
+    'funding': 'bg-green-100 text-green-700',
+    'Funding': 'bg-green-100 text-green-700',
+    'partnership': 'bg-blue-100 text-blue-700',
+    'Partnership': 'bg-blue-100 text-blue-700',
+    'product-launch': 'bg-pink-100 text-pink-700',
+    'Product Launch': 'bg-pink-100 text-pink-700',
+    'restructuring': 'bg-amber-100 text-amber-700',
+    'Restructuring': 'bg-amber-100 text-amber-700',
+  };
+  return colors[category] || 'bg-gray-100 text-gray-700';
+}
+
+function NewsSignalsPanel({ accountId }: { accountId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['account-news-signals', accountId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/api/accounts/${accountId}/signals`);
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+
+  const signals: NewsSignal[] = data?.data?.flatMap(
+    (s: any) => s.signalData?.signals || []
+  ) || [];
+
+  return (
+    <div className="bg-white rounded-xl shadow-md p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-gray-900">News Signals</h2>
+        <span className="px-3 py-1 bg-teal-50 text-teal-600 text-xs font-semibold rounded-full border border-teal-200">
+          News
+        </span>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-8 text-gray-400">
+          <p>Loading news signals...</p>
+        </div>
+      ) : signals.length === 0 ? (
+        <div className="text-center py-8 text-gray-400">
+          <p>No news signals detected yet</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {signals.map((signal, index) => (
+            <div
+              key={index}
+              className="p-3 bg-teal-50 rounded-lg border border-teal-100"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getCategoryColor(signal.category)}`}>
+                      {signal.category}
+                    </span>
+                    <span className={`px-1.5 py-0.5 text-xs font-medium rounded border ${getRelevanceColor(signal.relevance)}`}>
+                      {signal.relevance}
+                    </span>
+                    {signal.score != null && (
+                      <span className={`px-2 py-0.5 text-xs font-bold rounded border ${getScoreColor(signal.score)}`}>
+                        {signal.score}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    {signal.url ? (
+                      <a href={signal.url} target="_blank" rel="noopener noreferrer" className="hover:text-teal-700 hover:underline">
+                        {signal.headline}
+                      </a>
+                    ) : (
+                      signal.headline
+                    )}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">{signal.summary}</p>
+                </div>
+                {signal.publishedDate && (
+                  <span className="text-xs text-gray-400 whitespace-nowrap">
+                    {new Date(signal.publishedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Account360Tab({ account, opportunities, permissions, onFieldSave }: Props) {
   return (
@@ -361,6 +485,9 @@ export default function Account360Tab({ account, opportunities, permissions, onF
             </div>
           </div>
         </div>
+
+        {/* News Signals */}
+        <NewsSignalsPanel accountId={account.Id} />
 
         {/* License & Usage - Full Width */}
         {(account.Contract_Total_License_Seats__c || account.Total_Active_Users__c) && (

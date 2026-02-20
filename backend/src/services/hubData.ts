@@ -3734,6 +3734,7 @@ export async function getAESignals(
       const accountsToCache = Array.from(uniqueAccounts.entries()).map(([accountId, accountName]) => ({
         accountId,
         accountName,
+        ownerId: userId,
       }));
       if (accountsToCache.length > 0) {
         // Fire-and-forget — don't block the response

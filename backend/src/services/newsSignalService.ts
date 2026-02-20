@@ -230,8 +230,8 @@ export async function runNewsBatch(pool: Pool): Promise<number> {
   // Build prompt from admin config
   const adminPrompt = buildPromptFromConfig(config);
 
-  // Load account name cache
-  const accounts = await getAccountNameCache(pool);
+  // Load account name cache — only accounts owned by an AE/AM
+  const accounts = await getAccountNameCache(pool, { ownedOnly: true });
   if (accounts.length === 0) {
     console.log('[NewsSignals] No cached accounts — skipping news batch. Accounts will be cached when users load their hubs.');
     return 0;

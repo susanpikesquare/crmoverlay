@@ -14,6 +14,7 @@ import * as listViewService from '../services/listViewService';
 import { ListQueryParams, FilterCriteria, OwnershipScope } from '../types/filters';
 import { escapeSoqlValue } from '../utils/soqlSanitizer';
 import { getGongBuyingSignals } from '../services/gongSignalService';
+import { getSignalsForAccounts } from '../services/signalStore';
 
 const router = Router();
 
@@ -521,6 +522,30 @@ router.get('/accounts/:id', isAuthenticated, async (req: Request, res: Response)
     res.status(500).json({
       success: false,
       error: 'Failed to fetch account',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/accounts/:id/signals
+ * Returns news signals for a specific account
+ */
+router.get('/accounts/:id/signals', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const accountId = req.params.id;
+    const signals = await getSignalsForAccounts(pool, [accountId]);
+    const newsSignals = signals.filter(s => s.source === 'news');
+
+    res.json({
+      success: true,
+      data: newsSignals,
+    });
+  } catch (error: any) {
+    console.error('Error fetching account signals:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch account signals',
       message: error.message,
     });
   }

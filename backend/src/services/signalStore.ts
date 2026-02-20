@@ -25,6 +25,7 @@ export interface StoredSignal {
 export interface CachedAccountName {
   accountId: string;
   accountName: string;
+  ownerId?: string;
   updatedAt?: string;
 }
 
@@ -57,6 +58,11 @@ export async function initializeSignalTables(pool: Pool): Promise<void> {
         account_name TEXT NOT NULL,
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+
+    // Migration: add owner_id column to account_name_cache
+    await pool.query(`
+      ALTER TABLE account_name_cache ADD COLUMN IF NOT EXISTS owner_id VARCHAR(18);
     `);
 
     console.log('[SignalStore] Tables initialized successfully');
@@ -186,23 +192,28 @@ export async function cacheAccountNames(pool: Pool, accounts: CachedAccountName[
 
   for (const account of accounts) {
     await pool.query(
-      `INSERT INTO account_name_cache (account_id, account_name, updated_at)
-       VALUES ($1, $2, NOW())
+      `INSERT INTO account_name_cache (account_id, account_name, owner_id, updated_at)
+       VALUES ($1, $2, $3, NOW())
        ON CONFLICT (account_id)
-       DO UPDATE SET account_name = $2, updated_at = NOW()`,
-      [account.accountId, account.accountName]
+       DO UPDATE SET account_name = $2, owner_id = COALESCE($3, account_name_cache.owner_id), updated_at = NOW()`,
+      [account.accountId, account.accountName, account.ownerId || null]
     );
   }
 }
 
-export async function getAccountNameCache(pool: Pool): Promise<CachedAccountName[]> {
-  const result = await pool.query(
-    `SELECT account_id, account_name, updated_at FROM account_name_cache ORDER BY updated_at DESC`
-  );
+export async function getAccountNameCache(pool: Pool, options?: { ownedOnly?: boolean }): Promise<CachedAccountName[]> {
+  let query = `SELECT account_id, account_name, owner_id, updated_at FROM account_name_cache`;
+  if (options?.ownedOnly) {
+    query += ` WHERE owner_id IS NOT NULL`;
+  }
+  query += ` ORDER BY updated_at DESC`;
+
+  const result = await pool.query(query);
 
   return result.rows.map(row => ({
     accountId: row.account_id,
     accountName: row.account_name,
+    ownerId: row.owner_id,
     updatedAt: row.updated_at,
   }));
 }
