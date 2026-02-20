@@ -138,6 +138,11 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
       contactsSnapshot: sfData.contacts,
     });
 
+    // Fire-and-forget: auto-generate AI analysis in the background
+    generateAccountPlanAI(plan.id).catch(err => {
+      console.error('Background AI generation failed:', err.message);
+    });
+
     res.status(201).json({ success: true, data: plan });
   } catch (error: any) {
     console.error('Error creating account plan:', error);

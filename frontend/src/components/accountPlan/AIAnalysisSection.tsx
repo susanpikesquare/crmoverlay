@@ -31,6 +31,7 @@ interface AIAnalysisSectionProps {
   onGenerate: () => void;
   isGenerating: boolean;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
+  isAutoGenerating?: boolean;
 }
 
 function ConfidenceBadge({ confidence }: { confidence: string }) {
@@ -76,44 +77,44 @@ export default function AIAnalysisSection({
   onGenerate,
   isGenerating,
   saveStatus,
+  isAutoGenerating,
 }: AIAnalysisSectionProps) {
   // Empty state
   if (!aiAnalysis) {
+    const generating = isGenerating || isAutoGenerating;
     return (
       <div className="bg-white rounded-xl shadow-md p-6">
         <div className="text-center py-8">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
-            <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
+            {generating ? (
+              <svg className="w-8 h-8 text-indigo-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+            )}
           </div>
           <h3 className="text-lg font-bold text-gray-900 mb-2">AI Strategic Analysis</h3>
           <p className="text-sm text-gray-600 mb-6 max-w-md mx-auto">
-            Generate AI-powered insights from your Salesforce data and Gong call intelligence.
-            This will analyze renewal risk, stakeholder sentiment, whitespace opportunities, and more.
+            {generating
+              ? 'Analyzing Salesforce data and Gong call intelligence... This may take 30-60 seconds.'
+              : 'Generate AI-powered insights from your Salesforce data and Gong call intelligence. This will analyze renewal risk, stakeholder sentiment, whitespace opportunities, and more.'
+            }
           </p>
-          <button
-            onClick={onGenerate}
-            disabled={isGenerating}
-            className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-purple-700 transition shadow-md disabled:opacity-50 inline-flex items-center gap-2"
-          >
-            {isGenerating ? (
-              <>
-                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Generate AI Analysis
-              </>
-            )}
-          </button>
+          {!generating && (
+            <button
+              onClick={onGenerate}
+              className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-purple-700 transition shadow-md inline-flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Generate AI Analysis
+            </button>
+          )}
         </div>
       </div>
     );
