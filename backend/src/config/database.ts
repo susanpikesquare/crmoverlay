@@ -47,7 +47,7 @@ export async function testConnection() {
 // Sync all models with database
 export async function syncDatabase(force = false) {
   try {
-    await sequelize.sync({ force, alter: true });
+    await sequelize.sync({ force });
     console.log(`✓ Database synchronized (force: ${force})`);
     return true;
   } catch (error) {
