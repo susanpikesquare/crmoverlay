@@ -787,7 +787,19 @@ export async function getAccountPlanData(
   const accountFallback = `
     SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees, Type,
            BillingCity, BillingState, BillingCountry,
+           ParentId, Parent.Name,
            Owner.Name, Owner.Email,
+           Clay_Employee_Count__c, Clay_Revenue__c, Clay_Industry__c,
+           Clay_Parent_Account__c,
+           Total_ARR__c, of_Axonify_Users__c, Customer_Stage__c, Risk__c,
+           Agreement_Expiry_Date__c, Launch_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
+           Current_Gainsight_Score__c, Customer_Success_Score__c,
+           Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
+           License_Utilization_Max__c, License_Utilization_Learn__c,
+           License_Utilization_Comms__c, License_Utilization_Tasks__c,
+           Max_Usage_Trend__c,
+           Strategy_Notes__c, Risk_Notes__c, Contract_Notes__c,
+           Overall_Customer_Health_Notes__c, Sponsorship_Notes__c, Support_Notes__c,
            CreatedDate, LastModifiedDate
     FROM Account
     WHERE Id = '${accountId}'
