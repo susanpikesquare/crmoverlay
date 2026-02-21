@@ -178,11 +178,11 @@ export default function AIAnalysisSection({
           </div>
           <div>
             <div className="text-xs text-gray-500 mb-1">Next Action</div>
-            <p className="text-sm font-medium text-gray-900 line-clamp-2">{aiAnalysis.nextAction || '—'}</p>
+            <p className="text-sm font-medium text-gray-900">{aiAnalysis.nextAction || '—'}</p>
           </div>
           <div>
             <div className="text-xs text-gray-500 mb-1">Pipeline Gap</div>
-            <p className="text-sm font-medium text-gray-900 line-clamp-2">{aiAnalysis.pipelineGap || '—'}</p>
+            <p className="text-sm font-medium text-gray-900">{aiAnalysis.pipelineGap || '—'}</p>
           </div>
         </div>
 

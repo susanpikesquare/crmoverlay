@@ -19,10 +19,23 @@ export default function AutoSaveTextarea({
 }: AutoSaveTextareaProps) {
   const [localValue, setLocalValue] = useState(value);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
 
   useEffect(() => {
     setLocalValue(value);
   }, [value]);
+
+  // Auto-resize when value changes
+  useEffect(() => {
+    autoResize();
+  }, [localValue, autoResize]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
@@ -49,11 +62,12 @@ export default function AutoSaveTextarea({
     <div>
       <label className="block text-sm font-semibold text-gray-700 mb-2">{label}</label>
       <textarea
+        ref={textareaRef}
         value={localValue}
         onChange={handleChange}
         placeholder={placeholder}
         rows={rows}
-        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-y text-sm text-gray-900 placeholder-gray-400"
+        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-y text-sm text-gray-900 placeholder-gray-400 overflow-hidden"
       />
     </div>
   );
