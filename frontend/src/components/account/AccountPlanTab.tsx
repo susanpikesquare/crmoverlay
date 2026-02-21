@@ -86,9 +86,9 @@ export default function AccountPlanTab({ accountId, accountName }: Props) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data && !data.aiAnalysis) {
-        // Stop polling after 2 minutes (AI generation likely failed)
+        // Stop polling after 5 minutes (AI generation can take 2-3 min)
         const age = Date.now() - new Date(data.createdAt).getTime();
-        if (age < 120000) return 5000;
+        if (age < 300000) return 5000;
       }
       return false;
     },
@@ -382,7 +382,7 @@ export default function AccountPlanTab({ accountId, accountName }: Props) {
           onGenerate={() => generateAIMutation.mutate()}
           isGenerating={generateAIMutation.isPending}
           saveStatus={saveStatus}
-          isAutoGenerating={!plan.aiAnalysis && (Date.now() - new Date(plan.createdAt).getTime()) < 120000}
+          isAutoGenerating={!plan.aiAnalysis && (Date.now() - new Date(plan.createdAt).getTime()) < 300000}
         />
       </div>
 
