@@ -85,7 +85,11 @@ export default function AccountPlanTab({ accountId, accountName }: Props) {
     // Poll every 5s while AI analysis is pending (auto-generates on create)
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (data && !data.aiAnalysis) return 5000;
+      if (data && !data.aiAnalysis) {
+        // Stop polling after 2 minutes (AI generation likely failed)
+        const age = Date.now() - new Date(data.createdAt).getTime();
+        if (age < 120000) return 5000;
+      }
       return false;
     },
   });

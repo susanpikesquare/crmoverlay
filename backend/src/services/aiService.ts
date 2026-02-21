@@ -155,7 +155,7 @@ export class AIService {
       case 'anthropic':
         if (config.apiKey) {
           this.anthropicClient = new Anthropic({ apiKey: config.apiKey });
-          this.model = config.model || 'claude-3-7-sonnet-20250219';
+          this.model = config.model || 'claude-sonnet-4-5-20250929';
           console.log(`AI Service initialized with Anthropic Claude (${this.model})`);
         }
         break;
@@ -227,11 +227,11 @@ export class AIService {
         // Both configured: Agentforce is primary for recommendations, Anthropic for chat
         this.provider = 'agentforce';
         this.secondaryProvider = 'anthropic';
-        this.model = 'claude-3-7-sonnet-20250219';
+        this.model = 'claude-sonnet-4-5-20250929';
         console.log('AI Service: Multi-provider mode - Agentforce + Anthropic Claude');
       } else {
         this.provider = 'anthropic';
-        this.model = 'claude-3-7-sonnet-20250219';
+        this.model = 'claude-sonnet-4-5-20250929';
         console.log('AI Service initialized with Anthropic Claude (env)');
       }
     } else if (openaiKey) {
@@ -348,7 +348,7 @@ export class AIService {
     if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
 
     const message = await this.anthropicClient.messages.create({
-      model: this.model || 'claude-3-7-sonnet-20250219',
+      model: this.model || 'claude-sonnet-4-5-20250929',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -591,7 +591,7 @@ Provide ONLY the JSON response, no additional text.`;
     if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
 
     const message = await this.anthropicClient.messages.create({
-      model: this.model || 'claude-3-7-sonnet-20250219',
+      model: this.model || 'claude-sonnet-4-5-20250929',
       max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -825,7 +825,7 @@ Provide ONLY the JSON response, no additional text.`;
       case 'anthropic': {
         if (!this.anthropicClient) throw new Error('Anthropic client not initialized');
         const message = await this.anthropicClient.messages.create({
-          model: this.model || 'claude-3-7-sonnet-20250219',
+          model: this.model || 'claude-sonnet-4-5-20250929',
           max_tokens: maxTokens,
           messages: [{ role: 'user', content: prompt }],
         });
