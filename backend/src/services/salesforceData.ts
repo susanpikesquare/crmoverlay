@@ -238,30 +238,24 @@ export interface DashboardStats {
 async function safeQuery<T>(
   connection: Connection,
   primaryQuery: string,
-  fallbackQuery?: string
+  ...fallbackQueries: string[]
 ): Promise<T[]> {
-  try {
-    const result = await connection.query<T>(primaryQuery);
-    return result.records || [];
-  } catch (error: any) {
-    // Check if error is due to missing fields
-    if (error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column')) {
-      console.warn('Custom fields not found, using fallback query:', error.message);
-
-      if (fallbackQuery) {
-        try {
-          const result = await connection.query<T>(fallbackQuery);
-          return result.records || [];
-        } catch (fallbackError: any) {
-          console.error('Fallback query also failed:', fallbackError.message);
-          throw fallbackError;
-        }
+  const queries = [primaryQuery, ...fallbackQueries];
+  for (let i = 0; i < queries.length; i++) {
+    try {
+      const result = await connection.query<T>(queries[i]);
+      return result.records || [];
+    } catch (error: any) {
+      const isFieldError = error.errorCode === 'INVALID_FIELD' || error.message?.includes('No such column');
+      if (isFieldError && i < queries.length - 1) {
+        console.warn(`Query level ${i} failed (missing fields), trying next fallback:`, error.message);
+        continue;
       }
+      console.error('Salesforce query error:', error.message);
+      throw error;
     }
-
-    console.error('Salesforce query error:', error.message);
-    throw error;
   }
+  return [];
 }
 
 /**
@@ -784,6 +778,7 @@ export async function getAccountPlanData(
     LIMIT 1
   `;
 
+  // Fallback 1: All custom fields except Active_Users_* and License_Utilization_*
   const accountFallback = `
     SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees, Type,
            BillingCity, BillingState, BillingCountry,
@@ -795,11 +790,21 @@ export async function getAccountPlanData(
            Agreement_Expiry_Date__c, Launch_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
            Current_Gainsight_Score__c, Customer_Success_Score__c,
            Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
-           License_Utilization_Max__c, License_Utilization_Learn__c,
-           License_Utilization_Comms__c, License_Utilization_Tasks__c,
            Max_Usage_Trend__c,
            Strategy_Notes__c, Risk_Notes__c, Contract_Notes__c,
            Overall_Customer_Health_Notes__c, Sponsorship_Notes__c, Support_Notes__c,
+           CreatedDate, LastModifiedDate
+    FROM Account
+    WHERE Id = '${accountId}'
+    LIMIT 1
+  `;
+
+  // Fallback 2: Only standard Salesforce fields (no custom fields)
+  const accountUltraSafe = `
+    SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees, Type,
+           BillingCity, BillingState, BillingCountry,
+           ParentId, Parent.Name,
+           Owner.Name, Owner.Email,
            CreatedDate, LastModifiedDate
     FROM Account
     WHERE Id = '${accountId}'
@@ -874,7 +879,7 @@ export async function getAccountPlanData(
 
   // Execute all queries in parallel
   const [accountRecords, renewalOpps, expansionOpps, contacts] = await Promise.all([
-    safeQuery<Account>(connection, accountQuery, accountFallback),
+    safeQuery<Account>(connection, accountQuery, accountFallback, accountUltraSafe),
     safeQuery<Opportunity>(connection, renewalQuery, renewalFallback),
     safeQuery<Opportunity>(connection, expansionQuery, expansionFallback),
     safeQuery<Contact>(connection, contactsQuery),
