@@ -151,16 +151,16 @@ export async function fetchGongDataForPlan(
         const transcript = transcripts.get(call.id);
         let transcriptExcerpt = '';
         if (transcript?.transcript) {
-          // Take first ~2000 chars of transcript text
+          // Take first ~1000 chars of transcript text
           const lines: string[] = [];
           let charCount = 0;
           for (const segment of transcript.transcript) {
             for (const sentence of segment.sentences) {
-              if (charCount > 2000) break;
+              if (charCount > 1000) break;
               lines.push(sentence.text);
               charCount += sentence.text.length;
             }
-            if (charCount > 2000) break;
+            if (charCount > 1000) break;
           }
           transcriptExcerpt = lines.join(' ');
         }
@@ -266,7 +266,7 @@ export async function runAccountPlanAI(
       if (call.topics?.length) prompt += `Topics: ${call.topics.join(', ')}\n`;
       if (call.sentiment) prompt += `Sentiment: ${call.sentiment}\n`;
       if (call.transcriptExcerpt) {
-        prompt += `Excerpt: ${call.transcriptExcerpt.substring(0, 1000)}\n`;
+        prompt += `Excerpt: ${call.transcriptExcerpt.substring(0, 500)}\n`;
       }
       prompt += '\n';
     });
@@ -328,20 +328,37 @@ Based on ALL the data above, return a single JSON object (no markdown, no code f
 
 Be specific and actionable. Reference actual data, names, and numbers from the account data above. Do not invent information not present in the data. If Gong data is available, heavily leverage call insights for sentiment, competitive mentions, and stakeholder intelligence. Return ONLY the JSON object.`;
 
-  const response = await aiService.askWithContext(prompt, 8000);
+  const response = await aiService.askWithContext(prompt, 16000);
 
   // Parse the JSON response
   let parsed: any;
   try {
     // Try to extract JSON from the response (handle potential markdown wrapping)
     let jsonStr = response.trim();
+    // Strip markdown code fences if present
     if (jsonStr.startsWith('```')) {
       jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+    // If JSON is truncated (no closing brace), try to repair it
+    if (!jsonStr.endsWith('}')) {
+      // Find the last complete key-value pair and close the object
+      const lastCompleteComma = jsonStr.lastIndexOf('",');
+      const lastCompleteBracket = jsonStr.lastIndexOf('],');
+      const lastCompleteBrace = jsonStr.lastIndexOf('},');
+      const cutoff = Math.max(lastCompleteComma, lastCompleteBracket, lastCompleteBrace);
+      if (cutoff > 0) {
+        jsonStr = jsonStr.substring(0, cutoff + 1);
+        // Count open brackets/braces to close them
+        const openBraces = (jsonStr.match(/\{/g) || []).length - (jsonStr.match(/\}/g) || []).length;
+        const openBrackets = (jsonStr.match(/\[/g) || []).length - (jsonStr.match(/\]/g) || []).length;
+        jsonStr += ']'.repeat(Math.max(0, openBrackets)) + '}'.repeat(Math.max(0, openBraces));
+      }
     }
     parsed = JSON.parse(jsonStr);
   } catch (parseError) {
     console.error('[AccountPlanAI] Failed to parse AI response as JSON:', parseError);
-    console.error('[AccountPlanAI] Raw response:', response.substring(0, 500));
+    console.error('[AccountPlanAI] Raw response (first 1000 chars):', response.substring(0, 1000));
+    console.error('[AccountPlanAI] Raw response (last 500 chars):', response.substring(response.length - 500));
     throw new Error('AI returned invalid JSON response. Please try again.');
   }
 
