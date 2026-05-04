@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, useEffect } from 'react';
 import apiClient from '../services/api';
+import Logo from './Logo';
 
 export default function Navigation() {
   const navigate = useNavigate();
@@ -181,13 +182,11 @@ export default function Navigation() {
                 className="object-contain"
               />
             ) : brandingData?.brandName ? (
-              <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+              <span className="text-2xl font-bold text-primary-500">
                 {brandingData.brandName}
               </span>
             ) : (
-              <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                FormationIQ
-              </span>
+              <Logo variant="full" className="h-9" />
             )}
           </Link>
 
@@ -228,7 +227,7 @@ export default function Navigation() {
             {(authData?.user?.isAdmin || authData?.user?.role === 'admin') && (
               <Link
                 to="/admin"
-                className="text-purple-700 hover:text-purple-900 font-medium transition flex items-center gap-1.5"
+                className="text-accent-600 hover:text-accent-700 font-medium transition flex items-center gap-1.5"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -241,7 +240,7 @@ export default function Navigation() {
 
           {/* Global Search */}
           <div className="relative" ref={searchRef}>
-            <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 focus-within:ring-2 focus-within:ring-purple-400 focus-within:bg-white transition">
+            <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 focus-within:ring-2 focus-within:ring-primary-400 focus-within:bg-white transition">
               <svg className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -259,7 +258,7 @@ export default function Navigation() {
               <div className="absolute left-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-y-auto">
                 {searchLoading ? (
                   <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                    <svg className="animate-spin h-5 w-5 mx-auto mb-2 text-purple-500" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-5 w-5 mx-auto mb-2 text-primary-500" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
@@ -329,7 +328,7 @@ export default function Navigation() {
                 {authData?.user?.email || ''}
               </p>
             </div>
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-full flex items-center justify-center text-white font-semibold">
               {getInitials(authData?.user?.name || 'User')}
             </div>
 
@@ -338,7 +337,7 @@ export default function Navigation() {
               <div className="relative">
                 <button
                   onClick={() => setShowUserSelector(!showUserSelector)}
-                  className="ml-2 px-4 py-2 text-sm font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded-lg transition flex items-center gap-2"
+                  className="ml-2 px-4 py-2 text-sm font-medium text-accent-600 hover:text-accent-700 hover:bg-accent-50 rounded-lg transition flex items-center gap-2"
                   title="Impersonate User"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -365,7 +364,7 @@ export default function Navigation() {
                           onClick={() => handleImpersonate(user.id)}
                           className="w-full px-4 py-3 text-left hover:bg-gray-50 transition flex items-center gap-3"
                         >
-                          <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                          <div className="w-8 h-8 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
                             {getInitials(user.name)}
                           </div>
                           <div className="flex-1">

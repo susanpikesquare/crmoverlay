@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import Logo from '../components/Logo';
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -80,27 +81,18 @@ const Landing = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50">
       {/* Header */}
       <header className="bg-white shadow-sm sticky top-0 z-50">
         <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
-              <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-lg">
-                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                  FormationIQ
-                </h1>
-                <p className="text-xs text-gray-500">by PikeSquare</p>
-              </div>
+              <Logo variant="full" className="h-10" />
+              <p className="text-xs text-gray-500 self-end pb-1">by PikeSquare</p>
             </div>
             <button
               onClick={() => navigate('/login')}
-              className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg"
+              className="px-6 py-2.5 bg-accent-500 hover:bg-accent-600 text-white rounded-lg transition-all duration-200 font-medium shadow-md hover:shadow-lg"
             >
               Customer Login
             </button>
@@ -113,7 +105,7 @@ const Landing = () => {
         <div className="text-center">
           <h2 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
             Your Central Work Hub
-            <span className="block mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+            <span className="block mt-2 text-primary-500">
               For Revenue Teams
             </span>
           </h2>
@@ -125,13 +117,13 @@ const Landing = () => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
               onClick={() => navigate('/login')}
-              className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl"
+              className="px-8 py-4 bg-accent-500 hover:bg-accent-600 text-white rounded-lg transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl"
             >
               Get Started
             </button>
             <a
               href="#features"
-              className="px-8 py-4 bg-white text-purple-600 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-lg border-2 border-purple-600"
+              className="px-8 py-4 bg-white text-primary-500 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-lg border-2 border-primary-500"
             >
               Learn More
             </a>
@@ -147,8 +139,8 @@ const Landing = () => {
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, index) => (
-            <div key={index} className="p-6 rounded-xl border border-gray-200 hover:border-purple-300 hover:shadow-lg transition-all duration-200">
-              <div className="text-purple-600 mb-4">{feature.icon}</div>
+            <div key={index} className="p-6 rounded-xl border border-gray-200 hover:border-accent-300 hover:shadow-lg transition-all duration-200">
+              <div className="text-accent-500 mb-4">{feature.icon}</div>
               <h4 className="text-xl font-bold text-gray-900 mb-2">{feature.title}</h4>
               <p className="text-gray-600">{feature.description}</p>
             </div>
@@ -165,7 +157,7 @@ const Landing = () => {
         <div className="space-y-12">
           {screenshots.map((screenshot, index) => (
             <div key={index} className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-              <div className="p-8 bg-gradient-to-r from-purple-50 to-indigo-50">
+              <div className="p-8 bg-gradient-to-r from-primary-50 to-accent-50">
                 <h4 className="text-2xl font-bold text-gray-900 mb-2">{screenshot.title}</h4>
                 <p className="text-gray-600">{screenshot.description}</p>
               </div>
@@ -199,32 +191,32 @@ const Landing = () => {
       </section>
 
       {/* How It Works */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-3xl shadow-2xl my-12 text-white">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 bg-gradient-to-br from-primary-700 via-primary-500 to-primary-800 rounded-3xl shadow-2xl my-12 text-white">
         <div className="text-center mb-16">
           <h3 className="text-4xl font-bold mb-4">How It Works</h3>
-          <p className="text-xl text-purple-100">Get started in minutes</p>
+          <p className="text-xl text-primary-200">Get started in minutes</p>
         </div>
         <div className="grid md:grid-cols-3 gap-8">
           <div className="text-center">
-            <div className="bg-white/20 backdrop-blur-lg rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-accent-500 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl font-bold">1</span>
             </div>
             <h4 className="text-xl font-bold mb-2">Connect Your Systems</h4>
-            <p className="text-purple-100">Securely authenticate with your CRM and other tools using OAuth</p>
+            <p className="text-primary-100">Securely authenticate with your CRM and other tools using OAuth</p>
           </div>
           <div className="text-center">
-            <div className="bg-white/20 backdrop-blur-lg rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-accent-500 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl font-bold">2</span>
             </div>
             <h4 className="text-xl font-bold mb-2">Get AI-Powered Insights</h4>
-            <p className="text-purple-100">FormationIQ analyzes your data and delivers personalized recommendations</p>
+            <p className="text-primary-100">FormationIQ analyzes your data and delivers personalized recommendations</p>
           </div>
           <div className="text-center">
-            <div className="bg-white/20 backdrop-blur-lg rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-accent-500 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl font-bold">3</span>
             </div>
             <h4 className="text-xl font-bold mb-2">Focus on What Matters</h4>
-            <p className="text-purple-100">Spend less time searching, more time selling with your centralized work hub</p>
+            <p className="text-primary-100">Spend less time searching, more time selling with your centralized work hub</p>
           </div>
         </div>
       </section>
@@ -238,7 +230,7 @@ const Landing = () => {
           </p>
           <button
             onClick={() => navigate('/login')}
-            className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl"
+            className="px-8 py-4 bg-accent-500 hover:bg-accent-600 text-white rounded-lg transition-all duration-200 font-semibold text-lg shadow-lg hover:shadow-xl"
           >
             Access Your Account
           </button>
@@ -246,39 +238,32 @@ const Landing = () => {
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white mt-20">
+      <footer className="bg-primary-900 text-white mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid md:grid-cols-3 gap-8">
             <div>
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-lg">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">FormationIQ</h3>
-                  <p className="text-sm text-gray-400">by PikeSquare</p>
-                </div>
+              <div className="mb-4">
+                <Logo variant="full" className="h-10" inverted />
+                <p className="text-sm text-primary-200 mt-1">by PikeSquare</p>
               </div>
-              <p className="text-gray-400">Your central hub powered by your systems</p>
+              <p className="text-primary-200">Your central hub powered by your systems</p>
             </div>
             <div>
               <h4 className="font-bold mb-4">Product</h4>
-              <ul className="space-y-2 text-gray-400">
+              <ul className="space-y-2 text-primary-200">
                 <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
                 <li><button onClick={() => navigate('/login')} className="hover:text-white transition-colors">Login</button></li>
               </ul>
             </div>
             <div>
               <h4 className="font-bold mb-4">Company</h4>
-              <ul className="space-y-2 text-gray-400">
+              <ul className="space-y-2 text-primary-200">
                 <li>PikeSquare</li>
                 <li>Revenue Intelligence Platform</li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
+          <div className="border-t border-primary-800 mt-8 pt-8 text-center text-primary-200">
             <p>&copy; {new Date().getFullYear()} FormationIQ by PikeSquare. All rights reserved.</p>
           </div>
         </div>
