@@ -64,19 +64,19 @@ const Landing = () => {
 
   const screenshots = [
     {
-      title: 'Dashboard Overview',
-      description: 'Your revenue intelligence hub with key metrics and recent activity',
-      image: '/screenshots/dashboard.png',
+      title: 'Sales Leadership Command Center',
+      description: 'Team performance, pipeline forecast, and a rep leaderboard at a glance',
+      image: '/screenshots/formationiq-hub.png',
     },
     {
       title: 'Account 360° View',
-      description: 'Complete account details with opportunities and custom data',
-      image: '/screenshots/account360.png',
+      description: 'Complete account intelligence with engagement signals, news, and AI insights',
+      image: '/screenshots/formationiq-account.png',
     },
     {
-      title: 'Opportunities List',
-      description: 'Track and manage opportunities across all stages',
-      image: '/screenshots/opportunities.png',
+      title: 'Opportunity Intelligence',
+      description: 'AI deal summary, MEDDPICC qualification, and Command of the Message in one place',
+      image: '/screenshots/formationiq-opportunity.png',
     },
   ];
 
