@@ -75,7 +75,7 @@ const Landing = () => {
     },
     {
       title: 'Opportunity Intelligence',
-      description: 'AI deal summary, MEDDPICC qualification, and Command of the Message in one place',
+      description: 'AI deal summary, MEDDPICC qualification, and your preferred sales methodology in one place',
       image: '/screenshots/formationiq-opportunity.png',
     },
   ];
