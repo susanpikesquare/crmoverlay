@@ -754,16 +754,11 @@ Provide ONLY the JSON response, no additional text.`;
         if (acct.Agreement_Expiry_Date__c) contextInfo += `   Agreement Expiry: ${acct.Agreement_Expiry_Date__c}\n`;
         if (acct.Last_QBR__c) contextInfo += `   Last QBR: ${acct.Last_QBR__c}\n`;
         if (acct.Last_Exec_Check_In__c) contextInfo += `   Last Exec Check-In: ${acct.Last_Exec_Check_In__c}\n`;
-        // Usage
+        // Usage (aggregate only — per-product breakdown is tenant-specific)
         const usageParts: string[] = [];
         if (acct.Contract_Total_License_Seats__c) usageParts.push(`Seats: ${acct.Contract_Total_License_Seats__c}`);
         if (acct.Total_Active_Users__c) usageParts.push(`Active: ${acct.Total_Active_Users__c}`);
-        if (acct.License_Utilization_Max__c) usageParts.push(`Util(Max): ${acct.License_Utilization_Max__c}%`);
-        if (acct.License_Utilization_Learn__c) usageParts.push(`Util(Learn): ${acct.License_Utilization_Learn__c}%`);
-        if (acct.License_Utilization_Comms__c) usageParts.push(`Util(Comms): ${acct.License_Utilization_Comms__c}%`);
-        if (acct.License_Utilization_Tasks__c) usageParts.push(`Util(Tasks): ${acct.License_Utilization_Tasks__c}%`);
         if (usageParts.length > 0) contextInfo += `   Usage: ${usageParts.join(' | ')}\n`;
-        if (acct.Max_Usage_Trend__c) contextInfo += `   Usage Trend: ${acct.Max_Usage_Trend__c}\n`;
         contextInfo += `\n`;
       });
     }

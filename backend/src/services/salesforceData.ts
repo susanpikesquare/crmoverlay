@@ -64,43 +64,15 @@ export interface Account {
   Risk__c?: string;
   Customer_Stage__c?: string;
   Total_ARR__c?: number;
-  of_Axonify_Users__c?: number;
   Launch_Date__c?: string;
   Agreement_Expiry_Date__c?: string;
   Last_QBR__c?: string;
   Last_Exec_Check_In__c?: string;
 
-  // Axonify Usage/License Data
+  // License / seat counts (universal — every B2B SaaS tracks these)
   Contract_Total_License_Seats__c?: number;
-  Total_Hierarchy_Seats__c?: number;
-  Logo_Seats__c?: number;
   License_Override__c?: number;
-
-  // Active Users by Product
   Total_Active_Users__c?: number;
-  Active_Users_Max__c?: number;
-  Active_Users_Learn__c?: number;
-  Active_Users_Comms__c?: number;
-  Active_Users_Tasks__c?: number;
-  Learn_Users__c?: number;
-  Comms_Users__c?: number;
-  Tasks_Users__c?: number;
-  Chat_Users__c?: number;
-  Max_Users__c?: number;
-  Recognition_Users__c?: number;
-  Content_Studio_Licenses__c?: number;
-
-  // License Utilization (percentages)
-  License_Utilization_Max__c?: number;
-  License_Utilization_Learn__c?: number;
-  License_Utilization_Comms__c?: number;
-  License_Utilization_Tasks__c?: number;
-
-  // Usage Summaries
-  Max_Usage_Trend__c?: string;
-  License_Utilization_current_Summary__c?: string;
-  License_Utilization_Active_User_Summary__c?: string;
-  Usage_Metrics_Next_Steps__c?: string;
 
   // Notes/Commentary
   Strategy_Notes__c?: string;
@@ -394,15 +366,7 @@ export async function getAccountById(
            Total_ARR__c, Customer_Stage__c, Risk__c,
            Agreement_Expiry_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
            Current_Gainsight_Score__c,
-           Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
-           Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
-           Active_Users_Comms__c, Active_Users_Tasks__c,
-           Learn_Users__c, Comms_Users__c, Tasks_Users__c, Chat_Users__c,
-           Max_Users__c, Recognition_Users__c, Content_Studio_Licenses__c,
-           License_Utilization_Max__c, License_Utilization_Learn__c,
-           License_Utilization_Comms__c, License_Utilization_Tasks__c,
-           Max_Usage_Trend__c, License_Utilization_current_Summary__c,
-           License_Utilization_Active_User_Summary__c, Usage_Metrics_Next_Steps__c,
+           Contract_Total_License_Seats__c, Total_Active_Users__c,
            CreatedDate, LastModifiedDate
     FROM Account
     WHERE Id = '${accountId}'
@@ -761,15 +725,10 @@ export async function getAccountPlanData(
            accountProfileFit6sense__c, accountProfileScore6sense__c,
            Clay_Employee_Count__c, Clay_Revenue__c, Clay_Industry__c,
            Clay_Parent_Account__c,
-           Total_ARR__c, of_Axonify_Users__c, Customer_Stage__c, Risk__c,
+           Total_ARR__c, Customer_Stage__c, Risk__c,
            Agreement_Expiry_Date__c, Launch_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
            Current_Gainsight_Score__c, Customer_Success_Score__c,
-           Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
-           Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
-           Active_Users_Comms__c, Active_Users_Tasks__c,
-           License_Utilization_Max__c, License_Utilization_Learn__c,
-           License_Utilization_Comms__c, License_Utilization_Tasks__c,
-           Max_Usage_Trend__c,
+           Contract_Total_License_Seats__c, Total_Active_Users__c,
            Strategy_Notes__c, Risk_Notes__c, Contract_Notes__c,
            Overall_Customer_Health_Notes__c, Sponsorship_Notes__c, Support_Notes__c,
            CreatedDate, LastModifiedDate
@@ -778,7 +737,7 @@ export async function getAccountPlanData(
     LIMIT 1
   `;
 
-  // Fallback 1: All custom fields except Active_Users_* and License_Utilization_*
+  // Fallback 1: drops 6sense + Clay specific fields if not present in this org
   const accountFallback = `
     SELECT Id, Name, Industry, OwnerId, Website, AnnualRevenue, NumberOfEmployees, Type,
            BillingCity, BillingState, BillingCountry,
@@ -786,11 +745,10 @@ export async function getAccountPlanData(
            Owner.Name, Owner.Email,
            Clay_Employee_Count__c, Clay_Revenue__c, Clay_Industry__c,
            Clay_Parent_Account__c,
-           Total_ARR__c, of_Axonify_Users__c, Customer_Stage__c, Risk__c,
+           Total_ARR__c, Customer_Stage__c, Risk__c,
            Agreement_Expiry_Date__c, Launch_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
            Current_Gainsight_Score__c, Customer_Success_Score__c,
-           Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
-           Max_Usage_Trend__c,
+           Contract_Total_License_Seats__c, Total_Active_Users__c,
            Strategy_Notes__c, Risk_Notes__c, Contract_Notes__c,
            Overall_Customer_Health_Notes__c, Sponsorship_Notes__c, Support_Notes__c,
            CreatedDate, LastModifiedDate

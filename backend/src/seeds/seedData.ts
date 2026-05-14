@@ -53,33 +53,36 @@ export async function seedDatabase() {
       console.log('✓ Super admin user already exists, password updated');
     }
 
-    // Check if Axonify customer already exists
+    // Check if the seed customer already exists. Identifies by the
+    // subdomain env var (defaults to 'demo' for fresh installs).
+    const seedSubdomain = process.env.SEED_CUSTOMER_SUBDOMAIN || 'demo';
+    const seedCompanyName = process.env.SEED_CUSTOMER_NAME || 'Demo Tenant';
     const existingCustomer = await Customer.findOne({
-      where: { subdomain: 'axonify' }
+      where: { subdomain: seedSubdomain }
     });
 
     if (existingCustomer) {
-      console.log('✓ Axonify customer already exists, skipping seed');
+      console.log(`✓ Seed customer "${seedSubdomain}" already exists, skipping seed`);
       return;
     }
 
-    // Create Axonify as the first customer
-    const axonifyCustomer = await Customer.create({
-      companyName: 'Axonify',
-      subdomain: 'axonify',
-      salesforceInstanceUrl: process.env.SF_LOGIN_URL || 'https://axonify--fullcpy.sandbox.my.salesforce.com',
+    // Create the seed customer (first/default tenant).
+    const seedCustomer = await Customer.create({
+      companyName: seedCompanyName,
+      subdomain: seedSubdomain,
+      salesforceInstanceUrl: process.env.SF_LOGIN_URL || 'https://login.salesforce.com',
       salesforceClientId: process.env.SF_CLIENT_ID || '',
       salesforceClientSecret: process.env.SF_CLIENT_SECRET || '',
       subscriptionTier: SubscriptionTier.ENTERPRISE,
       subscriptionStatus: SubscriptionStatus.ACTIVE,
-      trialEndsAt: null, // Active subscription, no trial
+      trialEndsAt: null,
     });
 
-    console.log(`✓ Created customer: ${axonifyCustomer.companyName} (${axonifyCustomer.subdomain})`);
+    console.log(`✓ Created customer: ${seedCustomer.companyName} (${seedCustomer.subdomain})`);
 
     // Create customer configuration with default settings
-    const axonifyConfig = await CustomerConfig.create({
-      customerId: axonifyCustomer.id,
+    const seedConfig = await CustomerConfig.create({
+      customerId: seedCustomer.id,
       fieldMappings: {
         // Account field mappings
         accountOwner: 'OwnerId',
@@ -112,15 +115,19 @@ export async function seedDatabase() {
       },
     });
 
-    console.log('✓ Created customer configuration for Axonify');
+    console.log(`✓ Created customer configuration for ${seedCustomer.companyName}`);
 
-    // Create initial admin user (Susan McGovern)
+    // Create the initial admin user. Email + name come from env vars so
+    // operators can seed their own admin without code changes.
+    const adminEmail = process.env.SEED_ADMIN_EMAIL || process.env.SF_USERNAME || 'admin@example.com';
+    const adminFirstName = process.env.SEED_ADMIN_FIRST_NAME || 'Admin';
+    const adminLastName = process.env.SEED_ADMIN_LAST_NAME || 'User';
     const adminUser = await User.create({
-      customerId: axonifyCustomer.id,
-      email: process.env.SF_USERNAME || 'smcgovern@axonify.com.fullcpy',
-      salesforceUserId: '0053h000005nxlvAAA', // This will be updated on first login
-      firstName: 'Susan',
-      lastName: 'McGovern',
+      customerId: seedCustomer.id,
+      email: adminEmail,
+      salesforceUserId: process.env.SEED_ADMIN_SF_USER_ID || '',
+      firstName: adminFirstName,
+      lastName: adminLastName,
       role: UserRole.ADMIN,
       salesforceProfile: 'System Administrator',
     });
@@ -129,8 +136,8 @@ export async function seedDatabase() {
 
     console.log('\n✓ Database seeding completed successfully');
     console.log('\nSeeded data:');
-    console.log(`  - Customer: ${axonifyCustomer.companyName}`);
-    console.log(`  - Subdomain: ${axonifyCustomer.subdomain}`);
+    console.log(`  - Customer: ${seedCustomer.companyName}`);
+    console.log(`  - Subdomain: ${seedCustomer.subdomain}`);
     console.log(`  - Admin: ${adminUser.getFullName()}`);
 
   } catch (error) {

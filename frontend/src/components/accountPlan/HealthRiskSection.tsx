@@ -21,7 +21,7 @@ export default function HealthRiskSection({ account }: HealthRiskSectionProps) {
     <div className="bg-white rounded-xl shadow-md p-6">
       <h2 className="text-xl font-bold text-gray-900 mb-6">Health & Risk</h2>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-gray-50 rounded-lg p-4">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Risk Level</p>
           <p className={`text-xl font-bold mt-1 ${riskColor(account.Risk__c)}`}>
@@ -32,12 +32,6 @@ export default function HealthRiskSection({ account }: HealthRiskSectionProps) {
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Success Score</p>
           <p className={`text-xl font-bold mt-1 ${scoreColor(account.Customer_Success_Score__c || account.Current_Gainsight_Score__c)}`}>
             {account.Customer_Success_Score__c || account.Current_Gainsight_Score__c || '—'}
-          </p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Max Utilization</p>
-          <p className={`text-xl font-bold mt-1 ${scoreColor(account.License_Utilization_Max__c)}`}>
-            {account.License_Utilization_Max__c != null ? `${Math.round(account.License_Utilization_Max__c)}%` : '—'}
           </p>
         </div>
       </div>
@@ -64,12 +58,6 @@ export default function HealthRiskSection({ account }: HealthRiskSectionProps) {
           </div>
         )}
 
-        {account.Max_Usage_Trend__c && (
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-1">Usage Trend</p>
-            <p className="text-sm text-gray-900 whitespace-pre-line">{account.Max_Usage_Trend__c}</p>
-          </div>
-        )}
       </div>
     </div>
   );

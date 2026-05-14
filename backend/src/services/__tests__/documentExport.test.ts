@@ -124,7 +124,6 @@ describe('generateWordDocument', () => {
         Strategy_Notes__c: 'Focus on retention',
         Contract_Notes__c: 'Auto-renew clause',
         Current_Gainsight_Score__c: 45,
-        License_Utilization_Max__c: 72.5,
         Launch_Date__c: '2023-06-01',
       },
     });
