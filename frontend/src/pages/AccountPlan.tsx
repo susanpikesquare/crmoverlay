@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import apiClient from '../services/api';
 import TitleSection from '../components/accountPlan/TitleSection';
 import AccountOverviewSection from '../components/accountPlan/AccountOverviewSection';

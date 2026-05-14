@@ -8,7 +8,7 @@ export default function Navigation() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showUserSelector, setShowUserSelector] = useState(false);
-  const [showAccountsMenu, setShowAccountsMenu] = useState(false);
+  const [, setShowAccountsMenu] = useState(false);
   const accountsMenuRef = useRef<HTMLDivElement>(null);
 
   // Search state

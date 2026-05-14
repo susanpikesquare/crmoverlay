@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import apiClient from '../services/api';
 import AIAssistant from '../components/AIAssistant';
 import ScopeSelector from '../components/ScopeSelector';
-import FilterBar, { FilterCriteria } from '../components/FilterBar';
+import FilterBar from '../components/FilterBar';
 import ListViewSelector from '../components/ListViewSelector';
 import { useListFilters } from '../hooks/useListFilters';
 import { useFieldPermissions } from '../hooks/useFieldPermissions';

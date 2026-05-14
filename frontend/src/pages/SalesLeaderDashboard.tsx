@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import TodaysPrioritiesPanel from '../components/TodaysPrioritiesPanel';
@@ -67,13 +67,12 @@ interface SalesLeaderData {
 }
 
 export default function SalesLeaderDashboard() {
-  const navigate = useNavigate();
   const [data, setData] = useState<SalesLeaderData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCoachingTab, setActiveCoachingTab] = useState('stuck');
   const [sortBy, setSortBy] = useState<keyof RepPerformance>('quotaAttainment');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Expand states for scrollable panels
   const [expandedReps, setExpandedReps] = useState(false);

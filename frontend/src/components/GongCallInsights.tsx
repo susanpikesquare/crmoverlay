@@ -142,7 +142,6 @@ export default function GongCallInsights({ opportunityId, accountId }: Props) {
         {calls.map((call) => {
           const isExpanded = expandedCall === call.id;
           const externalParties = call.parties.filter(p => p.affiliation === 'External');
-          const internalParties = call.parties.filter(p => p.affiliation === 'Internal');
 
           return (
             <div key={call.id} className="border border-gray-200 rounded-lg overflow-hidden">
