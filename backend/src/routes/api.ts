@@ -1034,10 +1034,12 @@ router.get('/debug/account-fields', isAuthenticated, async (req: Request, res: R
 });
 
 /**
- * GET /api/debug/axonify-fields
- * Returns fields related to Axonify usage data (licenses, products, usage)
+ * GET /api/debug/usage-fields
+ * Diagnostic: returns custom Account fields whose name/label matches
+ * usage / license / subscription / product keywords. Used by admins to
+ * discover candidate fields when mapping a new tenant.
  */
-router.get('/debug/axonify-fields', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/debug/usage-fields', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const connection = req.sfConnection;
     const session = req.session as any;
@@ -1053,17 +1055,17 @@ router.get('/debug/axonify-fields', isAuthenticated, async (req: Request, res: R
     // Get all Account fields using describe
     const accountDescribe = await connection.sobject('Account').describe();
 
-    // Filter for Axonify/license/usage related fields
-    const axonifyKeywords = [
-      'axonify', 'license', 'usage', 'product', 'subscription',
+    // Filter for license/usage/product related fields
+    const usageKeywords = [
+      'license', 'usage', 'product', 'subscription',
       'active_user', 'seat', 'module', 'entitlement', 'utilization'
     ];
 
-    const axonifyFields = accountDescribe.fields
+    const usageFields = accountDescribe.fields
       .filter((f: any) => {
         const name = f.name.toLowerCase();
         const label = f.label.toLowerCase();
-        return axonifyKeywords.some(kw => name.includes(kw) || label.includes(kw));
+        return usageKeywords.some(kw => name.includes(kw) || label.includes(kw));
       })
       .map((f: any) => ({
         name: f.name,
@@ -1083,15 +1085,15 @@ router.get('/debug/axonify-fields', isAuthenticated, async (req: Request, res: R
         type: f.type,
       }));
 
-    // Get a sample account with any found axonify fields
+    // Get a sample account with any found usage fields
     let sampleData = null;
-    if (axonifyFields.length > 0) {
+    if (usageFields.length > 0) {
       const sampleQuery = `SELECT Id, Name FROM Account LIMIT 1`;
       const sampleResult = await connection.query(sampleQuery);
       const sampleAccountId = sampleResult.records[0]?.Id;
 
       if (sampleAccountId) {
-        const fieldList = ['Id', 'Name', ...axonifyFields.map((f: any) => f.name)].join(', ');
+        const fieldList = ['Id', 'Name', ...usageFields.map((f: any) => f.name)].join(', ');
         const detailQuery = `SELECT ${fieldList} FROM Account WHERE Id = '${sampleAccountId}' LIMIT 1`;
         const detailResult = await connection.query(detailQuery);
         sampleData = detailResult.records[0];
@@ -1101,18 +1103,18 @@ router.get('/debug/axonify-fields', isAuthenticated, async (req: Request, res: R
     res.json({
       success: true,
       data: {
-        axonifyFields,
+        usageFields,
         allCustomFields,
         sampleAccount: sampleData,
-        totalAxonifyFields: axonifyFields.length,
+        totalUsageFields: usageFields.length,
         totalCustomFields: allCustomFields.length,
       },
     });
   } catch (error: any) {
-    console.error('Error fetching Axonify fields:', error);
+    console.error('Error fetching usage fields:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch Axonify fields',
+      error: 'Failed to fetch usage fields',
       message: error.message,
     });
   }
@@ -2369,10 +2371,7 @@ router.post('/ai/ask', isAuthenticated, async (req: Request, res: Response) => {
                Clay_Employee_Count__c, Clay_Revenue__c, Clay_Industry__c,
                Customer_Stage__c, Risk__c, Total_ARR__c, Current_Gainsight_Score__c,
                Agreement_Expiry_Date__c, Last_QBR__c, Last_Exec_Check_In__c,
-               Contract_Total_License_Seats__c, Total_Active_Users__c,
-               License_Utilization_Max__c, License_Utilization_Learn__c,
-               License_Utilization_Comms__c, License_Utilization_Tasks__c,
-               Max_Usage_Trend__c
+               Contract_Total_License_Seats__c, Total_Active_Users__c
         FROM Account
         WHERE Id IN (${idList})
       `;

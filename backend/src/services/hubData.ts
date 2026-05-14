@@ -858,7 +858,7 @@ export async function getRenewalAccounts(
         let renewalRisk: 'At Risk' | 'On Track' | 'Expansion Opportunity';
         if (risk === 'Red' || risk === 'At Risk') {
           renewalRisk = 'At Risk';
-        } else if (healthScore > 80 && (account.of_Axonify_Users__c || 0) > 500) {
+        } else if (healthScore > 80 && (account.Total_Active_Users__c || 0) > 500) {
           renewalRisk = 'Expansion Opportunity';
         } else {
           renewalRisk = 'On Track';
@@ -905,7 +905,6 @@ export async function getRenewalAccounts(
               recordId: account.Id,
               data: {
                 healthScore,
-                usagePercent: account.License_Utilization_Max__c || 0,
                 employeeGrowth: 0,
                 currentValue: account.Total_ARR__c || 0,
               },
