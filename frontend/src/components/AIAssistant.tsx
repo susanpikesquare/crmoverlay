@@ -14,7 +14,7 @@ interface AIMessage {
   timestamp: Date;
 }
 
-export default function AIAssistant({ userRole, userName, compact = true }: AIAssistantProps) {
+export default function AIAssistant(_props: AIAssistantProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<AIMessage[]>([]);

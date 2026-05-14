@@ -50,7 +50,7 @@ function EditableField({
   type?: string;
 }) {
   const [localValue, setLocalValue] = useState(value);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => { setLocalValue(value); }, [value]);
 

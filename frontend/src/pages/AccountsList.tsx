@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import apiClient from '../services/api';
 import AIAssistant from '../components/AIAssistant';
 import ScopeSelector from '../components/ScopeSelector';
-import FilterBar, { FilterCriteria } from '../components/FilterBar';
+import FilterBar from '../components/FilterBar';
 import ListViewSelector from '../components/ListViewSelector';
 import { useListFilters } from '../hooks/useListFilters';
 import { useFieldPermissions } from '../hooks/useFieldPermissions';
@@ -281,7 +281,7 @@ export default function AccountsList() {
                   const hasChildren = group.children.length > 0;
 
                   return (
-                    <React.Fragment key={group.parent.Id}>
+                    <Fragment key={group.parent.Id}>
                       <tr
                         className="hover:bg-gray-50 transition-colors cursor-pointer"
                         onClick={() => window.location.href = `/account/${group.parent.Id}`}
@@ -409,7 +409,7 @@ export default function AccountsList() {
                           </td>
                         </tr>
                       ))}
-                    </React.Fragment>
+                    </Fragment>
                   );
                 })}
               </tbody>

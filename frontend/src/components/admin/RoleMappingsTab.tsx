@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 
@@ -146,10 +146,6 @@ export default function RoleMappingsTab({ config, onSave }: Props) {
     }
   };
 
-  const getRoleInfo = (roleValue: string) => {
-    return APP_ROLES.find(r => r.value === roleValue) || APP_ROLES[0];
-  };
-
   const isSaving = updateMappingsMutation.isPending || updateUserOverridesMutation.isPending;
 
   return (
@@ -280,7 +276,6 @@ export default function RoleMappingsTab({ config, onSave }: Props) {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {mappings.map((mapping) => {
-              const roleInfo = getRoleInfo(mapping.appRole);
               return (
                 <tr key={mapping.salesforceProfile} className="hover:bg-gray-50">
                   <td className="px-4 py-3">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 
@@ -43,13 +43,6 @@ const ROLES = [
   { id: 'am', label: 'AM', description: 'Account Managers — expansion & retention' },
   { id: 'csm', label: 'CSM', description: 'Customer Success — health & renewal focus' },
 ];
-
-const DEFAULT_THRESHOLDS: TierThresholds = {
-  hot: { min: 85, max: 100 },
-  warm: { min: 65, max: 84 },
-  cool: { min: 40, max: 64 },
-  cold: { min: 0, max: 39 },
-};
 
 export default function PriorityScoringTab({ config, onSave }: Props) {
   const queryClient = useQueryClient();

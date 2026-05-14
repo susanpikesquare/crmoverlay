@@ -92,7 +92,7 @@ export default function AEHub() {
   });
 
   // 10. Gong buying signals
-  const { data: gongSignalsData, isLoading: loadingGongSignals } = useQuery<{ success: boolean; data: any[] }>({
+  const { data: gongSignalsData } = useQuery<{ success: boolean; data: any[] }>({
     queryKey: ['ae-gong-signals'],
     queryFn: async () => {
       const response = await axios.get(`${API_URL}/api/hub/ae/gong-signals`, { withCredentials: true });
