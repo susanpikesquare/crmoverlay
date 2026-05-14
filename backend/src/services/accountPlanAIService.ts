@@ -212,11 +212,11 @@ export async function runAccountPlanAI(
 **Account Name:** ${accountSnapshot.Name || 'Unknown'}
 **Industry:** ${accountSnapshot.Industry || 'Unknown'}
 **Total ARR:** ${accountSnapshot.Total_ARR__c ? `$${Number(accountSnapshot.Total_ARR__c).toLocaleString()}` : 'Unknown'}
-**Contracted Users:** ${accountSnapshot.Contract_Total_License_Seats__c || accountSnapshot.of_Axonify_Users__c || 'Unknown'}
+**Contracted Users:** ${accountSnapshot.Contract_Total_License_Seats__c || 'Unknown'}
+**Active Users:** ${accountSnapshot.Total_Active_Users__c || 'Unknown'}
 **Customer Stage:** ${accountSnapshot.Customer_Stage__c || 'Unknown'}
 **Risk Level:** ${accountSnapshot.Risk__c || 'Unknown'}
 **Success Score:** ${accountSnapshot.Customer_Success_Score__c || accountSnapshot.Current_Gainsight_Score__c || 'Unknown'}
-**Max Utilization:** ${accountSnapshot.License_Utilization_Max__c != null ? `${Math.round(accountSnapshot.License_Utilization_Max__c)}%` : 'Unknown'}
 **Contract End:** ${accountSnapshot.Agreement_Expiry_Date__c || 'Unknown'}
 **Account Owner:** ${accountSnapshot.Owner?.Name || 'Unknown'}
 **Parent Account:** ${accountSnapshot.Parent?.Name || accountSnapshot.Clay_Parent_Account__c || 'N/A'}

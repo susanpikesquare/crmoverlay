@@ -156,11 +156,11 @@ export async function generateWordDocument(data: AccountPlanExportData): Promise
   children.push(heading('2. Account Overview'));
   children.push(
     labelValue('Total ARR', formatCurrency(account.Total_ARR__c)),
-    labelValue('Contracted Users', (account.Contract_Total_License_Seats__c || account.of_Axonify_Users__c || '—').toString()),
+    labelValue('Contracted Users', (account.Contract_Total_License_Seats__c || '—').toString()),
+    labelValue('Active Users', (account.Total_Active_Users__c || '—').toString()),
     labelValue('Success Score', (account.Customer_Success_Score__c || account.Current_Gainsight_Score__c || '—').toString()),
     labelValue('Risk Level', account.Risk__c || '—'),
     labelValue('Contract End Date', formatDate(account.Agreement_Expiry_Date__c)),
-    labelValue('Max Utilization', account.License_Utilization_Max__c != null ? `${Math.round(account.License_Utilization_Max__c)}%` : '—'),
     spacer(),
   );
 
@@ -282,7 +282,6 @@ export async function generateWordDocument(data: AccountPlanExportData): Promise
   children.push(
     labelValue('Risk Level', account.Risk__c || '—'),
     labelValue('Success Score', (account.Customer_Success_Score__c || account.Current_Gainsight_Score__c || '—').toString()),
-    labelValue('Max Utilization', account.License_Utilization_Max__c != null ? `${Math.round(account.License_Utilization_Max__c)}%` : '—'),
   );
   if (account.Risk_Notes__c) children.push(labelValue('Risk Notes', account.Risk_Notes__c));
   if (account.Overall_Customer_Health_Notes__c) children.push(labelValue('Health Notes', account.Overall_Customer_Health_Notes__c));

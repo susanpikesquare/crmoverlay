@@ -827,7 +827,7 @@ export async function getRenewalAccounts(
     SELECT Id, Name, Industry, OwnerId, Owner.Name,
            Agreement_Expiry_Date__c, Total_ARR__c,
            Current_Gainsight_Score__c, Risk__c,
-           Customer_Stage__c, of_Axonify_Users__c,
+           Customer_Stage__c, Total_Active_Users__c,
            Last_QBR__c, Risk_Notes__c,
            CreatedDate, LastModifiedDate
     FROM Account
@@ -3200,7 +3200,12 @@ export async function getOpportunityTimeline(
 }
 
 /**
- * License Utilization Account (for CSM/AM hub)
+ * License Utilization Account (for CSM/AM hub).
+ *
+ * Aggregate-only — per-product breakdown was Axonify-specific and is
+ * intentionally dropped. The canonical Product-aware breakdown will
+ * come back later through `Account.arrByProduct` / a per-product
+ * adapter call once products are wired into the data flow.
  */
 export interface LicenseUtilizationAccount {
   id: string;
@@ -3208,14 +3213,6 @@ export interface LicenseUtilizationAccount {
   contractedSeats: number;
   activeUsers: number;
   utilizationPercent: number;
-  utilizationByProduct: {
-    learn?: { seats: number; activeUsers: number; utilization: number };
-    comms?: { seats: number; activeUsers: number; utilization: number };
-    tasks?: { seats: number; activeUsers: number; utilization: number };
-    max?: { seats: number; activeUsers: number; utilization: number };
-  };
-  usageTrend?: string;
-  nextSteps?: string;
   healthScore?: number;
   arr?: number;
   renewalDate?: string;
@@ -3233,21 +3230,17 @@ export async function getUnderutilizedAccounts(
   threshold: number = 60
 ): Promise<LicenseUtilizationAccount[]> {
   try {
-    // Query accounts with license utilization data - broadened filters
+    // Query accounts with license-utilization data. Aggregate fields only;
+    // per-product Axonify columns dropped.
     const query = `
       SELECT Id, Name,
-             Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
-             Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
-             Active_Users_Comms__c, Active_Users_Tasks__c,
-             License_Utilization_Max__c, License_Utilization_Learn__c,
-             License_Utilization_Comms__c, License_Utilization_Tasks__c,
-             Max_Usage_Trend__c, Usage_Metrics_Next_Steps__c,
+             Contract_Total_License_Seats__c, Total_Active_Users__c,
              Current_Gainsight_Score__c, Total_ARR__c, Agreement_Expiry_Date__c,
              Customer_Stage__c, Risk__c
       FROM Account
       WHERE (OwnerId = '${userId}' OR Customer_Success_Manager__c = '${userId}')
-        AND (Contract_Total_License_Seats__c > 0 OR Total_Hierarchy_Seats__c > 0 OR Logo_Seats__c > 0)
-      ORDER BY License_Utilization_Max__c ASC NULLS LAST
+        AND Contract_Total_License_Seats__c > 0
+      ORDER BY Name
       LIMIT 50
     `;
 
@@ -3276,15 +3269,12 @@ export async function getUnderutilizedAccounts(
 
     // Transform and filter for underutilized accounts
     const utilizedAccounts: LicenseUtilizationAccount[] = accounts
-      .filter(acc => {
-        const utilization = acc.License_Utilization_Max__c || 0;
-        return utilization < threshold && utilization >= 0;
-      })
       .map(acc => {
-        const contractedSeats = acc.Contract_Total_License_Seats__c || acc.Total_Hierarchy_Seats__c || 0;
-        const activeUsers = acc.Total_Active_Users__c || acc.Active_Users_Max__c || 0;
-        const utilizationPercent = acc.License_Utilization_Max__c ||
-          (contractedSeats > 0 ? (activeUsers / contractedSeats) * 100 : 0);
+        const contractedSeats = acc.Contract_Total_License_Seats__c || 0;
+        const activeUsers = acc.Total_Active_Users__c || 0;
+        const utilizationPercent = contractedSeats > 0
+          ? (activeUsers / contractedSeats) * 100
+          : 0;
 
         // Calculate days to renewal
         let daysToRenewal: number | undefined;
@@ -3310,30 +3300,6 @@ export async function getUnderutilizedAccounts(
           contractedSeats,
           activeUsers,
           utilizationPercent: Math.round(utilizationPercent),
-          utilizationByProduct: {
-            learn: acc.Active_Users_Learn__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Learn__c,
-              utilization: acc.License_Utilization_Learn__c || 0,
-            } : undefined,
-            comms: acc.Active_Users_Comms__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Comms__c,
-              utilization: acc.License_Utilization_Comms__c || 0,
-            } : undefined,
-            tasks: acc.Active_Users_Tasks__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Tasks__c,
-              utilization: acc.License_Utilization_Tasks__c || 0,
-            } : undefined,
-            max: acc.Active_Users_Max__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Max__c,
-              utilization: acc.License_Utilization_Max__c || 0,
-            } : undefined,
-          },
-          usageTrend: acc.Max_Usage_Trend__c,
-          nextSteps: acc.Usage_Metrics_Next_Steps__c,
           healthScore: acc.Current_Gainsight_Score__c,
           arr: acc.Total_ARR__c,
           renewalDate: acc.Agreement_Expiry_Date__c,
@@ -3341,7 +3307,8 @@ export async function getUnderutilizedAccounts(
           riskLevel,
         };
       })
-      .sort((a, b) => a.utilizationPercent - b.utilizationPercent); // Sort by lowest utilization first
+      .filter(acc => acc.utilizationPercent < threshold && acc.utilizationPercent >= 0)
+      .sort((a, b) => a.utilizationPercent - b.utilizationPercent);
 
     return utilizedAccounts;
   } catch (error) {

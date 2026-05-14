@@ -19,14 +19,6 @@ interface LicenseUtilizationAccount {
   contractedSeats: number;
   activeUsers: number;
   utilizationPercent: number;
-  utilizationByProduct: {
-    learn?: { seats: number; activeUsers: number; utilization: number };
-    comms?: { seats: number; activeUsers: number; utilization: number };
-    tasks?: { seats: number; activeUsers: number; utilization: number };
-    max?: { seats: number; activeUsers: number; utilization: number };
-  };
-  usageTrend?: string;
-  nextSteps?: string;
   healthScore?: number;
   arr?: number;
   renewalDate?: string;
