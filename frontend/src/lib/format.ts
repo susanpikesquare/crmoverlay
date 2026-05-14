@@ -2,6 +2,9 @@
 
 export function formatMoney(n: number, opts: { compact?: boolean; signed?: boolean } = {}): string {
   if (!isFinite(n)) return '—';
+  // Snap near-zero values to 0 so the sign agrees with the rounded body —
+  // otherwise -0.3 would render as "-$0" (rounds to 0 but sign survives).
+  if (Math.abs(n) < 0.5) n = 0;
   const abs = Math.abs(n);
   const sign = n < 0 ? '-' : opts.signed && n > 0 ? '+' : '';
   let body: string;
