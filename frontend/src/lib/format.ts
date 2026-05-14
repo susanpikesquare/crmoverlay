@@ -3,16 +3,16 @@
 export function formatMoney(n: number, opts: { compact?: boolean; signed?: boolean } = {}): string {
   if (!isFinite(n)) return '—';
   const abs = Math.abs(n);
-  let formatted: string;
+  const sign = n < 0 ? '-' : opts.signed && n > 0 ? '+' : '';
+  let body: string;
   if (opts.compact) {
-    if (abs >= 1_000_000) formatted = `$${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
-    else if (abs >= 1_000) formatted = `$${(n / 1_000).toFixed(abs >= 100_000 ? 0 : 1)}K`;
-    else formatted = `$${Math.round(n).toLocaleString('en-US')}`;
+    if (abs >= 1_000_000) body = `$${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
+    else if (abs >= 1_000) body = `$${(abs / 1_000).toFixed(abs >= 100_000 ? 0 : 1)}K`;
+    else body = `$${Math.round(abs).toLocaleString('en-US')}`;
   } else {
-    formatted = `$${Math.round(n).toLocaleString('en-US')}`;
+    body = `$${Math.round(abs).toLocaleString('en-US')}`;
   }
-  if (opts.signed && n > 0) formatted = `+${formatted}`;
-  return formatted;
+  return sign + body;
 }
 
 export function formatNumber(n: number): string {
