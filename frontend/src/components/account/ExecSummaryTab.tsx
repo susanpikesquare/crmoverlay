@@ -9,7 +9,6 @@ interface Account {
   NumberOfEmployees: number;
   Total_ARR__c?: number;
   Current_Gainsight_Score__c?: number;
-  License_Utilization_Max__c?: number;
   Clay_Employee_Count__c: number;
   Customer_Stage__c?: string;
 }
@@ -64,27 +63,16 @@ export default function ExecSummaryTab({ account, accountId, opportunities }: Pr
     healthScore >= 80 ? 'text-green-600' :
     healthScore >= 50 ? 'text-yellow-600' : 'text-red-600';
 
-  const utilization = account.License_Utilization_Max__c;
-  const utilColor = !utilization ? 'text-gray-400' :
-    utilization >= 80 ? 'text-green-600' :
-    utilization >= 50 ? 'text-yellow-600' : 'text-red-600';
-
   return (
     <div className="space-y-8">
       {/* Account Snapshot */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Account Snapshot</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-gray-50 rounded-lg p-4 text-center">
             <p className="text-sm text-gray-600 mb-1">ARR</p>
             <p className="text-xl font-bold text-gray-900">
               {account.Total_ARR__c ? formatCurrency(account.Total_ARR__c) : '\u2014'}
-            </p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4 text-center">
-            <p className="text-sm text-gray-600 mb-1">Utilization</p>
-            <p className={`text-xl font-bold ${utilColor}`}>
-              {utilization != null ? `${Math.round(utilization)}%` : '\u2014'}
             </p>
           </div>
           <div className="bg-gray-50 rounded-lg p-4 text-center">

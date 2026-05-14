@@ -43,24 +43,6 @@ interface Account {
   SixSense_Engaged_Campaigns__c: string;
   LastModifiedDate: string;
 
-  // Axonify License & Usage Data
-  Contract_Total_License_Seats__c?: number;
-  Total_Hierarchy_Seats__c?: number;
-  Logo_Seats__c?: number;
-  Total_Active_Users__c?: number;
-  Active_Users_Max__c?: number;
-  Active_Users_Learn__c?: number;
-  Active_Users_Comms__c?: number;
-  Active_Users_Tasks__c?: number;
-  License_Utilization_Max__c?: number;
-  License_Utilization_Learn__c?: number;
-  License_Utilization_Comms__c?: number;
-  License_Utilization_Tasks__c?: number;
-  Max_Usage_Trend__c?: string;
-  License_Utilization_current_Summary__c?: string;
-  License_Utilization_Active_User_Summary__c?: string;
-  Usage_Metrics_Next_Steps__c?: string;
-  Content_Studio_Licenses__c?: number;
   Total_ARR__c?: number;
   Current_Gainsight_Score__c?: number;
   Customer_Stage__c?: string;

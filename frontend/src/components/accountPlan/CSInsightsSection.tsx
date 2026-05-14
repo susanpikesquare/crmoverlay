@@ -50,12 +50,6 @@ export default function CSInsightsSection({ account }: CSInsightsSectionProps) {
           </div>
         )}
 
-        {account.Usage_Metrics_Next_Steps__c && (
-          <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
-            <p className="text-xs font-medium text-amber-700 uppercase tracking-wide mb-1">Usage Metrics Next Steps</p>
-            <p className="text-sm text-gray-900 whitespace-pre-line">{account.Usage_Metrics_Next_Steps__c}</p>
-          </div>
-        )}
       </div>
     </div>
   );
