@@ -91,6 +91,8 @@ export interface CanonicalAccount {
   contractStart?: string;   // ISO date
   contractEnd?: string;     // ISO date
   totalARR?: number;
+  totalLicensedSeats?: number;
+  activeUserCount?: number;
   arrByProduct?: ProductARR[];
 
   // Expansion opportunity

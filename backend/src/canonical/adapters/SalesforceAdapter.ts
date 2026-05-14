@@ -68,6 +68,7 @@ const OPPORTUNITY_CONCEPTS = [
   'Next Step', 'Description', 'Forecast Notes', 'Lost Reason',
   'Opportunity Risk Flag', 'Unresolved Risk Count', 'Is At Risk',
   // MEDDPICC
+  'Metrics',
   'Economic Buyer', 'Economic Buyer Name', 'Economic Buyer Title',
   'Decision Criteria', 'Decision Process', 'Paper Process',
   'Identified Pain', 'Champion', 'Competition', 'MEDDPICC Risks', 'MEDDPICC Score',
@@ -84,6 +85,18 @@ const STANDARD_OPP_FIELDS = ['Id', 'Name', 'AccountId', 'OwnerId', 'CreatedDate'
 
 function escapeSoqlLiteral(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// Strict ISO-8601 date validation (yyyy-mm-dd). SOQL date literals are
+// NOT quoted, so we cannot use escapeSoqlLiteral on them — they must
+// match this format exactly or be rejected, otherwise an attacker could
+// inject SOQL via filter params.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function assertIsoDate(value: string, paramName: string): string {
+  if (!ISO_DATE_RE.test(value)) {
+    throw new Error(`Invalid date for ${paramName}: expected yyyy-mm-dd, got "${value}"`);
+  }
+  return value;
 }
 
 function normalizeRiskFlag(v: unknown): RiskFlag | undefined {
@@ -209,8 +222,8 @@ export class SalesforceAdapter implements DataSourceAdapter {
       customerStage: account.customerStage,
       contractStart: account.contractStart,
       contractEnd: account.contractEnd,
-      totalLicensedSeats: undefined, // populated below from same source record
-      activeUserCount: undefined,
+      totalLicensedSeats: account.totalLicensedSeats,
+      activeUserCount: account.activeUserCount,
       healthScore: account.healthScore,
       riskFlag: account.riskFlag,
       csmSentiment: account.csmSentiment,
@@ -236,8 +249,6 @@ export class SalesforceAdapter implements DataSourceAdapter {
   }
 
   async fetchOpportunityById(id: string): Promise<CanonicalOpportunity | null> {
-    const opps = await this.fetchOpportunities({ accountId: undefined, limit: 1 });
-    // Single-record by id query
     const productFields = this.collectProductOpportunityFields();
     const fields = Array.from(new Set([
       ...STANDARD_OPP_FIELDS,
@@ -249,7 +260,6 @@ export class SalesforceAdapter implements DataSourceAdapter {
     const result = await this.conn.query<Record<string, unknown>>(soql);
     if (result.records.length === 0) return null;
     return this.toCanonicalOpportunity(result.records[0]);
-    void opps; // silence unused (kept the variable so the shape mirrors fetchAccountById)
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -271,6 +281,8 @@ export class SalesforceAdapter implements DataSourceAdapter {
       contractStart: getMappedString(r, this.mappings, 'Contract Start Date'),
       contractEnd: getMappedString(r, this.mappings, 'Contract End Date'),
       totalARR: getMappedNumber(r, this.mappings, 'Total ARR'),
+      totalLicensedSeats: getMappedNumber(r, this.mappings, 'Total Licensed Seats'),
+      activeUserCount: getMappedNumber(r, this.mappings, 'Active User Count'),
       healthScore: getMappedNumber(r, this.mappings, 'Health Score'),
       riskFlag: normalizeRiskFlag(getMappedValue(r, this.mappings, 'Account Risk Flag')),
       lastQbrDate: getMappedString(r, this.mappings, 'Last QBR Date'),
@@ -461,8 +473,8 @@ export class SalesforceAdapter implements DataSourceAdapter {
     const parts: string[] = [];
     if (f.accountId) parts.push(`AccountId = '${escapeSoqlLiteral(f.accountId)}'`);
     if (f.openOnly) parts.push(`IsClosed = false`);
-    if (f.closeDateFrom) parts.push(`CloseDate >= ${f.closeDateFrom}`);
-    if (f.closeDateTo) parts.push(`CloseDate <= ${f.closeDateTo}`);
+    if (f.closeDateFrom) parts.push(`CloseDate >= ${assertIsoDate(f.closeDateFrom, 'closeDateFrom')}`);
+    if (f.closeDateTo) parts.push(`CloseDate <= ${assertIsoDate(f.closeDateTo, 'closeDateTo')}`);
     if (f.ownerId) parts.push(`OwnerId = '${escapeSoqlLiteral(f.ownerId)}'`);
     if (f.ownerIds?.length) parts.push(`OwnerId IN (${f.ownerIds.map((id) => `'${escapeSoqlLiteral(id)}'`).join(', ')})`);
     if (f.stages?.length) parts.push(`StageName IN (${f.stages.map((s) => `'${escapeSoqlLiteral(s)}'`).join(', ')})`);
