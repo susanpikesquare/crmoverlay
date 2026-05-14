@@ -3327,21 +3327,17 @@ export async function getExpansionOpportunityAccounts(
   threshold: number = 80
 ): Promise<LicenseUtilizationAccount[]> {
   try {
-    // Query accounts with license utilization data
+    // Query accounts with license-utilization data. Aggregate fields only;
+    // per-product Axonify columns dropped.
     const query = `
       SELECT Id, Name,
-             Contract_Total_License_Seats__c, Total_Hierarchy_Seats__c, Logo_Seats__c,
-             Total_Active_Users__c, Active_Users_Max__c, Active_Users_Learn__c,
-             Active_Users_Comms__c, Active_Users_Tasks__c,
-             License_Utilization_Max__c, License_Utilization_Learn__c,
-             License_Utilization_Comms__c, License_Utilization_Tasks__c,
-             Max_Usage_Trend__c, Usage_Metrics_Next_Steps__c,
+             Contract_Total_License_Seats__c, Total_Active_Users__c,
              Current_Gainsight_Score__c, Total_ARR__c, Agreement_Expiry_Date__c,
              Customer_Stage__c, Risk__c
       FROM Account
       WHERE (OwnerId = '${userId}' OR Customer_Success_Manager__c = '${userId}')
-        AND (Contract_Total_License_Seats__c > 0 OR Total_Hierarchy_Seats__c > 0 OR Logo_Seats__c > 0)
-      ORDER BY License_Utilization_Max__c DESC NULLS LAST
+        AND Contract_Total_License_Seats__c > 0
+      ORDER BY Name
       LIMIT 50
     `;
 
@@ -3370,15 +3366,12 @@ export async function getExpansionOpportunityAccounts(
 
     // Transform and filter for over-utilized accounts (expansion opportunities)
     const expansionAccounts: LicenseUtilizationAccount[] = accounts
-      .filter(acc => {
-        const utilization = acc.License_Utilization_Max__c || 0;
-        return utilization >= threshold;
-      })
       .map(acc => {
-        const contractedSeats = acc.Contract_Total_License_Seats__c || acc.Total_Hierarchy_Seats__c || 0;
-        const activeUsers = acc.Total_Active_Users__c || acc.Active_Users_Max__c || 0;
-        const utilizationPercent = acc.License_Utilization_Max__c ||
-          (contractedSeats > 0 ? (activeUsers / contractedSeats) * 100 : 0);
+        const contractedSeats = acc.Contract_Total_License_Seats__c || 0;
+        const activeUsers = acc.Total_Active_Users__c || 0;
+        const utilizationPercent = contractedSeats > 0
+          ? (activeUsers / contractedSeats) * 100
+          : 0;
 
         // Calculate days to renewal
         let daysToRenewal: number | undefined;
@@ -3404,30 +3397,6 @@ export async function getExpansionOpportunityAccounts(
           contractedSeats,
           activeUsers,
           utilizationPercent: Math.round(utilizationPercent),
-          utilizationByProduct: {
-            learn: acc.Active_Users_Learn__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Learn__c,
-              utilization: acc.License_Utilization_Learn__c || 0,
-            } : undefined,
-            comms: acc.Active_Users_Comms__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Comms__c,
-              utilization: acc.License_Utilization_Comms__c || 0,
-            } : undefined,
-            tasks: acc.Active_Users_Tasks__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Tasks__c,
-              utilization: acc.License_Utilization_Tasks__c || 0,
-            } : undefined,
-            max: acc.Active_Users_Max__c ? {
-              seats: contractedSeats,
-              activeUsers: acc.Active_Users_Max__c,
-              utilization: acc.License_Utilization_Max__c || 0,
-            } : undefined,
-          },
-          usageTrend: acc.Max_Usage_Trend__c,
-          nextSteps: acc.Usage_Metrics_Next_Steps__c,
           healthScore: acc.Current_Gainsight_Score__c,
           arr: acc.Total_ARR__c,
           renewalDate: acc.Agreement_Expiry_Date__c,
@@ -3435,7 +3404,8 @@ export async function getExpansionOpportunityAccounts(
           riskLevel,
         };
       })
-      .sort((a, b) => b.utilizationPercent - a.utilizationPercent); // Sort by highest utilization first
+      .filter(acc => acc.utilizationPercent >= threshold)
+      .sort((a, b) => b.utilizationPercent - a.utilizationPercent);
 
     return expansionAccounts;
   } catch (error) {
@@ -3465,13 +3435,13 @@ export async function getAESignals(
     const expansionQuery = `
       SELECT Id, Name, Customer_Stage__c,
              Contract_Total_License_Seats__c, Total_Active_Users__c,
-             License_Utilization_Max__c, Current_Gainsight_Score__c,
+             Current_Gainsight_Score__c,
              Agreement_Expiry_Date__c, Total_ARR__c
       FROM Account
       WHERE OwnerId = '${userId}'
         AND Customer_Stage__c = 'Customer'
         AND Contract_Total_License_Seats__c > 0
-      ORDER BY License_Utilization_Max__c DESC NULLS LAST
+      ORDER BY Name
       LIMIT 20
     `;
 
@@ -3498,7 +3468,11 @@ export async function getAESignals(
 
     const now = new Date();
     expansionAccounts.forEach(acc => {
-      const utilization = acc.License_Utilization_Max__c || 0;
+      // Aggregate utilization: active users / contracted seats. Replaces
+      // the per-product License_Utilization_Max__c with a universal computation.
+      const seats = acc.Contract_Total_License_Seats__c || 0;
+      const active = acc.Total_Active_Users__c || 0;
+      const utilization = seats > 0 ? Math.round((active / seats) * 100) : 0;
       const healthScore = acc.Current_Gainsight_Score__c || 0;
       const daysToRenewal = acc.Agreement_Expiry_Date__c
         ? Math.ceil((new Date(acc.Agreement_Expiry_Date__c).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
