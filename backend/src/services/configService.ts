@@ -9,6 +9,7 @@
  */
 
 import { ScopeDefaults } from '../types/filters';
+import type { Product } from '../canonical/types';
 
 export interface RiskRule {
   id: string;
@@ -57,16 +58,42 @@ export interface PriorityConfig {
 }
 
 export interface FieldMapping {
+  /** Unique stable identifier for this concept across the app. */
   conceptName: string;
-  category: string; // 'clay', '6sense', 'health', 'meddpicc', etc.
+  /** Grouping for the admin UI: 'account', 'opportunity', 'health', 'clay', '6sense', 'gong', 'meddpicc', 'command', 'quota'. */
+  category: string;
+  /** Salesforce field API name for this concept, or null if the value is computed. */
   salesforceField: string | null;
+  /** If true, the value is computed by the app rather than read from a source field. */
   calculateInApp: boolean;
+}
+
+/**
+ * Per-product field mappings — for the canonical `arrByProduct[]`,
+ * `whitespaceByProduct[]`, etc. Each product has its own SF fields that
+ * hold the ARR/whitespace/active-user data for that product.
+ */
+export interface ProductFieldMapping {
+  /** Stable product id from AppConfig.products. */
+  productId: string;
+  /** SF field on Account holding ARR for this product. */
+  accountArrField?: string;
+  /** SF field on Account holding unrealized expansion potential for this product. */
+  accountWhitespaceField?: string;
+  /** SF field on Opportunity holding amount for this product. */
+  opportunityAmountField?: string;
 }
 
 export interface AppConfig {
   riskRules: RiskRule[];
   priorityScoring: PriorityConfig;
   fieldMappings: FieldMapping[];
+  /** Tenant-defined product catalog. Replaces hardcoded SKU references
+   *  (Learn/Comms/Tasks/Max). Empty by default — admins add products that
+   *  match their company's product lines. */
+  products: Product[];
+  /** Per-product field mappings — one entry per product in `products`. */
+  productFieldMappings: ProductFieldMapping[];
   opportunityStages?: string[]; // Sales stages to include in filters and queries
   roleMapping: Array<{
     salesforceProfile: string;
@@ -200,7 +227,125 @@ const defaultConfig: AppConfig = {
     { conceptName: 'Annual Quota', category: 'quota', salesforceField: 'Annual_Quota__c', calculateInApp: false },
     { conceptName: 'Quarterly Quota', category: 'quota', salesforceField: 'Quarterly_Quota__c', calculateInApp: false },
     { conceptName: 'Monthly Quota', category: 'quota', salesforceField: 'Monthly_Quota__c', calculateInApp: false },
+
+    // ──── Canonical concept mappings (Phase 1) ──────────────────────
+    // These cover the full canonical Account/Opportunity/AccountHealth
+    // model. salesforceField defaults reflect the fields FormationIQ
+    // historically used; each tenant can override via the admin UI.
+
+    // Account — identity & ownership
+    { conceptName: 'Industry', category: 'account', salesforceField: 'Industry', calculateInApp: false },
+    { conceptName: 'Account Type', category: 'account', salesforceField: 'Type', calculateInApp: false },
+    { conceptName: 'Region', category: 'account', salesforceField: null, calculateInApp: false },
+    { conceptName: 'Number of Employees', category: 'account', salesforceField: 'NumberOfEmployees', calculateInApp: false },
+    { conceptName: 'Annual Revenue', category: 'account', salesforceField: 'AnnualRevenue', calculateInApp: false },
+    { conceptName: 'Account Owner Id', category: 'account', salesforceField: 'OwnerId', calculateInApp: false },
+    { conceptName: 'Account Owner Name', category: 'account', salesforceField: null, calculateInApp: false },
+
+    // Account — contract & ARR
+    { conceptName: 'Customer Stage', category: 'account', salesforceField: 'Customer_Stage__c', calculateInApp: false },
+    { conceptName: 'Contract Start Date', category: 'account', salesforceField: 'Launch_Date__c', calculateInApp: false },
+    { conceptName: 'Contract End Date', category: 'account', salesforceField: 'Agreement_Expiry_Date__c', calculateInApp: false },
+    { conceptName: 'Total ARR', category: 'account', salesforceField: 'Total_ARR__c', calculateInApp: false },
+    { conceptName: 'Total Whitespace', category: 'account', salesforceField: null, calculateInApp: true },
+
+    // Account — health & risk
+    { conceptName: 'Account Risk Flag', category: 'health', salesforceField: 'Risk__c', calculateInApp: false },
+    { conceptName: 'CSM Sentiment', category: 'health', salesforceField: null, calculateInApp: false },
+    { conceptName: 'Last QBR Date', category: 'health', salesforceField: 'Last_QBR__c', calculateInApp: false },
+    { conceptName: 'Last Exec Check-In', category: 'health', salesforceField: 'Last_Exec_Check_In__c', calculateInApp: false },
+    { conceptName: 'Total Licensed Seats', category: 'health', salesforceField: 'Contract_Total_License_Seats__c', calculateInApp: false },
+    { conceptName: 'Active User Count', category: 'health', salesforceField: 'Total_Active_Users__c', calculateInApp: false },
+
+    // Account — notes
+    { conceptName: 'Strategy Notes', category: 'account', salesforceField: 'Strategy_Notes__c', calculateInApp: false },
+    { conceptName: 'Risk Notes', category: 'account', salesforceField: 'Risk_Notes__c', calculateInApp: false },
+    { conceptName: 'Contract Notes', category: 'account', salesforceField: 'Contract_Notes__c', calculateInApp: false },
+    { conceptName: 'Health Notes', category: 'account', salesforceField: 'Overall_Customer_Health_Notes__c', calculateInApp: false },
+    { conceptName: 'Sponsorship Notes', category: 'account', salesforceField: 'Sponsorship_Notes__c', calculateInApp: false },
+    { conceptName: 'Support Notes', category: 'account', salesforceField: 'Support_Notes__c', calculateInApp: false },
+
+    // Account — 6sense extended
+    { conceptName: 'Previous Buying Stage', category: '6sense', salesforceField: 'Previous_6sense_Account_Buying_Stage__c', calculateInApp: false },
+    { conceptName: 'Profile Fit', category: '6sense', salesforceField: 'accountProfileFit6sense__c', calculateInApp: false },
+    { conceptName: 'Profile Score', category: '6sense', salesforceField: 'accountProfileScore6sense__c', calculateInApp: false },
+    { conceptName: 'Reach Score', category: '6sense', salesforceField: 'accountReachScore6sense__c', calculateInApp: false },
+    { conceptName: 'Segments', category: '6sense', salesforceField: 'X6Sense_Segments__c', calculateInApp: false },
+    { conceptName: '6sense Last Updated', category: '6sense', salesforceField: 'accountUpdateDate6sense__c', calculateInApp: false },
+
+    // Account — Clay extended
+    { conceptName: 'Clay Revenue', category: 'clay', salesforceField: 'Clay_Revenue__c', calculateInApp: false },
+    { conceptName: 'Clay Industry', category: 'clay', salesforceField: 'Clay_Industry__c', calculateInApp: false },
+    { conceptName: 'Clay Total Locations', category: 'clay', salesforceField: 'Clay_Total_Locations__c', calculateInApp: false },
+    { conceptName: 'Clay City', category: 'clay', salesforceField: 'Clay_City__c', calculateInApp: false },
+    { conceptName: 'Clay State', category: 'clay', salesforceField: 'Clay_State__c', calculateInApp: false },
+    { conceptName: 'Clay Country', category: 'clay', salesforceField: 'Clay_Country__c', calculateInApp: false },
+    { conceptName: 'Clay NAICS Code', category: 'clay', salesforceField: 'Clay_NAICS_code__c', calculateInApp: false },
+    { conceptName: 'Clay Is Franchise', category: 'clay', salesforceField: 'Clay_Franchise__c', calculateInApp: false },
+    { conceptName: 'Clay Is Parent Company', category: 'clay', salesforceField: 'Clay_Is_the_Parent_Company__c', calculateInApp: false },
+    { conceptName: 'Clay Enriched At', category: 'clay', salesforceField: 'Last_Enriched_by_Clay__c', calculateInApp: false },
+
+    // Opportunity — commercial
+    { conceptName: 'Opportunity Type', category: 'opportunity', salesforceField: 'Type', calculateInApp: false },
+    { conceptName: 'Opportunity Amount', category: 'opportunity', salesforceField: 'Amount', calculateInApp: false },
+    { conceptName: 'Opportunity ARR', category: 'opportunity', salesforceField: 'ARR__c', calculateInApp: false },
+    { conceptName: 'New ARR', category: 'opportunity', salesforceField: null, calculateInApp: false },
+    { conceptName: 'Renewal ARR', category: 'opportunity', salesforceField: null, calculateInApp: false },
+    { conceptName: 'Renewal Amount Due', category: 'opportunity', salesforceField: null, calculateInApp: false },
+    { conceptName: 'Total Contract Value', category: 'opportunity', salesforceField: 'Total_Contract_Value__c', calculateInApp: false },
+    { conceptName: 'Duration (months)', category: 'opportunity', salesforceField: 'Duration__c', calculateInApp: false },
+    { conceptName: 'License Seats', category: 'opportunity', salesforceField: 'License_Seats__c', calculateInApp: false },
+    { conceptName: 'Weighted Forecast ARR', category: 'opportunity', salesforceField: null, calculateInApp: true },
+
+    // Opportunity — pipeline state
+    { conceptName: 'Stage', category: 'opportunity', salesforceField: 'StageName', calculateInApp: false },
+    { conceptName: 'Stage Probability', category: 'opportunity', salesforceField: 'Probability', calculateInApp: false },
+    { conceptName: 'Forecast Category', category: 'opportunity', salesforceField: 'ForecastCategoryName', calculateInApp: false },
+    { conceptName: 'Days In Stage', category: 'opportunity', salesforceField: 'DaysInStage__c', calculateInApp: false },
+
+    // Opportunity — dates
+    { conceptName: 'Close Date', category: 'opportunity', salesforceField: 'CloseDate', calculateInApp: false },
+    { conceptName: 'Renewal Due Date', category: 'opportunity', salesforceField: null, calculateInApp: false },
+    { conceptName: 'Date of Churn', category: 'opportunity', salesforceField: null, calculateInApp: false },
+
+    // Opportunity — coaching / notes
+    { conceptName: 'Next Step', category: 'opportunity', salesforceField: 'NextStep', calculateInApp: false },
+    { conceptName: 'Description', category: 'opportunity', salesforceField: 'Description', calculateInApp: false },
+    { conceptName: 'Forecast Notes', category: 'opportunity', salesforceField: null, calculateInApp: false },
+    { conceptName: 'Lost Reason', category: 'opportunity', salesforceField: null, calculateInApp: false },
+
+    // Opportunity — risk
+    { conceptName: 'Opportunity Risk Flag', category: 'opportunity', salesforceField: 'Risk__c', calculateInApp: false },
+    { conceptName: 'Unresolved Risk Count', category: 'opportunity', salesforceField: 'Unresolved_Risks__c', calculateInApp: false },
+    { conceptName: 'Is At Risk', category: 'opportunity', salesforceField: 'IsAtRisk__c', calculateInApp: true },
+
+    // Opportunity — MEDDPICC extended
+    { conceptName: 'Economic Buyer Name', category: 'meddpicc', salesforceField: 'Economic_Buyer_Name__c', calculateInApp: false },
+    { conceptName: 'Economic Buyer Title', category: 'meddpicc', salesforceField: 'Economic_Buyer_Title__c', calculateInApp: false },
+    { conceptName: 'MEDDPICC Risks', category: 'meddpicc', salesforceField: 'MEDDPICCR_Risks__c', calculateInApp: false },
+    // 'MEDDPICC Metrics' is the M in MEDDPICC. Distinct from the legacy
+    // 'Metrics' entry (category 'command') above, which collides on the
+    // conceptName lookup. New code should read 'MEDDPICC Metrics'.
+    { conceptName: 'MEDDPICC Metrics', category: 'meddpicc', salesforceField: 'COM_Metrics__c', calculateInApp: false },
+
+    // Opportunity — Command of the Message extended
+    { conceptName: 'Why Do Anything', category: 'command', salesforceField: 'Command_Why_Do_Anything__c', calculateInApp: false },
+    { conceptName: 'Why Now', category: 'command', salesforceField: 'Command_Why_Now__c', calculateInApp: false },
+    { conceptName: 'Why Us', category: 'command', salesforceField: 'Command_Why_Us__c', calculateInApp: false },
+    { conceptName: 'Why Trust', category: 'command', salesforceField: 'Command_Why_Trust__c', calculateInApp: false },
+    { conceptName: 'Why Pay That', category: 'command', salesforceField: 'Command_Why_Pay_That__c', calculateInApp: false },
+    { conceptName: 'Command Overall Score', category: 'command', salesforceField: 'Command_Overall_Score__c', calculateInApp: false },
+    { conceptName: 'Command Confidence', category: 'command', salesforceField: 'Command_Confidence_Level__c', calculateInApp: false },
+
+    // Opportunity — Gong call insights
+    { conceptName: 'Gong Call Count', category: 'gong', salesforceField: 'Gong_Call_Count__c', calculateInApp: false },
+    { conceptName: 'Gong Last Call Date', category: 'gong', salesforceField: 'Gong_Last_Call_Date__c', calculateInApp: false },
+    { conceptName: 'Gong Sentiment', category: 'gong', salesforceField: 'Gong_Sentiment__c', calculateInApp: false },
+    { conceptName: 'Gong Competitor Mentions', category: 'gong', salesforceField: 'Gong_Competitor_Mentions__c', calculateInApp: false },
+    { conceptName: 'Gong Call Recording URL', category: 'gong', salesforceField: 'Gong_Call_Recording_URL__c', calculateInApp: false },
   ],
+  products: [],
+  productFieldMappings: [],
   opportunityStages: ['Prospecting', 'Discovery', 'Value Confirmation', 'Technical Evaluation', 'Negotiation'],
   roleMapping: [
     { salesforceProfile: 'Sales User', appRole: 'ae' },
