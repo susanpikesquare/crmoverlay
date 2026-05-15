@@ -323,6 +323,10 @@ const defaultConfig: AppConfig = {
     { conceptName: 'Economic Buyer Name', category: 'meddpicc', salesforceField: 'Economic_Buyer_Name__c', calculateInApp: false },
     { conceptName: 'Economic Buyer Title', category: 'meddpicc', salesforceField: 'Economic_Buyer_Title__c', calculateInApp: false },
     { conceptName: 'MEDDPICC Risks', category: 'meddpicc', salesforceField: 'MEDDPICCR_Risks__c', calculateInApp: false },
+    // 'MEDDPICC Metrics' is the M in MEDDPICC. Distinct from the legacy
+    // 'Metrics' entry (category 'command') above, which collides on the
+    // conceptName lookup. New code should read 'MEDDPICC Metrics'.
+    { conceptName: 'MEDDPICC Metrics', category: 'meddpicc', salesforceField: 'COM_Metrics__c', calculateInApp: false },
 
     // Opportunity — Command of the Message extended
     { conceptName: 'Why Do Anything', category: 'command', salesforceField: 'Command_Why_Do_Anything__c', calculateInApp: false },

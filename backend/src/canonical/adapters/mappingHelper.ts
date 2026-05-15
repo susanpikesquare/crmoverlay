@@ -45,7 +45,13 @@ export function getMappedNumber(
 ): number | undefined {
   const v = getMappedValue<unknown>(record, mappings, conceptName);
   if (v == null) return undefined;
-  if (typeof v === 'number') return v;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  if (typeof v === 'string') {
+    const trimmed = v.trim();
+    if (trimmed === '') return undefined;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : undefined;
+  }
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 }

@@ -68,7 +68,7 @@ const OPPORTUNITY_CONCEPTS = [
   'Next Step', 'Description', 'Forecast Notes', 'Lost Reason',
   'Opportunity Risk Flag', 'Unresolved Risk Count', 'Is At Risk',
   // MEDDPICC
-  'Metrics',
+  'MEDDPICC Metrics',
   'Economic Buyer', 'Economic Buyer Name', 'Economic Buyer Title',
   'Decision Criteria', 'Decision Process', 'Paper Process',
   'Identified Pain', 'Champion', 'Competition', 'MEDDPICC Risks', 'MEDDPICC Score',
@@ -121,15 +121,34 @@ function normalizeCustomerStage(v: unknown): CustomerStage | undefined {
   return undefined;
 }
 
-function normalizeForecastCategory(v: unknown): ForecastCategory | undefined {
+function normalizeForecastCategory(v: unknown, stageName?: unknown): ForecastCategory | undefined {
   if (typeof v !== 'string') return undefined;
   const s = v.toLowerCase().trim();
-  if (s.includes('closed') && (s.includes('won') || s === 'closed')) return 'closed_won';
+  // Salesforce's standard ForecastCategoryName uses "Closed" for both won
+  // and lost opps; disambiguate via the stage name when we have it.
+  if (s === 'closed' || s.includes('closed')) {
+    if (s.includes('lost')) return 'closed_lost';
+    if (s.includes('won')) return 'closed_won';
+    const stage = typeof stageName === 'string' ? stageName.toLowerCase() : '';
+    if (stage.includes('lost')) return 'closed_lost';
+    return 'closed_won';
+  }
   if (s === 'commit') return 'commit';
   if (s.includes('most likely') || s === 'likely') return 'most_likely';
   if (s.includes('best case')) return 'best_case';
   if (s === 'pipeline') return 'pipeline';
   if (s === 'omitted') return 'omitted';
+  return undefined;
+}
+
+function normalizeCsmSentiment(v: unknown): 'positive' | 'neutral' | 'cautious' | 'negative' | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = v.toLowerCase().trim();
+  if (!s) return undefined;
+  if (s.includes('pos')) return 'positive';
+  if (s.includes('caution') || s.includes('mixed')) return 'cautious';
+  if (s.includes('neg')) return 'negative';
+  if (s.includes('neutral')) return 'neutral';
   return undefined;
 }
 
@@ -285,6 +304,7 @@ export class SalesforceAdapter implements DataSourceAdapter {
       activeUserCount: getMappedNumber(r, this.mappings, 'Active User Count'),
       healthScore: getMappedNumber(r, this.mappings, 'Health Score'),
       riskFlag: normalizeRiskFlag(getMappedValue(r, this.mappings, 'Account Risk Flag')),
+      csmSentiment: normalizeCsmSentiment(getMappedValue(r, this.mappings, 'CSM Sentiment')),
       lastQbrDate: getMappedString(r, this.mappings, 'Last QBR Date'),
       lastExecCheckIn: getMappedString(r, this.mappings, 'Last Exec Check-In'),
       sixSense: {
@@ -349,7 +369,10 @@ export class SalesforceAdapter implements DataSourceAdapter {
       amountByProduct: this.extractAmountByProduct(r),
       stage: getMappedString(r, this.mappings, 'Stage'),
       stageProbability: getMappedNumber(r, this.mappings, 'Stage Probability'),
-      forecastCategory: normalizeForecastCategory(getMappedValue(r, this.mappings, 'Forecast Category')),
+      forecastCategory: normalizeForecastCategory(
+        getMappedValue(r, this.mappings, 'Forecast Category'),
+        getMappedValue(r, this.mappings, 'Stage'),
+      ),
       isClosed: r.IsClosed as boolean | undefined,
       daysInStage: getMappedNumber(r, this.mappings, 'Days In Stage'),
       closeDate: getMappedString(r, this.mappings, 'Close Date'),
@@ -365,7 +388,7 @@ export class SalesforceAdapter implements DataSourceAdapter {
       unresolvedRiskCount: getMappedNumber(r, this.mappings, 'Unresolved Risk Count'),
       isAtRisk: getMappedBoolean(r, this.mappings, 'Is At Risk'),
       meddpicc: {
-        metrics: getMappedString(r, this.mappings, 'Metrics'),
+        metrics: getMappedString(r, this.mappings, 'MEDDPICC Metrics'),
         economicBuyerName: getMappedString(r, this.mappings, 'Economic Buyer Name'),
         economicBuyerTitle: getMappedString(r, this.mappings, 'Economic Buyer Title'),
         economicBuyer: getMappedString(r, this.mappings, 'Economic Buyer'),

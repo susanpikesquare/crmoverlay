@@ -21,6 +21,7 @@ export type RiskFlag = 'red' | 'yellow' | 'green' | 'unknown';
 
 export type ForecastCategory =
   | 'closed_won'
+  | 'closed_lost'
   | 'commit'
   | 'most_likely'
   | 'best_case'

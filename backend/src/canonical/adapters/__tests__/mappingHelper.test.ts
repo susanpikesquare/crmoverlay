@@ -75,6 +75,23 @@ describe('mappingHelper', () => {
       const r = { Total_ARR__c: null };
       expect(getMappedNumber(r, mappings, 'Total ARR')).toBeUndefined();
     });
+
+    it('returns undefined for empty strings (does not coerce to 0)', () => {
+      expect(getMappedNumber({ Total_ARR__c: '' }, mappings, 'Total ARR')).toBeUndefined();
+    });
+
+    it('returns undefined for whitespace-only strings (does not coerce to 0)', () => {
+      expect(getMappedNumber({ Total_ARR__c: '   ' }, mappings, 'Total ARR')).toBeUndefined();
+      expect(getMappedNumber({ Total_ARR__c: '\t\n' }, mappings, 'Total ARR')).toBeUndefined();
+    });
+
+    it('returns undefined for NaN number value', () => {
+      expect(getMappedNumber({ Total_ARR__c: NaN }, mappings, 'Total ARR')).toBeUndefined();
+    });
+
+    it('returns undefined for Infinity', () => {
+      expect(getMappedNumber({ Total_ARR__c: Infinity }, mappings, 'Total ARR')).toBeUndefined();
+    });
   });
 
   describe('getMappedBoolean', () => {
