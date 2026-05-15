@@ -102,10 +102,25 @@ function assertIsoDate(value: string, paramName: string): string {
 function normalizeRiskFlag(v: unknown): RiskFlag | undefined {
   if (typeof v !== 'string') return undefined;
   const s = v.toLowerCase().trim();
+  if (!s) return undefined;
   if (s === 'red' || s === 'high' || s === 'critical') return 'red';
   if (s === 'yellow' || s === 'medium' || s === 'at-risk' || s === 'warning') return 'yellow';
   if (s === 'green' || s === 'low' || s === 'healthy') return 'green';
   return 'unknown';
+}
+
+/**
+ * Returns `obj` only when at least one own value is non-undefined; otherwise
+ * returns undefined. Used to keep optional sub-objects (sixSense, clay,
+ * notes, meddpicc, commandOfMessage, gong) absent when no field inside
+ * carried data — so consumer truthiness checks like `if (account.sixSense)`
+ * work as the types imply.
+ */
+function compactObject<T extends Record<string, unknown>>(obj: T): T | undefined {
+  for (const v of Object.values(obj)) {
+    if (v !== undefined) return obj;
+  }
+  return undefined;
 }
 
 function normalizeCustomerStage(v: unknown): CustomerStage | undefined {
@@ -307,7 +322,7 @@ export class SalesforceAdapter implements DataSourceAdapter {
       csmSentiment: normalizeCsmSentiment(getMappedValue(r, this.mappings, 'CSM Sentiment')),
       lastQbrDate: getMappedString(r, this.mappings, 'Last QBR Date'),
       lastExecCheckIn: getMappedString(r, this.mappings, 'Last Exec Check-In'),
-      sixSense: {
+      sixSense: compactObject({
         intentScore: getMappedNumber(r, this.mappings, 'Intent Score'),
         buyingStage: getMappedString(r, this.mappings, 'Buying Stage'),
         previousBuyingStage: getMappedString(r, this.mappings, 'Previous Buying Stage'),
@@ -316,8 +331,8 @@ export class SalesforceAdapter implements DataSourceAdapter {
         reachScore: getMappedString(r, this.mappings, 'Reach Score'),
         segments: this.parseSegments(getMappedString(r, this.mappings, 'Segments')),
         lastUpdated: getMappedString(r, this.mappings, '6sense Last Updated'),
-      },
-      clay: {
+      }),
+      clay: compactObject({
         employeeCount: getMappedNumber(r, this.mappings, 'Employee Count'),
         employeeGrowthPct: getMappedNumber(r, this.mappings, 'Employee Growth'),
         revenue: getMappedNumber(r, this.mappings, 'Clay Revenue'),
@@ -330,15 +345,15 @@ export class SalesforceAdapter implements DataSourceAdapter {
         isFranchise: getMappedBoolean(r, this.mappings, 'Clay Is Franchise'),
         isParentCompany: getMappedBoolean(r, this.mappings, 'Clay Is Parent Company'),
         enrichedAt: getMappedString(r, this.mappings, 'Clay Enriched At'),
-      },
-      notes: {
+      }),
+      notes: compactObject({
         strategy: getMappedString(r, this.mappings, 'Strategy Notes'),
         risk: getMappedString(r, this.mappings, 'Risk Notes'),
         contract: getMappedString(r, this.mappings, 'Contract Notes'),
         health: getMappedString(r, this.mappings, 'Health Notes'),
         sponsorship: getMappedString(r, this.mappings, 'Sponsorship Notes'),
         support: getMappedString(r, this.mappings, 'Support Notes'),
-      },
+      }),
       arrByProduct: this.extractArrByProduct(r),
       whitespaceByProduct: this.extractWhitespaceByProduct(r),
       createdAt: r.CreatedDate as string | undefined,
@@ -387,7 +402,7 @@ export class SalesforceAdapter implements DataSourceAdapter {
       riskFlag: normalizeRiskFlag(getMappedValue(r, this.mappings, 'Opportunity Risk Flag')),
       unresolvedRiskCount: getMappedNumber(r, this.mappings, 'Unresolved Risk Count'),
       isAtRisk: getMappedBoolean(r, this.mappings, 'Is At Risk'),
-      meddpicc: {
+      meddpicc: compactObject({
         metrics: getMappedString(r, this.mappings, 'MEDDPICC Metrics'),
         economicBuyerName: getMappedString(r, this.mappings, 'Economic Buyer Name'),
         economicBuyerTitle: getMappedString(r, this.mappings, 'Economic Buyer Title'),
@@ -400,8 +415,8 @@ export class SalesforceAdapter implements DataSourceAdapter {
         competition: getMappedString(r, this.mappings, 'Competition'),
         risks: getMappedString(r, this.mappings, 'MEDDPICC Risks'),
         overallScore: getMappedNumber(r, this.mappings, 'MEDDPICC Score'),
-      },
-      commandOfMessage: {
+      }),
+      commandOfMessage: compactObject({
         whyDoAnything: getMappedString(r, this.mappings, 'Why Do Anything'),
         whyNow: getMappedString(r, this.mappings, 'Why Now'),
         whyUs: getMappedString(r, this.mappings, 'Why Us'),
@@ -409,14 +424,14 @@ export class SalesforceAdapter implements DataSourceAdapter {
         whyPayThat: getMappedString(r, this.mappings, 'Why Pay That'),
         overallScore: getMappedNumber(r, this.mappings, 'Command Overall Score'),
         confidenceLevel: getMappedString(r, this.mappings, 'Command Confidence'),
-      },
-      gong: {
+      }),
+      gong: compactObject({
         callCount: getMappedNumber(r, this.mappings, 'Gong Call Count'),
         lastCallDate: getMappedString(r, this.mappings, 'Gong Last Call Date'),
         sentiment: this.normalizeSentiment(getMappedString(r, this.mappings, 'Gong Sentiment')),
         competitorMentions: getMappedString(r, this.mappings, 'Gong Competitor Mentions'),
         callRecordingUrl: getMappedString(r, this.mappings, 'Gong Call Recording URL'),
-      },
+      }),
     };
   }
 
@@ -477,10 +492,15 @@ export class SalesforceAdapter implements DataSourceAdapter {
 
   private normalizeSentiment(raw: string | undefined): 'positive' | 'neutral' | 'negative' | undefined {
     if (!raw) return undefined;
-    const s = raw.toLowerCase();
+    const s = raw.toLowerCase().trim();
+    if (!s) return undefined;
     if (s.includes('pos')) return 'positive';
     if (s.includes('neg')) return 'negative';
-    return 'neutral';
+    if (s === 'neutral' || s.includes('mixed')) return 'neutral';
+    // Unrecognized values (e.g. "N/A", "unknown") should NOT silently
+    // become a definitive sentiment — return undefined so consumers can
+    // distinguish "no data" from "actually neutral".
+    return undefined;
   }
 
   private buildAccountWhere(f: AccountFilters): string {
