@@ -23,24 +23,24 @@ export default function Dashboard() {
     },
   });
 
-  // Redirect based on role
+  // Redirect based on role to the appropriate restyled home page.
+  // Five Salesforce roles map into three home variants: Sales (AE/AM),
+  // Leader (Sales Leader/Executive), and Customer Success (CSM). The
+  // original role-specific hubs at /dashboard/<role> remain available
+  // as deep drill-ins.
   useEffect(() => {
     if (!isLoading && userInfo) {
       switch (userInfo.role) {
         case 'executive':
-          navigate('/dashboard/executive', { replace: true });
-          break;
         case 'sales-leader':
-          navigate('/dashboard/sales-leader', { replace: true });
+          navigate('/home/leader', { replace: true });
           break;
         case 'ae':
-          navigate('/dashboard/ae', { replace: true });
-          break;
         case 'am':
-          navigate('/dashboard/am', { replace: true });
+          navigate('/home/sales', { replace: true });
           break;
         case 'csm':
-          navigate('/dashboard/csm', { replace: true });
+          navigate('/home/customer-success', { replace: true });
           break;
         default:
           // Unknown role - stay on this page and show error
