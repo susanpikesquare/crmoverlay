@@ -19,6 +19,10 @@ import AccountPlansList from './pages/AccountPlansList';
 import AccountPlan from './pages/AccountPlan';
 import AccountPlanNew from './pages/AccountPlanNew';
 import GongAISearchPage from './pages/GongAISearchPage';
+import RenewalDashboard from './pages/RenewalDashboard';
+import SalesHome from './pages/SalesHome';
+import CustomerSuccessHome from './pages/CustomerSuccessHome';
+import LeaderHome from './pages/LeaderHome';
 import Navigation from './components/Navigation';
 import ImpersonationBanner from './components/ImpersonationBanner';
 import apiClient from './services/api';
@@ -127,6 +131,10 @@ function App() {
             <Route path="/account-plan/new/:accountId" element={<PermissionGate objectType="Account"><AccountPlanNew /></PermissionGate>} />
             <Route path="/account-plan/:id" element={<PermissionGate objectType="Account"><AccountPlan /></PermissionGate>} />
             <Route path="/gong-search" element={<GongAISearchPage />} />
+            <Route path="/renewal-dashboard" element={<PermissionGate objectType="Account"><RenewalDashboard /></PermissionGate>} />
+            <Route path="/home/sales" element={<SalesHome />} />
+            <Route path="/home/customer-success" element={<CustomerSuccessHome />} />
+            <Route path="/home/leader" element={<LeaderHome />} />
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="/access-denied" element={<AccessDenied />} />
           </Routes>

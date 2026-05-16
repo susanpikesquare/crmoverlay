@@ -1697,7 +1697,10 @@ router.get('/hub/am/metrics', isAuthenticated, async (req: Request, res: Respons
 
 /**
  * GET /api/hub/am/renewals
- * Get renewal accounts for AM
+ * Get renewal accounts for AM. Honors the `?scope=` query param:
+ *   - 'my' (default): renewals owned by the current user
+ *   - 'team': adds the current user's direct + indirect reports
+ *   - 'all': renewals across all active users
  */
 router.get('/hub/am/renewals', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -1712,7 +1715,22 @@ router.get('/hub/am/renewals', isAuthenticated, async (req: Request, res: Respon
       });
     }
 
-    const renewals = await HubData.getRenewalAccounts(connection, userId);
+    const params = parseListQueryParams(req);
+    const scopedIds = await resolveScope(connection, session, params.scope);
+    // resolveScope returns null for 'all' — fan out to all active users
+    // so the function's existing IN-list filter works without a separate
+    // "no filter" code path.
+    let teamMemberIds: string[] | undefined;
+    if (scopedIds === null) {
+      const usersResult = await connection.query('SELECT Id FROM User WHERE IsActive = true LIMIT 200');
+      teamMemberIds = (usersResult.records as any[]).map((u: any) => u.Id);
+    } else if (scopedIds.length > 1) {
+      // Only pass teamMemberIds when scope expands beyond the current user;
+      // otherwise fall through to the function's default single-user path.
+      teamMemberIds = scopedIds;
+    }
+
+    const renewals = await HubData.getRenewalAccounts(connection, userId, teamMemberIds);
 
     res.json({
       success: true,
